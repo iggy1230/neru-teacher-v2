@@ -1,4 +1,4 @@
-// --- server.js (完全版 v289.0: 給食リアクション修正版) ---
+// --- server.js (完全版: ディレクトリ構成変更対応 & デプロイエラー修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -19,7 +19,9 @@ const app = express();
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname, '.')));
+
+// 【重要修正1】静的ファイルのルートを 'public' ディレクトリに設定
+app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -161,7 +163,7 @@ app.post('/analyze', async (req, res) => {
         const { image, mode, grade, subject, name } = req.body;
         // ★MODEL指定: 宿題分析は最高精度の gemini-2.5-pro (固定)
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-pro", 
+            model: "gemini-2.0-pro-exp-02-05", 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
         });
 
@@ -444,7 +446,9 @@ app.post('/game-reaction', async (req, res) => {
     } catch { res.json({ reply: "おつかれさまにゃ！", mood: "happy" }); }
 });
 
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+// 【重要修正2】全ての不明なリクエストに対して public/index.html を返す
+// ENOENTエラーはここが修正されていなかったために発生していました
+app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
