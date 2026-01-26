@@ -1,8 +1,9 @@
-// --- ui.js (完全版: ディレクトリ構成変更対応) ---
+// --- ui.js (完全版 v278.0: 音声パス修正 & モデル指定対応版) ---
 
-// パス修正
+// ★修正: パスをディレクトリ構成に合わせて修正
+// ※重要: 実際のファイル名が 'Jpn_sch_chime.mp3' (大文字) の場合は、ここも大文字に直してください
 const sfxChime = new Audio('assets/sounds/system/jpn_sch_chime.mp3');
-const sfxBtn = new Audio('assets/sounds/ui/botani.mp3');
+const sfxBtn = new Audio('assets/sounds/ui/botani.mp3'); 
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -23,9 +24,16 @@ window.switchScreen = function(to) {
 };
 
 window.startApp = function() {
-    try { sfxChime.currentTime = 0; sfxChime.play(); } catch(e){}
+    // ユーザー操作(クリック)の直後に再生することでブラウザのブロックを回避
+    sfxChime.currentTime = 0;
+    sfxChime.play().catch(e => {
+        console.warn("チャイムの再生に失敗しました (ファイルパスまたはブラウザ制限):", e);
+    });
+
     switchScreen('screen-gate');
-    if (window.initAudioContext) window.initAudioContext();
+    
+    // AudioContextの初期化（警告回避のためここでも呼ぶ）
+    if (window.initAudioContext) window.initAudioContext().catch(()=>{});
 };
 
 window.backToTitle = async function() {
@@ -53,7 +61,7 @@ window.backToLobby = function(suppressGreeting = false) {
             updateNellMessage(`おかえり、${currentUser.name}さん！`, "happy");
         }
     }
-    // アイコンをデフォルトに戻す (パス修正)
+    // アイコンをデフォルトに戻す
     const icon = document.querySelector('.nell-avatar-wrap img'); 
     if(icon) icon.src = "assets/images/characters/nell-normal.png"; 
 };
@@ -116,7 +124,6 @@ window.renderAttendance = function() {
         
         if (hasAttended) {
             const stamp = document.createElement('img');
-            // パス修正
             stamp.src = "assets/images/items/nikukyuhanko.png";
             stamp.style.cssText = "position:absolute; bottom:2px; width:70%; height:auto; object-fit:contain; opacity:0.8;";
             div.appendChild(stamp);
@@ -142,16 +149,14 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// ★ 図鑑 (Collection) - デザイン修正版
+// ★ 図鑑 (Collection)
 // ==========================================
 
-// 一覧を表示
 window.showCollection = async function() {
     if (!currentUser) return;
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
-    // コンテナ初期化（一覧モード）
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
@@ -175,12 +180,11 @@ window.showCollection = async function() {
         return;
     }
 
-    // アイテム生成
     collection.forEach((item, index) => {
         const div = document.createElement('div');
         div.style.cssText = "background:white; border-radius:12px; padding:8px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:2px solid #fff176; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; aspect-ratio: 0.85; transition:transform 0.1s;";
         
-        div.onclick = () => window.showCollectionDetail(item, index); // 詳細へ遷移
+        div.onclick = () => window.showCollectionDetail(item, index); 
         div.onmousedown = () => div.style.transform = "scale(0.95)";
         div.onmouseup = () => div.style.transform = "scale(1.0)";
 
@@ -198,7 +202,6 @@ window.showCollection = async function() {
     });
 };
 
-// 詳細画面を表示
 window.showCollectionDetail = function(item, index) {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
@@ -246,7 +249,7 @@ window.deleteCollectionItem = async function(index) {
     if (!confirm("本当にこのお宝を削除するにゃ？")) return;
     if (window.NellMemory && currentUser) {
         await window.NellMemory.deleteFromCollection(currentUser.id, index);
-        window.showCollection(); // 一覧に戻る
+        window.showCollection(); 
     }
 };
 
@@ -256,7 +259,7 @@ window.closeCollection = function() {
 };
 
 // ==========================================
-// ★ 記憶管理 (Memory Manager)
+// ★ 記憶管理
 // ==========================================
 
 window.openMemoryManager = function() {
@@ -264,7 +267,7 @@ window.openMemoryManager = function() {
     const modal = document.getElementById('memory-manager-modal');
     if (modal) {
         modal.classList.remove('hidden');
-        switchMemoryTab('profile'); // デフォルトはプロフィールタブ
+        switchMemoryTab('profile'); 
     }
 };
 
@@ -274,17 +277,14 @@ window.closeMemoryManager = function() {
 };
 
 window.switchMemoryTab = async function(tab) {
-    // UIのタブ切り替え
     document.querySelectorAll('.memory-tab').forEach(t => t.classList.remove('active'));
     const activeTabBtn = document.getElementById(`tab-${tab}`);
     if (activeTabBtn) activeTabBtn.classList.add('active');
 
-    // 表示エリアの切り替え
     document.getElementById('memory-view-profile').classList.add('hidden');
     document.getElementById('memory-view-logs').classList.add('hidden');
     document.getElementById(`memory-view-${tab}`).classList.remove('hidden');
 
-    // データの読み込み
     const container = (tab === 'profile') ? document.getElementById('profile-container') : document.getElementById('memory-list-container');
     if (container) {
         container.innerHTML = '<p style="text-align:center; padding:20px; color:#888;">読み込み中にゃ...</p>';
@@ -305,7 +305,6 @@ function renderProfileView(container, profile) {
         return;
     }
 
-    // セクション作成ヘルパー
     const createSection = (title, items, isArray = false) => {
         const div = document.createElement('div');
         div.className = 'profile-section';
@@ -345,7 +344,6 @@ function renderProfileView(container, profile) {
     container.appendChild(createSection('苦手なこと', profile.weaknesses, true));
     container.appendChild(createSection('頑張ったこと', profile.achievements, true));
     
-    // 最終トピック
     if (profile.last_topic) {
          const div = document.createElement('div');
          div.className = 'profile-section';
@@ -367,7 +365,6 @@ function renderLogView(container) {
         return;
     }
 
-    // 新しい順に表示 (最新50件)
     [...history].reverse().forEach(item => {
         const div = document.createElement('div');
         div.className = 'memory-item';
