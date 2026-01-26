@@ -1,11 +1,29 @@
-// --- ui.js (完全版 v291.0: 音声再生修正版) ---
+// --- ui.js (完全版 v292.0: 音声エラー対策版) ---
 
-// パスは assets/... になっています
+// ★修正: ファイル名を 'botan1.mp3' (数字の1) に変更
+// もし手元のファイルが 'botani.mp3' なら、ファイル名を 'botan1.mp3' にリネームしてください
 const sfxChime = new Audio('assets/sounds/system/jpn_sch_chime.mp3');
-const sfxBtn = new Audio('assets/sounds/ui/botani.mp3');
+const sfxBtn = new Audio('assets/sounds/ui/botan1.mp3'); 
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
+
+// 音声再生ヘルパー（エラーでも止まらないようにする）
+function safePlay(audioObj) {
+    if (!audioObj) return;
+    try {
+        audioObj.currentTime = 0;
+        const playPromise = audioObj.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
+                // 音声ファイルがない、またはブラウザにブロックされた場合はログだけ出して無視
+                console.warn("Audio play failed (ignored):", error);
+            });
+        }
+    } catch (e) {
+        console.warn("Audio error:", e);
+    }
+}
 
 // ==========================================
 // 画面切り替え・基本ナビゲーション
@@ -23,18 +41,13 @@ window.switchScreen = function(to) {
 };
 
 window.startApp = async function() {
-    // ★重要: ユーザーアクション(クリック)の中でAudioContextを確実に再開させる
+    // AudioContextの再開を試みる
     if (window.initAudioContext) {
         await window.initAudioContext();
     }
 
-    // チャイム再生（エラーハンドリング付き）
-    try {
-        sfxChime.currentTime = 0;
-        await sfxChime.play();
-    } catch (e) {
-        console.warn("チャイム再生ブロック:", e);
-    }
+    // チャイム再生
+    safePlay(sfxChime);
 
     switchScreen('screen-gate');
 };
@@ -406,7 +419,8 @@ document.addEventListener('click', () => {
 document.addEventListener('click', (e) => { 
     if (e.target.classList && e.target.classList.contains('main-btn') && !e.target.disabled) { 
         if (!e.target.classList.contains('title-start-btn') && !e.target.onclick?.toString().includes('null')) { 
-            try { sfxBtn.currentTime = 0; sfxBtn.play(); } catch(err) {} 
+            // ★修正: エラーハンドリング付きで再生
+            safePlay(sfxBtn);
         } 
     } 
 });
