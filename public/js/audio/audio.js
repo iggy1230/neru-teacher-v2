@@ -1,4 +1,4 @@
-// --- audio.js (完全版 v240.0: タイムアウト＆安全装置付き) ---
+// --- audio.js (完全版 v291.0: AudioContext再開処理強化) ---
 
 let audioCtx = null;
 let currentSource = null;
@@ -7,21 +7,24 @@ let abortController = null; // 通信キャンセル用
 // 口パク管理用グローバル変数
 window.isNellSpeaking = false;
 
-// 外部から初期化
+// 外部から初期化・再開するための関数
 window.initAudioContext = async function() {
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (audioCtx.state === 'suspended') {
-        try {
-            await audioCtx.resume();
-        } catch(e) {
-            console.warn("AudioContext resume failed:", e);
+    try {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
+        
+        // サスペンド状態なら再開を試みる（ユーザー操作直後に呼ぶ必要がある）
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+            console.log("AudioContext resumed");
+        }
+    } catch(e) {
+        console.warn("AudioContext init/resume failed:", e);
     }
 };
 
-// 通常のTTSを強制停止する関数（Live Chat優先用）
+// 通常のTTSを強制停止する関数
 window.cancelNellSpeech = function() {
     if (currentSource) {
         try { currentSource.stop(); } catch(e) {}
@@ -44,19 +47,13 @@ async function speakNell(text, mood = "normal") {
     abortController = new AbortController();
     const signal = abortController.signal;
 
-    // 3. 口パクOFF (準備中)
     window.isNellSpeaking = false;
 
-    // AudioContextの準備（エラーでも止まらないようにする）
-    try {
-        await window.initAudioContext();
-    } catch(e) {
-        console.error("Audio Init Failed:", e);
-        return; // 音声なしで終了
-    }
+    // AudioContextの準備
+    await window.initAudioContext();
 
     try {
-        // ★修正: 5秒のタイムアウトを設定
+        // タイムアウト設定 (5秒)
         const timeoutId = setTimeout(() => abortController.abort(), 5000);
 
         const res = await fetch('/synthesize', {
@@ -66,7 +63,7 @@ async function speakNell(text, mood = "normal") {
             signal: signal
         });
 
-        clearTimeout(timeoutId); // 成功したらタイマー解除
+        clearTimeout(timeoutId);
 
         if (!res.ok) throw new Error(`TTS Error: ${res.status}`);
         const data = await res.json();
@@ -100,10 +97,7 @@ async function speakNell(text, mood = "normal") {
         });
 
     } catch (e) {
-        // エラーが出てもアプリを止めない
-        if (e.name === 'AbortError') {
-            console.log("TTS Timed out or Aborted");
-        } else {
+        if (e.name !== 'AbortError') {
             console.error("Audio Playback Error:", e);
         }
         window.isNellSpeaking = false;
