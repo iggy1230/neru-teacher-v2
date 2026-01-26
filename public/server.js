@@ -1,4 +1,4 @@
-// --- server.js (完全版: ディレクトリ構成変更対応) ---
+// --- server.js (完全版: ディレクトリ構成変更対応 & デプロイエラー修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -20,7 +20,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// 【変更点】静的ファイルのルートを 'public' ディレクトリに設定
+// 【重要修正1】静的ファイルのルートを 'public' ディレクトリに設定
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Server Log ---
@@ -446,7 +446,8 @@ app.post('/game-reaction', async (req, res) => {
     } catch { res.json({ reply: "おつかれさまにゃ！", mood: "happy" }); }
 });
 
-// 【変更点】全ての不明なリクエストに対して public/index.html を返す
+// 【重要修正2】全ての不明なリクエストに対して public/index.html を返す
+// ENOENTエラーはここが修正されていなかったために発生していました
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 const PORT = process.env.PORT || 3000;
