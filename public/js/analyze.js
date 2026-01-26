@@ -1,8 +1,23 @@
-// --- analyze.js (完全版 v288.1: パス修正版) ---
+// --- analyze.js (完全版 v292.0: 音声エラー対策版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
 // ==========================================
+
+// 音声再生ヘルパー (analyze.js内でも定義)
+function safePlay(audioObj) {
+    if (!audioObj) return Promise.resolve();
+    try {
+        audioObj.currentTime = 0;
+        const playPromise = audioObj.play();
+        if (playPromise !== undefined) {
+            return playPromise.catch(error => {
+                console.warn("Audio play failed (ignored):", error);
+            });
+        }
+    } catch (e) { console.warn("Audio error:", e); }
+    return Promise.resolve();
+}
 
 // グローバル変数の定義
 window.currentMode = ''; 
@@ -333,7 +348,7 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     
     if (el) el.innerText = displayText;
     
-    if (t && t.includes("もぐもぐ")) { try { sfxBori.currentTime = 0; sfxBori.play(); } catch(e){} }
+    if (t && t.includes("もぐもぐ")) { safePlay(sfxBori); }
     
     if (saveToMemory) { saveToNellMemory('nell', t); }
     
@@ -602,7 +617,7 @@ window.captureAndIdentifyItem = async function() {
             notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3);";
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 4000);
-            try { sfxHirameku.currentTime=0; sfxHirameku.play(); } catch(e){}
+            safePlay(sfxHirameku);
         }
 
     } catch (e) {
@@ -628,7 +643,7 @@ window.captureAndIdentifyItem = async function() {
 // 3. その他共通機能
 // ==========================================
 
-// パス修正
+// パス修正 & エラー対策
 const sfxBori = new Audio('assets/sounds/ui/boribori.mp3');
 const sfxHit = new Audio('assets/sounds/voice/cat1c.mp3');
 const sfxPaddle = new Audio('assets/sounds/ui/poka02.mp3'); 
@@ -795,8 +810,6 @@ window.toggleTimer = function() {
         closeTimerModal();
         
         window.updateNellMessage("今からネル先生が時間を計ってやるにゃ", "normal", false, true);
-        // パス修正（ui.js側で定義済みだが、ここで参照する場合はグローバル変数を確認）
-        // ui.jsで定義した sfxChime がグローバルなら問題なし
         
         studyTimerInterval = setInterval(() => {
             if (studyTimerValue > 0) {
@@ -815,7 +828,7 @@ window.toggleTimer = function() {
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
                 // ui.jsのsfxChimeを使用 (グローバルスコープ前提)
                 if (typeof sfxChime !== 'undefined') {
-                    try { sfxChime.play(); } catch(e){}
+                    safePlay(sfxChime);
                 }
                 window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
                 document.getElementById('mini-timer-display').classList.add('hidden');
@@ -1312,7 +1325,14 @@ window.startAnalysis = async function(b64) {
     document.getElementById('thinking-view').classList.remove('hidden'); 
     document.getElementById('upload-controls').classList.add('hidden'); 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
-    try { sfxHirameku.volume = 0; sfxHirameku.play().then(() => { sfxHirameku.pause(); sfxHirameku.currentTime = 0; sfxHirameku.volume = 1; }).catch(e => {}); sfxBunseki.currentTime = 0; sfxBunseki.play(); sfxBunseki.loop = true; } catch(e){}
+    try { 
+        // 音声再生エラーを無視して続行
+        safePlay(sfxHirameku); 
+        sfxBunseki.currentTime = 0; 
+        sfxBunseki.loop = true;
+        safePlay(sfxBunseki);
+    } catch(e){}
+    
     let p = 0; 
     const timer = setInterval(() => { if (!isAnalyzing) { clearInterval(timer); return; } if (p < 30) p += 1; else if (p < 80) p += 0.4; else if (p < 95) p += 0.1; updateProgress(p); }, 300);
     const performAnalysisNarration = async () => {
@@ -1331,7 +1351,9 @@ window.startAnalysis = async function(b64) {
             return { ...prob, id: index + 1, student_answer: studentArr, correct_answer: correctArr, status: (studentArr.length > 0 && studentArr[0] !== "") ? "answered" : "unanswered", currentHintLevel: 1, maxUnlockedHintLevel: 0 };
         });
         isAnalyzing = false; clearInterval(timer); updateProgress(100); cleanupAnalysis();
-        try { sfxHirameku.currentTime = 0; sfxHirameku.play().catch(e=>{}); } catch(e){}
+        
+        safePlay(sfxHirameku);
+        
         setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); const doneMsg = "読めたにゃ！"; if (currentMode === 'grade') { window.showGradingView(true); window.updateNellMessage(doneMsg, "happy", false).then(() => setTimeout(window.updateGradingMessage, 1500)); } else { window.renderProblemSelection(); window.updateNellMessage(doneMsg, "happy", false); } }, 1500); 
     } catch (err) { 
         console.error("Analysis Error:", err); isAnalyzing = false; cleanupAnalysis(); clearInterval(timer); 
@@ -1451,7 +1473,7 @@ function _performCheckMultiAnswer(id) {
     let allCorrect = false;
     if (userValues.length === correctList.length) { const usedIndices = new Set(); let matchCount = 0; for (const uVal of userValues) { for (let i = 0; i < correctList.length; i++) { if (!usedIndices.has(i)) { if (isMatch(uVal, correctList[i])) { usedIndices.add(i); matchCount++; break; } } } } allCorrect = (matchCount === correctList.length); }
     problem.is_correct = allCorrect; updateMarkDisplay(id, allCorrect); if (currentMode === 'grade') window.updateGradingMessage();
-    if (allCorrect) { try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} } else if (userValues.some(v => v.trim().length > 0)) { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} }
+    if (allCorrect) { safePlay(sfxMaru); } else if (userValues.some(v => v.trim().length > 0)) { safePlay(sfxBatu); }
 }
 window.checkAnswerDynamically = function(id, inputElem, event) { 
     if (window.isComposing) return; const problem = transcribedProblems.find(p => p.id === id); if(problem) problem.student_answer = [inputElem.value]; const val = inputElem.value;
@@ -1461,7 +1483,7 @@ function _performCheckAnswerDynamically(id, val) {
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return;
     const correctVal = Array.isArray(problem.correct_answer) ? problem.correct_answer[0] : problem.correct_answer;
     const isCorrect = isMatch(val, String(correctVal)); problem.is_correct = isCorrect; updateMarkDisplay(id, isCorrect); if (currentMode === 'grade') window.updateGradingMessage();
-    if (isCorrect) { try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} } else if (val.trim().length > 0) { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} }
+    if (isCorrect) { safePlay(sfxMaru); } else if (val.trim().length > 0) { safePlay(sfxBatu); }
 }
 window.checkOneProblem = function(id) { 
     const problem = transcribedProblems.find(p => p.id === id); if (!problem) return; 
@@ -1470,7 +1492,7 @@ window.checkOneProblem = function(id) {
     if (correctList.length > 1) { const inputs = document.querySelectorAll(`.multi-input-${id}`); userValues = Array.from(inputs).map(i => i.value); } else { const input = document.getElementById(`single-input-${id}`); if(input) userValues = [input.value]; } 
     let isCorrect = false; 
     if (userValues.length === correctList.length) { const usedIndices = new Set(); let matchCount = 0; for (const uVal of userValues) { for (let i = 0; i < correctList.length; i++) { if (!usedIndices.has(i)) { if (isMatch(uVal, correctList[i])) { usedIndices.add(i); matchCount++; break; } } } } isCorrect = (matchCount === correctList.length); } 
-    if (isCorrect) { try { sfxMaru.currentTime = 0; sfxMaru.play(); } catch(e){} } else { try { sfxBatu.currentTime = 0; sfxBatu.play(); } catch(e){} } 
+    if (isCorrect) { safePlay(sfxMaru); } else { safePlay(sfxBatu); } 
     const markElem = document.getElementById(`mark-${id}`); const container = document.getElementById(`grade-item-${id}`); 
     if (markElem && container) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; window.updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false); } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; window.updateNellMessage("おしい！もう一回考えてみて！", "gentle", false); } } 
 };
@@ -1560,11 +1582,11 @@ function drawGame() {
     if(ball.y + ball.dy > gameCanvas.height - ball.r - 30) {
         if(ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
             ball.dy = -ball.dy;
-            try{ sfxPaddle.currentTime=0; sfxPaddle.play(); } catch(e){}
+            safePlay(sfxPaddle);
         } else if(ball.y + ball.dy > gameCanvas.height - ball.r) {
             // ゲームオーバー
             gameRunning = false;
-            try{ sfxOver.play(); } catch(e){}
+            safePlay(sfxOver);
             updateNellMessage("あ〜あ、落ちちゃったにゃ…", "sad");
             fetchGameComment("end", score);
             const startBtn = document.getElementById('start-game-btn');
@@ -1583,7 +1605,7 @@ function drawGame() {
                 b.status = 0;
                 score += 10;
                 document.getElementById('game-score').innerText = score;
-                try{ sfxHit.currentTime=0; sfxHit.play(); } catch(e){}
+                safePlay(sfxHit);
                 
                 // コメント
                 if (score % 50 === 0) {
