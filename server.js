@@ -348,8 +348,10 @@ app.post('/chat-dialogue', async (req, res) => {
             responseText = result.response.text().trim();
 
         } catch (genError) {
-            console.warn("Generation failed. Retrying without tools...", genError.message);
-            const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
+            console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
+            const modelFallback = genAI.getGenerativeModel({ 
+                model: "gemini-2.0-flash-exp"
+            });
             if (image) {
                 result = await modelFallback.generateContent([
                     prompt,
@@ -390,7 +392,7 @@ app.post('/lunch-reaction', async (req, res) => {
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
         
-        // 指定通り gemini-2.0-flash-exp を使用
+        // ★修正: Safety Settingsを追加してブロック回避
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             safetySettings: [
@@ -416,6 +418,7 @@ app.post('/lunch-reaction', async (req, res) => {
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
     } catch (error) { 
+        // ★修正: エラーログ出力＆ランダムフォールバック
         console.error("Lunch Reaction Error:", error); 
         const fallbacks = ["おいしいにゃ！", "うまうまにゃ！", "カリカリ最高にゃ！", "ありがとにゃ！", "元気が出たにゃ！"];
         const randomFallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
