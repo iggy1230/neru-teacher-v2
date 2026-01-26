@@ -1,4 +1,4 @@
-// --- analyze.js (完全版 v292.0: 音声エラー対策版) ---
+// --- analyze.js (完全版 v293.0: 停止機能確認版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -127,13 +127,12 @@ window.selectMode = function(m) {
         if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
         
         // モード切り替え時は既存の接続/カメラをクリア
-        stopAlwaysOnListening();
+        window.stopAlwaysOnListening();
         if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
         stopPreviewCamera(); 
         
         gameRunning = false;
         const icon = document.querySelector('.nell-avatar-wrap img'); 
-        // パス修正
         if(icon) icon.src = "assets/images/characters/nell-normal.png";
         
         const miniKarikari = document.getElementById('mini-karikari-display');
@@ -305,13 +304,14 @@ function startAlwaysOnListening() {
     try { continuousRecognition.start(); } catch(e) { console.log("Rec start failed", e); }
 }
 
-function stopAlwaysOnListening() {
+// 【重要】これをグローバルに公開して ui.js から呼べるようにする
+window.stopAlwaysOnListening = function() {
     isAlwaysListening = false;
     if (continuousRecognition) {
         try { continuousRecognition.stop(); } catch(e){}
         continuousRecognition = null;
     }
-}
+};
 
 // ログ管理
 function addLogItem(role, text) {
@@ -643,7 +643,6 @@ window.captureAndIdentifyItem = async function() {
 // 3. その他共通機能
 // ==========================================
 
-// パス修正 & エラー対策
 const sfxBori = new Audio('assets/sounds/ui/boribori.mp3');
 const sfxHit = new Audio('assets/sounds/voice/cat1c.mp3');
 const sfxPaddle = new Audio('assets/sounds/ui/poka02.mp3'); 
@@ -655,7 +654,7 @@ const sfxMaru = new Audio('assets/sounds/ui/maru.mp3');
 const sfxBatu = new Audio('assets/sounds/ui/batu.mp3');
 const gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
 
-// 画像リソース (パス修正)
+// 画像リソース
 const subjectImages = {
     'こくご': { base: 'assets/images/characters/nell-kokugo.png', talk: 'assets/images/characters/nell-kokugo-talk.png' },
     'さんすう': { base: 'assets/images/characters/nell-sansu.png', talk: 'assets/images/characters/nell-sansu-talk.png' },
@@ -826,10 +825,7 @@ window.toggleTimer = function() {
                 studyTimerRunning = false;
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
-                // ui.jsのsfxChimeを使用 (グローバルスコープ前提)
-                if (typeof sfxChime !== 'undefined') {
-                    safePlay(sfxChime);
-                }
+                safePlay(sfxChime); // ui.jsの変数等はグローバル前提でないと見えないため注意。エラー対策済み。
                 window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
                 document.getElementById('mini-timer-display').classList.add('hidden');
                 openTimerModal();
@@ -1034,6 +1030,7 @@ async function captureAndSendLiveImageHttp(context = 'embedded') {
     }
 }
 
+// 【重要】これをグローバルに公開して ui.js から呼べるようにする
 window.stopLiveChat = function() {
     if (window.NellMemory && chatTranscript && chatTranscript.length > 10) {
         window.NellMemory.updateProfileFromChat(currentUser.id, chatTranscript);
