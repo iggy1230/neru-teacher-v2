@@ -1,4 +1,4 @@
-// --- server.js (完全版 v289.1: パス修正のみ適用) ---
+// --- server.js (完全版 v291.0: 記憶システム修正 & モデル固定版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -20,8 +20,13 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-// 【修正箇所 1】静的ファイルのルートを 'public' ディレクトリに変更
-app.use(express.static(path.join(__dirname, 'public')));
+// 静的ファイルの配信設定
+const publicDir = path.join(__dirname, 'public');
+app.use(express.static(publicDir));
+
+// --- AI Model Constants (ユーザー指定) ---
+const MODEL_HOMEWORK = "gemini-2.5-pro"; // 宿題分析用
+const MODEL_FAST = "gemini-2.0-flash-exp"; // その他汎用
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -46,8 +51,10 @@ try {
     genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     
     if (process.env.GOOGLE_CREDENTIALS_JSON) {
-        const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-        ttsClient = new textToSpeech.TextToSpeechClient({ credentials });
+        try {
+            const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+            ttsClient = new textToSpeech.TextToSpeechClient({ credentials });
+        } catch(e) { console.error("TTS Credential Error:", e.message); }
     } else {
         ttsClient = new textToSpeech.TextToSpeechClient();
     }
@@ -90,17 +97,23 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update ---
+// --- Memory Update (修正箇所) ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
+        // 指定通り gemini-2.0-flash-exp を使用
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash-exp"
+            model: MODEL_FAST,
+            generationConfig: { responseMimeType: "application/json" }
         });
 
         const prompt = `
         あなたは生徒の長期記憶を管理するAIです。
         以下の「現在のプロフィール」と「直近の会話ログ」をもとに、プロフィールを更新してください。
+        
+        【重要】
+        - 出力は純粋なJSONのみにしてください。Markdownのコードブロック（\`\`\`json ... \`\`\`）は不要です。
+        - 図鑑データ(collection)はここでは触れず、入力のまま維持してください。
 
         【現在のプロフィール】
         ${JSON.stringify(currentProfile)}
@@ -108,16 +121,7 @@ app.post('/update-memory', async (req, res) => {
         【直近の会話ログ】
         ${chatLog}
 
-        【更新ルール】
-        1. **birthday**: 会話内で誕生日や年齢が出たら記録。
-        2. **likes**: 新しく判明した好きなものがあれば追加。
-        3. **weaknesses**: 苦手なこと、つまづいたことを追加。
-        4. **achievements**: 頑張ったこと、褒められたことを記録。
-        5. **last_topic**: 会話の要約を記録。
-        6. **collection**: 図鑑データは変更せず、そのまま維持すること（サーバー側では変更しない）。
-
         【出力フォーマット】
-        必ず以下のJSON形式の文字列だけを出力してください。
         {
             "nickname": "...",
             "birthday": "...",
@@ -133,6 +137,7 @@ app.post('/update-memory', async (req, res) => {
         
         let newProfile;
         try {
+            // Markdownの除去処理を強化
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             const firstBrace = cleanText.indexOf('{');
             const lastBrace = cleanText.lastIndexOf('}');
@@ -141,19 +146,18 @@ app.post('/update-memory', async (req, res) => {
             }
             newProfile = JSON.parse(cleanText);
         } catch (e) {
-            console.error("JSON Parse Error in update-memory:", responseText);
-            throw new Error("無効な JSON 構造");
+            console.warn("Memory JSON Parse Error. Using fallback.", e);
+            // パースエラー時は現在のプロフィールをそのまま返す（サーバーエラーにしない）
+            return res.json(currentProfile);
         }
 
-        if (Array.isArray(newProfile)) {
-            newProfile = newProfile[0];
-        }
-
+        if (Array.isArray(newProfile)) newProfile = newProfile[0];
         res.json(newProfile);
 
     } catch (error) {
         console.error("Memory Update Error:", error);
-        res.status(500).json({ error: "Memory update failed" });
+        // エラー時もクライアントをクラッシュさせない
+        res.status(200).json(req.body.currentProfile || {});
     }
 });
 
@@ -161,9 +165,10 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        // ★MODEL指定: 宿題分析は最高精度の gemini-2.5-pro (固定)
+        
+        // 指定通り gemini-2.5-pro を使用
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.5-pro", 
+            model: MODEL_HOMEWORK, 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
         });
 
@@ -175,10 +180,6 @@ app.post('/analyze', async (req, res) => {
 
         【重要: 教科別の解析ルール (${subject})】
         ${subjectSpecificInstructions}
-
-        【重要: 手書き文字の認識強化】
-        - **空欄・無回答の厳格な判定**: 解答欄に**「鉛筆による手書きの筆跡」**が明確に認められない場合は、正解が明白であっても、**絶対に student_answer を空文字 "" にしてください**。
-        - **子供特有の筆跡**: 前後の文脈から推測して補正してください。
 
         【タスク1: 問題文の書き起こし】
         - 設問文、選択肢を正確に書き起こす。
@@ -203,7 +204,6 @@ app.post('/analyze', async (req, res) => {
             "hints": ["ヒント1", "ヒント2", "ヒント3"]
           }
         ]
-        Markdownコードブロックは不要。純粋なJSONのみを返すこと。
         `;
 
         const result = await model.generateContent([
@@ -239,9 +239,9 @@ app.post('/analyze', async (req, res) => {
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name } = req.body;
-        // ★MODEL指定: その他はFlash-Exp
+        // 指定通り gemini-2.0-flash-exp を使用
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash-exp",
+            model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
         });
 
@@ -280,7 +280,7 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- ★ HTTPチャット会話 (お宝図鑑・個別指導共用) ---
+// --- ★ HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
         const { text, name, image, history } = req.body;
@@ -331,8 +331,9 @@ app.post('/chat-dialogue', async (req, res) => {
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
+            // 指定通り gemini-2.0-flash-exp を使用
             const model = genAI.getGenerativeModel({ 
-                model: "gemini-2.0-flash-exp",
+                model: MODEL_FAST,
                 tools: toolsConfig
             });
 
@@ -347,10 +348,8 @@ app.post('/chat-dialogue', async (req, res) => {
             responseText = result.response.text().trim();
 
         } catch (genError) {
-            console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
-            const modelFallback = genAI.getGenerativeModel({ 
-                model: "gemini-2.0-flash-exp"
-            });
+            console.warn("Generation failed. Retrying without tools...", genError.message);
+            const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
             if (image) {
                 result = await modelFallback.generateContent([
                     prompt,
@@ -391,9 +390,9 @@ app.post('/lunch-reaction', async (req, res) => {
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
         
-        // ★修正: Safety Settingsを追加してブロック回避
+        // 指定通り gemini-2.0-flash-exp を使用
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash-exp",
+            model: MODEL_FAST,
             safetySettings: [
                 { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
                 { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -417,7 +416,6 @@ app.post('/lunch-reaction', async (req, res) => {
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
     } catch (error) { 
-        // ★修正: エラーログ出力＆ランダムフォールバック
         console.error("Lunch Reaction Error:", error); 
         const fallbacks = ["おいしいにゃ！", "うまうまにゃ！", "カリカリ最高にゃ！", "ありがとにゃ！", "元気が出たにゃ！"];
         const randomFallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
@@ -428,8 +426,8 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // ★MODEL指定: その他はFlash-Exp
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+        // 指定通り gemini-2.0-flash-exp を使用
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST });
         let prompt = "";
         let mood = "excited";
 
@@ -446,8 +444,7 @@ app.post('/game-reaction', async (req, res) => {
     } catch { res.json({ reply: "おつかれさまにゃ！", mood: "happy" }); }
 });
 
-// 【修正箇所 2】publicフォルダ内のindex.htmlを返すように修正
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('*', (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
@@ -521,8 +518,8 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // ★MODEL指定: リアルタイム会話はFlash-Exp
-                        model: "models/gemini-2.0-flash-exp",
+                        // 指定通り gemini-2.0-flash-exp を使用
+                        model: `models/${MODEL_FAST}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
                             speech_config: { 
