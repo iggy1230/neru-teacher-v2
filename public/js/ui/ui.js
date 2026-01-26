@@ -1,9 +1,8 @@
-// --- ui.js (完全版 v278.0: 音声パス修正 & モデル指定対応版) ---
+// --- ui.js (完全版 v291.0: 音声再生修正版) ---
 
-// ★修正: パスをディレクトリ構成に合わせて修正
-// ※重要: 実際のファイル名が 'Jpn_sch_chime.mp3' (大文字) の場合は、ここも大文字に直してください
+// パスは assets/... になっています
 const sfxChime = new Audio('assets/sounds/system/jpn_sch_chime.mp3');
-const sfxBtn = new Audio('assets/sounds/ui/botani.mp3'); 
+const sfxBtn = new Audio('assets/sounds/ui/botani.mp3');
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -23,17 +22,21 @@ window.switchScreen = function(to) {
     }
 };
 
-window.startApp = function() {
-    // ユーザー操作(クリック)の直後に再生することでブラウザのブロックを回避
-    sfxChime.currentTime = 0;
-    sfxChime.play().catch(e => {
-        console.warn("チャイムの再生に失敗しました (ファイルパスまたはブラウザ制限):", e);
-    });
+window.startApp = async function() {
+    // ★重要: ユーザーアクション(クリック)の中でAudioContextを確実に再開させる
+    if (window.initAudioContext) {
+        await window.initAudioContext();
+    }
+
+    // チャイム再生（エラーハンドリング付き）
+    try {
+        sfxChime.currentTime = 0;
+        await sfxChime.play();
+    } catch (e) {
+        console.warn("チャイム再生ブロック:", e);
+    }
 
     switchScreen('screen-gate');
-    
-    // AudioContextの初期化（警告回避のためここでも呼ぶ）
-    if (window.initAudioContext) window.initAudioContext().catch(()=>{});
 };
 
 window.backToTitle = async function() {
