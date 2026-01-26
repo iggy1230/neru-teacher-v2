@@ -1,14 +1,13 @@
-// --- ui.js (完全版 v292.0: 音声エラー対策版) ---
+// --- ui.js (完全版 v293.0: ロビー帰還時リセット強化版) ---
 
-// ★修正: ファイル名を 'botan1.mp3' (数字の1) に変更
-// もし手元のファイルが 'botani.mp3' なら、ファイル名を 'botan1.mp3' にリネームしてください
+// 音声ファイルのパス設定（assetsフォルダ対応）
 const sfxChime = new Audio('assets/sounds/system/jpn_sch_chime.mp3');
 const sfxBtn = new Audio('assets/sounds/ui/botan1.mp3'); 
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
 
-// 音声再生ヘルパー（エラーでも止まらないようにする）
+// 音声再生ヘルパー
 function safePlay(audioObj) {
     if (!audioObj) return;
     try {
@@ -16,7 +15,6 @@ function safePlay(audioObj) {
         const playPromise = audioObj.play();
         if (playPromise !== undefined) {
             playPromise.catch(error => {
-                // 音声ファイルがない、またはブラウザにブロックされた場合はログだけ出して無視
                 console.warn("Audio play failed (ignored):", error);
             });
         }
@@ -41,14 +39,12 @@ window.switchScreen = function(to) {
 };
 
 window.startApp = async function() {
-    // AudioContextの再開を試みる
+    // AudioContextの再開
     if (window.initAudioContext) {
         await window.initAudioContext();
     }
-
     // チャイム再生
     safePlay(sfxChime);
-
     switchScreen('screen-gate');
 };
 
@@ -63,21 +59,41 @@ window.backToGate = function() {
     switchScreen('screen-gate');
 };
 
+// 【重要修正】ロビーに戻る際に対話機能を全て停止
 window.backToLobby = function(suppressGreeting = false) {
     switchScreen('screen-lobby');
     
-    // ロビーに戻ったら機能停止
-    if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
-    if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
-    if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
+    // 1. TTS対話の常時聞き取り停止
+    if (typeof window.stopAlwaysOnListening === 'function') {
+        window.stopAlwaysOnListening();
+    }
+    
+    // 2. リアルタイムAPI(WebSocket)切断
+    if (typeof window.stopLiveChat === 'function') {
+        window.stopLiveChat();
+    }
+    
+    // 3. カメラ停止
+    if (typeof window.stopPreviewCamera === 'function') {
+        window.stopPreviewCamera();
+    }
 
+    // 4. 音声再生停止（ネル先生を黙らせる）
+    if (typeof window.cancelNellSpeech === 'function') {
+        window.cancelNellSpeech();
+    }
+
+    // フラグリセット
+    if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
+
+    // 挨拶処理
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
     if (shouldGreet && typeof currentUser !== 'undefined' && currentUser) {
         if (typeof updateNellMessage === 'function') {
             updateNellMessage(`おかえり、${currentUser.name}さん！`, "happy");
         }
     }
-    // アイコンをデフォルトに戻す
+    // アイコンリセット
     const icon = document.querySelector('.nell-avatar-wrap img'); 
     if(icon) icon.src = "assets/images/characters/nell-normal.png"; 
 };
@@ -419,7 +435,6 @@ document.addEventListener('click', () => {
 document.addEventListener('click', (e) => { 
     if (e.target.classList && e.target.classList.contains('main-btn') && !e.target.disabled) { 
         if (!e.target.classList.contains('title-start-btn') && !e.target.onclick?.toString().includes('null')) { 
-            // ★修正: エラーハンドリング付きで再生
             safePlay(sfxBtn);
         } 
     } 
