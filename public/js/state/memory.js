@@ -1,4 +1,4 @@
-// --- memory.js (完全版 v276.1: 図鑑保存数修正版) ---
+// --- memory.js (完全版 v291.0: コレクション保護対応) ---
 
 (function(global) {
     const Memory = {};
@@ -46,7 +46,7 @@
         // 既存ユーザーにcollectionがない場合の補完
         const defaultProfile = Memory.createEmptyProfile();
         if (!profile) return defaultProfile;
-        if (!Array.isArray(profile.collection)) profile.collection = []; // 配列であることを保証
+        if (!Array.isArray(profile.collection)) profile.collection = []; 
 
         return profile;
     };
@@ -66,26 +66,34 @@
         }
     };
 
-    // サーバー更新用
+    // サーバー更新用（★重要修正箇所）
     Memory.updateProfileFromChat = async function(userId, chatLog) {
         if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
+        
         try {
             const res = await fetch('/update-memory', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ currentProfile, chatLog })
             });
+            
             if (res.ok) {
-                let newProfile = await res.json();
-                if (Array.isArray(newProfile)) newProfile = newProfile[0];
+                let newProfileText = await res.json();
+                if (Array.isArray(newProfileText)) newProfileText = newProfileText[0];
                 
-                // サーバーはcollectionを知らないので復元する
-                newProfile.collection = currentProfile.collection || [];
+                // サーバーはcollectionの中身（画像）を返さないので、
+                // 手元の currentProfile.collection を新しいプロフィールに移植して保存する
+                const updatedProfile = {
+                    ...newProfileText,
+                    collection: currentProfile.collection || []
+                };
                 
-                await Memory.saveUserProfile(userId, newProfile);
+                await Memory.saveUserProfile(userId, updatedProfile);
             }
-        } catch(e) {}
+        } catch(e) {
+            console.warn("Profile update failed, keeping existing data.", e);
+        }
     };
 
     // コンテキスト生成
@@ -110,7 +118,6 @@
         try {
             const profile = await Memory.getUserProfile(userId);
             
-            // 配列の再確認
             if (!Array.isArray(profile.collection)) {
                 profile.collection = [];
             }
@@ -122,10 +129,8 @@
                 description: description 
             };
 
-            // 先頭に追加
             profile.collection.unshift(newItem); 
 
-            // 容量制限（50件まで保持）
             if (profile.collection.length > 50) {
                 profile.collection = profile.collection.slice(0, 50);
             }
@@ -137,7 +142,6 @@
         }
     };
     
-    // アイテム削除
     Memory.deleteFromCollection = async function(userId, index) {
         try {
             const profile = await Memory.getUserProfile(userId);
