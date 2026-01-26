@@ -1,12 +1,10 @@
-// --- analyze.js (完全版 v295.0: 音声認識分離版) ---
-
-import { initSpeechRecognition, startListening, stopListening } from './audio/speechRecognition.js';
+// --- analyze.js (完全版 v293.0: 停止機能確認版) ---
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
 // ==========================================
 
-// 音声再生ヘルパー (エラーで止まらないようにする)
+// 音声再生ヘルパー (analyze.js内でも定義)
 function safePlay(audioObj) {
     if (!audioObj) return Promise.resolve();
     try {
@@ -44,7 +42,7 @@ let currentTtsSource = null;
 let chatTranscript = ""; 
 let nextStartTime = 0;
 let connectionTimeout = null;
-let recognition = null; // WebSocket用のrecognitionは維持
+let recognition = null;
 let isRecognitionActive = false;
 let liveAudioSources = []; 
 let ignoreIncomingAudio = false;
@@ -56,6 +54,10 @@ let activeChatContext = null;
 let streamTextBuffer = "";
 let ttsTextBuffer = "";
 let latestDetectedName = null;
+
+// 常時聞き取り用のフラグ
+let isAlwaysListening = false;
+let continuousRecognition = null;
 
 // 履歴用配列の初期化 (最重要)
 window.chatSessionHistory = [];
@@ -76,20 +78,6 @@ let studyTimerCheck = 0;
 
 // プレビューカメラ用
 let previewStream = null;
-
-// 初期化処理
-document.addEventListener('DOMContentLoaded', () => {
-    // 音声認識機能の初期化確認
-    initSpeechRecognition();
-    
-    // 宿題アップロード用のIDに合わせたリスナー設定
-    const camIn = document.getElementById('hw-input-camera'); 
-    const albIn = document.getElementById('hw-input-album'); 
-    if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
-    if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
-    const startCamBtn = document.getElementById('start-webcam-btn');
-    if (startCamBtn) startCamBtn.onclick = startHomeworkWebcam;
-});
 
 // ★ selectMode
 window.selectMode = function(m) {
@@ -200,101 +188,129 @@ window.selectMode = function(m) {
 };
 
 // ==========================================
-// ★ 常時聞き取り機能 (HTTPチャット用) - 分離版
+// ★ 常時聞き取り機能 (HTTPチャット用)
 // ==========================================
 
-// 音声認識結果を処理するハンドラ
-async function handleSpeechResult(text) {
-    if (!text || text.trim() === "") return;
-
-    // ★割り込み判定
-    const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
-    const isStopCommand = stopKeywords.some(w => text.includes(w));
-    const isLongEnough = text.length >= 10;
-
-    if (window.isNellSpeaking) {
-        if (isLongEnough || isStopCommand) {
-            console.log("[Interruption] Stopping audio.");
-            if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-            // 停止命令自体は送信しない
-            if (isStopCommand) return; 
-        } else {
-            return;
-        }
+function startAlwaysOnListening() {
+    if (!('webkitSpeechRecognition' in window)) {
+        console.warn("Speech Recognition not supported.");
+        return;
     }
-    
-    console.log(`[User Said] ${text}`);
-    
-    // 一旦聞き取り停止（処理中は聞かない）
-    // ※ speechRecognition.js は自動再開仕様だが、
-    // ここではHTTPリクエスト中の重複送信を防ぐためにstopListeningを呼ぶか、
-    // あるいはUX向上のために聞き続けるかの選択になる。
-    // 元の仕様に合わせて「処理中は停止」とするなら stopListening() を呼ぶ。
-    stopListening();
-    
-    // 音声認識結果を表示（各モード対応）
-    let targetId = 'user-speech-text-embedded';
-    if (currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
-    
-    const embeddedText = document.getElementById(targetId);
-    if (embeddedText) embeddedText.innerText = text;
 
-    // ログに追加
-    addLogItem('user', text);
-    // 履歴に追加
-    addToSessionHistory('user', text);
+    if (continuousRecognition) {
+        try { continuousRecognition.stop(); } catch(e){}
+    }
 
-    try {
-        const res = await fetch('/chat-dialogue', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                text: text, 
-                name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory 
-            })
-        });
-        
-        if(res.ok) {
-            const data = await res.json();
-            
-            const speechText = data.speech || data.reply || "ごめんにゃ、よくわからなかったにゃ"; 
-            addLogItem('nell', speechText);
-            addToSessionHistory('nell', speechText);
-            
-            await window.updateNellMessage(speechText, "normal", true, true);
-            
-            // 黒板表示
-            let boardId = 'embedded-chalkboard';
-            if (currentMode === 'simple-chat') boardId = 'chalkboard-simple';
-            const embedBoard = document.getElementById(boardId);
-            
-            if (embedBoard) {
-                if (data.board && data.board.trim() !== "") {
-                    embedBoard.innerText = data.board;
-                    embedBoard.classList.remove('hidden');
-                }
+    isAlwaysListening = true;
+    continuousRecognition = new webkitSpeechRecognition();
+    continuousRecognition.lang = 'ja-JP';
+    continuousRecognition.interimResults = false;
+    continuousRecognition.maxAlternatives = 1;
+
+    continuousRecognition.onresult = async (event) => {
+        const text = event.results[0][0].transcript;
+        if (!text || text.trim() === "") return;
+
+        // ★割り込み判定
+        const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
+        const isStopCommand = stopKeywords.some(w => text.includes(w));
+        const isLongEnough = text.length >= 10;
+
+        if (window.isNellSpeaking) {
+            if (isLongEnough || isStopCommand) {
+                console.log("[Interruption] Stopping audio.");
+                if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+                // 停止命令自体は送信しない
+                if (isStopCommand) return; 
+            } else {
+                return;
             }
         }
-    } catch(e) {
-        console.error("Chat Error:", e);
-    } finally {
-        // 処理が終わったら聞き取り再開
-        // 対象モードの場合のみ
-        if (currentMode === 'chat' || currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review' || currentMode === 'simple-chat') {
-            startAlwaysOnListening();
-        }
-    }
-}
+        
+        console.log(`[User Said] ${text}`);
+        continuousRecognition.stop();
+        
+        // 音声認識結果を表示（各モード対応）
+        let targetId = 'user-speech-text-embedded';
+        if (currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
+        
+        const embeddedText = document.getElementById(targetId);
+        if (embeddedText) embeddedText.innerText = text;
 
-// 聞き取り開始ラッパー
-function startAlwaysOnListening() {
-    startListening(handleSpeechResult);
+        // ログに追加
+        addLogItem('user', text);
+        // 履歴に追加
+        addToSessionHistory('user', text);
+
+        try {
+            const res = await fetch('/chat-dialogue', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    text: text, 
+                    name: currentUser ? currentUser.name : "生徒",
+                    history: window.chatSessionHistory 
+                })
+            });
+            
+            if(res.ok) {
+                const data = await res.json();
+                
+                const speechText = data.speech || data.reply || "ごめんにゃ、よくわからなかったにゃ"; 
+                addLogItem('nell', speechText);
+                addToSessionHistory('nell', speechText);
+                
+                await window.updateNellMessage(speechText, "normal", true, true);
+                
+                // 黒板表示
+                let boardId = 'embedded-chalkboard';
+                if (currentMode === 'simple-chat') boardId = 'chalkboard-simple';
+                const embedBoard = document.getElementById(boardId);
+                
+                if (embedBoard) {
+                    if (data.board && data.board.trim() !== "") {
+                        embedBoard.innerText = data.board;
+                        embedBoard.classList.remove('hidden');
+                    }
+                }
+            }
+        } catch(e) {
+            console.error("Chat Error:", e);
+        } finally {
+            // 対象モードなら再開
+            if (isAlwaysListening && (currentMode === 'chat' || currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review' || currentMode === 'simple-chat')) {
+                try { continuousRecognition.start(); } catch(e){}
+            }
+        }
+    };
+
+    continuousRecognition.onend = () => {
+        if (isAlwaysListening && (currentMode === 'chat' || currentMode === 'explain' || currentMode === 'grade' || currentMode === 'review' || currentMode === 'simple-chat') && !window.isNellSpeaking) {
+            try { continuousRecognition.start(); } catch(e){}
+        }
+    };
+
+    continuousRecognition.onerror = (event) => {
+        if (event.error !== 'no-speech') {
+            console.error("Rec Error:", event);
+        }
+        if (isAlwaysListening) {
+            setTimeout(() => {
+                try { continuousRecognition.start(); } catch(e){}
+            }, 1000);
+        }
+    };
+
+    try { continuousRecognition.start(); } catch(e) { console.log("Rec start failed", e); }
 }
 
 // 【重要】これをグローバルに公開して ui.js から呼べるようにする
 window.stopAlwaysOnListening = function() {
-    stopListening();
+    isAlwaysListening = false;
+    if (continuousRecognition) {
+        try { continuousRecognition.stop(); } catch(e){}
+        continuousRecognition = null;
+    }
 };
 
 // ログ管理
@@ -309,9 +325,9 @@ function addLogItem(role, text) {
     container.scrollTop = container.scrollHeight;
 }
 
-// 履歴追加
+// ★修正: 履歴追加時の安全装置を追加
 window.addToSessionHistory = function(role, text) {
-    if (!window.chatSessionHistory) window.chatSessionHistory = []; 
+    if (!window.chatSessionHistory) window.chatSessionHistory = []; // 安全装置
     window.chatSessionHistory.push({ role: role, text: text });
     if (window.chatSessionHistory.length > 10) {
         window.chatSessionHistory.shift();
@@ -405,8 +421,9 @@ window.sendHttpText = async function(context) {
     const text = input.value.trim();
     if (!text) return;
 
-    // 一時的に聞き取り停止
-    stopListening();
+    if (isAlwaysListening && continuousRecognition) {
+        try { continuousRecognition.stop(); } catch(e){}
+    }
     
     addLogItem('user', text);
     addToSessionHistory('user', text);
@@ -443,8 +460,9 @@ window.sendHttpText = async function(context) {
         console.error("Text Chat Error:", e);
         window.updateNellMessage("ごめん、ちょっとわからなかったにゃ。", "thinking", false, true);
     } finally {
-        // 聞き取り再開
-        startAlwaysOnListening();
+        if (isAlwaysListening) {
+             try { continuousRecognition.start(); } catch(e){}
+        }
     }
 };
 
@@ -536,8 +554,9 @@ function createTreasureImage(sourceCanvas) {
 window.captureAndIdentifyItem = async function() {
     if (window.isLiveImageSending) return;
     
-    // 一時的に聞き取り停止
-    stopListening();
+    if (isAlwaysListening && continuousRecognition) {
+        try { continuousRecognition.stop(); } catch(e){}
+    }
 
     const video = document.getElementById('live-chat-video');
     if (!video || !video.srcObject || !video.srcObject.active) {
@@ -614,8 +633,8 @@ window.captureAndIdentifyItem = async function() {
             btn.disabled = false;
         }
         
-        if (currentMode === 'chat') {
-            startAlwaysOnListening();
+        if (isAlwaysListening && currentMode === 'chat') {
+            try { continuousRecognition.start(); } catch(e){}
         }
     }
 };
@@ -665,7 +684,17 @@ function startMouthAnimation() {
 }
 startMouthAnimation();
 
-// 宿題用カメラ機能
+window.addEventListener('DOMContentLoaded', () => {
+    // 宿題アップロード用のIDに合わせたリスナー設定
+    const camIn = document.getElementById('hw-input-camera'); 
+    const albIn = document.getElementById('hw-input-album'); 
+    if(camIn) camIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
+    if(albIn) albIn.addEventListener('change', (e) => { handleFileUpload(e.target.files[0]); e.target.value=''; });
+    const startCamBtn = document.getElementById('start-webcam-btn');
+    if (startCamBtn) startCamBtn.onclick = startHomeworkWebcam;
+});
+
+// 宿題用カメラ機能 (変更なし)
 async function startHomeworkWebcam() {
     const modal = document.getElementById('camera-modal');
     const video = document.getElementById('camera-video');
@@ -796,8 +825,7 @@ window.toggleTimer = function() {
                 studyTimerRunning = false;
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
-                // ui.jsで定義したsfxChimeを使う (グローバルなら可)
-                if (window.sfxChime) safePlay(window.sfxChime);
+                safePlay(sfxChime); // ui.jsの変数等はグローバル前提でないと見えないため注意。エラー対策済み。
                 window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
                 document.getElementById('mini-timer-display').classList.add('hidden');
                 openTimerModal();
@@ -919,7 +947,9 @@ async function captureAndSendLiveImageHttp(context = 'embedded') {
     if (window.isLiveImageSending) return;
     
     // 一時的に聞き取り停止
-    stopListening();
+    if (isAlwaysListening && continuousRecognition) {
+        try { continuousRecognition.stop(); } catch(e){}
+    }
     
     let videoId, btnId, activeColor;
     if (context === 'embedded') { videoId = 'live-chat-video-embedded'; btnId = 'live-camera-btn-embedded'; activeColor = '#66bb6a'; }
@@ -994,7 +1024,9 @@ async function captureAndSendLiveImageHttp(context = 'embedded') {
         }
         
         // 聞き取り再開
-        startAlwaysOnListening();
+        if (isAlwaysListening) {
+             try { continuousRecognition.start(); } catch(e){}
+        }
     }
 }
 
@@ -1133,7 +1165,6 @@ async function startLiveChat(context = 'main') {
     } catch (e) { window.stopLiveChat(); } 
 }
 
-// WebSocket用のマイク処理（speechRecognition.jsとは別仕様のため維持）
 async function startMicrophone() { 
     try { 
         if ('webkitSpeechRecognition' in window) { 
