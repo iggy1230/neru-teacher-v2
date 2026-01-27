@@ -1,4 +1,4 @@
-// --- server.js (完全版 v295.0: エラー回避・安定版) ---
+// --- server.js (完全版 v296.0: 図鑑解説強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -25,10 +25,8 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-// ★結論: やはりこの組み合わせが最強です。
-// エラーが出てもサーバー側でうまく処理するように改良しました。
-const MODEL_HOMEWORK = "gemini-2.5-pro"; // 宿題分析用（高精度）
-const MODEL_FAST = "gemini-2.0-flash-exp"; // その他汎用（高速・高知能）
+const MODEL_HOMEWORK = "gemini-2.5-pro"; // 宿題分析用
+const MODEL_FAST = "gemini-2.0-flash-exp"; // その他汎用
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -99,7 +97,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update (改良版) ---
+// --- Memory Update ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
@@ -154,13 +152,11 @@ app.post('/update-memory', async (req, res) => {
         res.json(newProfile);
 
     } catch (error) {
-        // ★改良: 429エラー(混雑)の場合は静かに無視して、現在のデータをそのまま返す
         if (error.message && (error.message.includes('429') || error.message.includes('Quota'))) {
-            console.warn("⚠️ Memory Update Skipped (Google API Busy): 混雑のため記憶更新をスキップしました。動作に影響はありません。");
+            console.warn("⚠️ Memory Update Skipped (Google API Busy)");
         } else {
             console.error("Memory Update Error:", error.message);
         }
-        // エラーでもクライアントを止めない
         res.status(200).json(req.body.currentProfile || {});
     }
 });
@@ -170,7 +166,6 @@ app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
         
-        // 指定通り gemini-2.5-pro を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_HOMEWORK, 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -239,7 +234,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★ お宝図鑑用 画像解析API ---
+// --- ★ お宝図鑑用 画像解析API (解説強化版) ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name } = req.body;
@@ -252,17 +247,16 @@ app.post('/identify-item', async (req, res) => {
         あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。
         送られてきた画像を解析し、以下のJSON形式で応答してください。
 
-        【重要：ネル先生のキャラクター設定】
-        - 語尾は必ず「にゃ」や「だにゃ」をつける。
-        - **猫の視点**で人間界の道具を解釈する独特な感性を持っている。
-        - 解説は**ユーモアと愛嬌**たっぷりに、子供が笑ってしまうような内容にする。
-        - **解説は長めに、120文字程度で詳しく書いてください。**
+        【重要：2つの解説を作成する】
+        1. **ネル先生の解説**: 猫視点でのユーモラスな解説。勘違いや独自の使い方、語尾は「にゃ」。
+        2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
 
         【出力フォーマット (JSON)】
         {
             "itemName": "画像の中の主要な物体の名前（短く）",
-            "description": "その物体についてのネル先生のユニークで面白い解説（120文字程度）。猫視点での勘違いや、独自の使い方の提案などを含める。",
-            "speechText": "『これは（itemName）だにゃ！（description）』という形式の読み上げ用セリフ。必ず『これは〇〇だにゃ！』から始める。"
+            "description": "ネル先生の面白い解説（100文字程度）。猫視点で、思わず笑ってしまう内容。",
+            "realDescription": "本当の解説（120文字程度）。その物体の正式な用途や、子供が「へぇ〜」と思うような豆知識。学習に役立つ内容。",
+            "speechText": "『これは（itemName）だにゃ！（description）』という形式の読み上げ用セリフ。"
         }
         `;
 
@@ -350,11 +344,8 @@ app.post('/chat-dialogue', async (req, res) => {
             responseText = result.response.text().trim();
 
         } catch (genError) {
-            // エラー時はツールなしでリトライ
             console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
-            const modelFallback = genAI.getGenerativeModel({ 
-                model: MODEL_FAST // 同じモデルで再試行
-            });
+            const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
             try {
                 if (image) {
                     result = await modelFallback.generateContent([
@@ -366,7 +357,7 @@ app.post('/chat-dialogue', async (req, res) => {
                 }
                 responseText = result.response.text().trim();
             } catch (retryError) {
-                throw retryError; // ここでエラーならcatchへ
+                throw retryError;
             }
         }
         
@@ -388,7 +379,6 @@ app.post('/chat-dialogue', async (req, res) => {
 
     } catch (error) {
         console.error("Chat API Fatal Error:", error);
-        // ★改良: エラー時も優しく返す
         res.status(200).json({ speech: "ごめんにゃ、今ちょっと混み合ってて頭が回らないにゃ…。少し待ってから話しかけてにゃ。", board: "（通信混雑中）" });
     }
 });
