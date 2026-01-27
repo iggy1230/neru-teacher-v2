@@ -1,27 +1,64 @@
-// --- ui.js (完全版 v296.0: 図鑑表示修正) ---
-
-// 音声ファイルのパス設定（assetsフォルダ対応）
-const sfxChime = new Audio('assets/sounds/system/jpn_sch_chime.mp3');
-const sfxBtn = new Audio('assets/sounds/ui/botan1.mp3'); 
+// --- ui.js (完全版 v297.0: 音量設定UI追加) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
 
-// 音声再生ヘルパー
-function safePlay(audioObj) {
-    if (!audioObj) return;
-    try {
-        audioObj.currentTime = 0;
-        const playPromise = audioObj.play();
-        if (playPromise !== undefined) {
-            playPromise.catch(error => {
-                console.warn("Audio play failed (ignored):", error);
-            });
-        }
-    } catch (e) {
-        console.warn("Audio error:", e);
+// ==========================================
+// 音量管理・設定UI
+// ==========================================
+
+window.openSettings = function() {
+    const modal = document.getElementById('settings-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        // 現在の値をUIに反映
+        const slider = document.getElementById('volume-slider');
+        const muteCheck = document.getElementById('mute-checkbox');
+        if (slider) slider.value = window.appVolume * 100;
+        if (muteCheck) muteCheck.checked = window.isMuted;
     }
-}
+};
+
+window.closeSettings = function() {
+    const modal = document.getElementById('settings-modal');
+    if (modal) modal.classList.add('hidden');
+};
+
+window.toggleMute = function(checkbox) {
+    window.isMuted = checkbox.checked;
+    window.applyVolumeToAll();
+};
+
+window.changeVolume = function(slider) {
+    window.appVolume = slider.value / 100;
+    if (window.appVolume > 0 && window.isMuted) {
+        // スライダーを動かして音量があればミュート解除するUX
+        window.isMuted = false;
+        const muteCheck = document.getElementById('mute-checkbox');
+        if (muteCheck) muteCheck.checked = false;
+    }
+    window.applyVolumeToAll();
+};
+
+window.applyVolumeToAll = function() {
+    const targetVol = window.isMuted ? 0 : window.appVolume;
+    
+    // 登録されている全Audioオブジェクトの音量を更新
+    if (window.audioList) {
+        window.audioList.forEach(audio => {
+            if (audio === window.sfxBunseki) {
+                audio.volume = targetVol * 0.1; // 分析音は10%の音量比率を維持
+            } else {
+                audio.volume = targetVol;
+            }
+        });
+    }
+    
+    // 現在再生中のTTSがあればそれも反映（GainNodeがあれば）
+    if (window.ttsGainNode && window.audioContext) {
+        window.ttsGainNode.gain.setValueAtTime(targetVol, window.audioContext.currentTime);
+    }
+};
 
 // ==========================================
 // 画面切り替え・基本ナビゲーション
@@ -36,15 +73,22 @@ window.switchScreen = function(to) {
     } else {
         console.error(`Screen not found: ${to}`);
     }
+    
+    // 設定ボタンの表示制御（タイトル画面とロビー以外では隠すなどの制御が必要ならここ）
+    // 今回は全画面で右上に表示しておく
 };
 
 window.startApp = async function() {
-    // AudioContextの再開
+    // AudioContextの再開（ユーザー操作が必要）
     if (window.initAudioContext) {
         await window.initAudioContext();
     }
-    // チャイム再生
-    safePlay(sfxChime);
+    
+    // チャイム再生 (window.sfxChime は constants.js で定義済み)
+    if (window.sfxChime) {
+        window.safePlay(window.sfxChime);
+    }
+    
     switchScreen('screen-gate');
 };
 
@@ -62,25 +106,10 @@ window.backToGate = function() {
 window.backToLobby = function(suppressGreeting = false) {
     switchScreen('screen-lobby');
     
-    // 1. TTS対話の常時聞き取り停止
-    if (typeof window.stopAlwaysOnListening === 'function') {
-        window.stopAlwaysOnListening();
-    }
-    
-    // 2. リアルタイムAPI(WebSocket)切断
-    if (typeof window.stopLiveChat === 'function') {
-        window.stopLiveChat();
-    }
-    
-    // 3. カメラ停止
-    if (typeof window.stopPreviewCamera === 'function') {
-        window.stopPreviewCamera();
-    }
-
-    // 4. 音声再生停止
-    if (typeof window.cancelNellSpeech === 'function') {
-        window.cancelNellSpeech();
-    }
+    if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
+    if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
+    if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
+    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
 
     if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
 
@@ -177,7 +206,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// ★ 図鑑 (Collection) - 改良版
+// 図鑑 (Collection)
 // ==========================================
 
 window.showCollection = async function() {
@@ -236,7 +265,6 @@ window.showCollectionDetail = function(item, index) {
 
     const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
     const description = item.description || "（ネル先生の解説はまだないみたいだにゃ…）";
-    // ★追加: 本当の解説
     const realDescription = item.realDescription || "（まだ情報がないみたいだにゃ…）";
 
     modal.innerHTML = `
@@ -429,10 +457,6 @@ function renderLogView(container) {
     });
 }
 
-// ==========================================
-// 初期化イベント
-// ==========================================
-
 document.addEventListener('click', () => { 
     if (window.initAudioContext) window.initAudioContext().catch(e => console.log("Audio Init:", e)); 
 }, { once: true });
@@ -440,7 +464,7 @@ document.addEventListener('click', () => {
 document.addEventListener('click', (e) => { 
     if (e.target.classList && e.target.classList.contains('main-btn') && !e.target.disabled) { 
         if (!e.target.classList.contains('title-start-btn') && !e.target.onclick?.toString().includes('null')) { 
-            safePlay(sfxBtn);
+            if(window.sfxBtn) window.safePlay(window.sfxBtn);
         } 
     } 
 });
