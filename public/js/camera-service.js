@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v294.2: 完了音削除版) ---
+// --- js/camera-service.js (v296.0: 解説保存修正版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -36,7 +36,6 @@ window.stopPreviewCamera = function() {
         window.previewStream.getTracks().forEach(t => t.stop());
         window.previewStream = null;
     }
-    // 全ての可能性のあるビデオ要素を停止
     ['live-chat-video', 'live-chat-video-embedded', 'live-chat-video-simple', 'live-chat-video-free'].forEach(vid => {
         const v = document.getElementById(vid);
         if(v) v.srcObject = null;
@@ -47,7 +46,6 @@ window.stopPreviewCamera = function() {
     });
 };
 
-// 汎用カメラトグル
 window.toggleHttpCamera = function(context) {
     let videoId, containerId, btnId;
     if (context === 'embedded') {
@@ -191,7 +189,9 @@ window.captureAndIdentifyItem = async function() {
 
         if (data.itemName && window.NellMemory) {
             const description = data.description || "（解説はないにゃ）";
-            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description);
+            // ★修正: realDescriptionも渡す
+            const realDescription = data.realDescription || "";
+            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description, realDescription);
             
             const notif = document.createElement('div');
             notif.innerText = `📖 図鑑に「${data.itemName}」を登録したにゃ！`;
@@ -203,7 +203,7 @@ window.captureAndIdentifyItem = async function() {
 
     } catch (e) {
         console.error("Identify Error:", e);
-        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
+        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回見せてにゃ？", "thinking", false, true);
     } finally {
         window.isLiveImageSending = false;
         
@@ -220,10 +220,7 @@ window.captureAndIdentifyItem = async function() {
     }
 };
 
-// ==========================================
-// 宿題カメラ・Cropper
-// ==========================================
-
+// ...以下、宿題カメラ関連コードは変更なし...
 window.startHomeworkWebcam = async function() {
     const modal = document.getElementById('camera-modal');
     const video = document.getElementById('camera-video');
@@ -389,10 +386,6 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
     return window.processImageForAI(tempCv).split(',')[1]; 
 };
 
-// ==========================================
-// 宿題分析 (AI API連携)
-// ==========================================
-
 window.startAnalysis = async function(b64) {
     if (window.isAnalyzing) return;
     window.isAnalyzing = true; 
@@ -401,7 +394,6 @@ window.startAnalysis = async function(b64) {
     document.getElementById('upload-controls').classList.add('hidden'); 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
     
-    // ★修正箇所: sfxHirameku(完了音)を鳴らさないように削除 (sfxBunsekiは鳴らす)
     try { 
         window.sfxBunseki.currentTime = 0; 
         window.sfxBunseki.loop = true;
@@ -427,7 +419,6 @@ window.startAnalysis = async function(b64) {
             { text: "にゃるほど…だいたい分かってきたにゃ…", mood: "thinking" },
             { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "thinking" }
         ];
-        
         for (const item of msgs) { 
             if (!window.isAnalyzing) return; 
             if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(item.text, item.mood, false); 
