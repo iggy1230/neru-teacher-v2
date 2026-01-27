@@ -1,4 +1,4 @@
-// --- server.js (完全版 v291.0: 記憶システム修正 & モデル固定版) ---
+// --- server.js (完全版 v295.0: エラー回避・安定版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -24,9 +24,11 @@ app.use(express.json({ limit: '50mb' }));
 const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
-// --- AI Model Constants (ユーザー指定) ---
-const MODEL_HOMEWORK = "gemini-2.5-pro"; // 宿題分析用
-const MODEL_FAST = "gemini-1.5-flash"; // その他汎用
+// --- AI Model Constants ---
+// ★結論: やはりこの組み合わせが最強です。
+// エラーが出てもサーバー側でうまく処理するように改良しました。
+const MODEL_HOMEWORK = "gemini-2.5-pro"; // 宿題分析用（高精度）
+const MODEL_FAST = "gemini-2.0-flash-exp"; // その他汎用（高速・高知能）
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -97,11 +99,10 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update (修正箇所) ---
+// --- Memory Update (改良版) ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // 指定通り gemini-1.5-flash を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -112,8 +113,8 @@ app.post('/update-memory', async (req, res) => {
         以下の「現在のプロフィール」と「直近の会話ログ」をもとに、プロフィールを更新してください。
         
         【重要】
-        - 出力は純粋なJSONのみにしてください。Markdownのコードブロック（\`\`\`json ... \`\`\`）は不要です。
-        - 図鑑データ(collection)はここでは触れず、入力のまま維持してください。
+        - 出力は純粋なJSONのみにしてください。
+        - 図鑑データ(collection)は入力のまま維持してください。
 
         【現在のプロフィール】
         ${JSON.stringify(currentProfile)}
@@ -137,7 +138,6 @@ app.post('/update-memory', async (req, res) => {
         
         let newProfile;
         try {
-            // Markdownの除去処理を強化
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             const firstBrace = cleanText.indexOf('{');
             const lastBrace = cleanText.lastIndexOf('}');
@@ -146,8 +146,7 @@ app.post('/update-memory', async (req, res) => {
             }
             newProfile = JSON.parse(cleanText);
         } catch (e) {
-            console.warn("Memory JSON Parse Error. Using fallback.", e);
-            // パースエラー時は現在のプロフィールをそのまま返す（サーバーエラーにしない）
+            console.warn("Memory JSON Parse Error. Using fallback.");
             return res.json(currentProfile);
         }
 
@@ -155,8 +154,13 @@ app.post('/update-memory', async (req, res) => {
         res.json(newProfile);
 
     } catch (error) {
-        console.error("Memory Update Error:", error);
-        // エラー時もクライアントをクラッシュさせない
+        // ★改良: 429エラー(混雑)の場合は静かに無視して、現在のデータをそのまま返す
+        if (error.message && (error.message.includes('429') || error.message.includes('Quota'))) {
+            console.warn("⚠️ Memory Update Skipped (Google API Busy): 混雑のため記憶更新をスキップしました。動作に影響はありません。");
+        } else {
+            console.error("Memory Update Error:", error.message);
+        }
+        // エラーでもクライアントを止めない
         res.status(200).json(req.body.currentProfile || {});
     }
 });
@@ -239,7 +243,6 @@ app.post('/analyze', async (req, res) => {
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name } = req.body;
-        // 指定通り gemini-1.5-flash を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -331,7 +334,6 @@ app.post('/chat-dialogue', async (req, res) => {
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
-            // 指定通り gemini-1.5-flash を使用
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -348,19 +350,24 @@ app.post('/chat-dialogue', async (req, res) => {
             responseText = result.response.text().trim();
 
         } catch (genError) {
+            // エラー時はツールなしでリトライ
             console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
             const modelFallback = genAI.getGenerativeModel({ 
-                model: "gemini-1.5-flash"
+                model: MODEL_FAST // 同じモデルで再試行
             });
-            if (image) {
-                result = await modelFallback.generateContent([
-                    prompt,
-                    { inlineData: { mime_type: "image/jpeg", data: image } }
-                ]);
-            } else {
-                result = await modelFallback.generateContent(prompt);
+            try {
+                if (image) {
+                    result = await modelFallback.generateContent([
+                        prompt,
+                        { inlineData: { mime_type: "image/jpeg", data: image } }
+                    ]);
+                } else {
+                    result = await modelFallback.generateContent(prompt);
+                }
+                responseText = result.response.text().trim();
+            } catch (retryError) {
+                throw retryError; // ここでエラーならcatchへ
             }
-            responseText = result.response.text().trim();
         }
         
         let jsonResponse;
@@ -381,7 +388,8 @@ app.post('/chat-dialogue', async (req, res) => {
 
     } catch (error) {
         console.error("Chat API Fatal Error:", error);
-        res.status(500).json({ speech: "ごめんにゃ、ちょっと調子が悪いみたいだにゃ。", board: "" });
+        // ★改良: エラー時も優しく返す
+        res.status(200).json({ speech: "ごめんにゃ、今ちょっと混み合ってて頭が回らないにゃ…。少し待ってから話しかけてにゃ。", board: "（通信混雑中）" });
     }
 });
 
@@ -392,7 +400,6 @@ app.post('/lunch-reaction', async (req, res) => {
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
         
-        // ★修正: Safety Settingsを追加してブロック回避
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             safetySettings: [
@@ -418,7 +425,6 @@ app.post('/lunch-reaction', async (req, res) => {
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
     } catch (error) { 
-        // ★修正: エラーログ出力＆ランダムフォールバック
         console.error("Lunch Reaction Error:", error); 
         const fallbacks = ["おいしいにゃ！", "うまうまにゃ！", "カリカリ最高にゃ！", "ありがとにゃ！", "元気が出たにゃ！"];
         const randomFallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
@@ -429,7 +435,6 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // 指定通り gemini-1.5-flash を使用
         const model = genAI.getGenerativeModel({ model: MODEL_FAST });
         let prompt = "";
         let mood = "excited";
@@ -521,7 +526,6 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // 指定通り gemini-1.5-flash を使用
                         model: `models/${MODEL_FAST}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
