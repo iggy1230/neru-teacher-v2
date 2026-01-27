@@ -1,20 +1,24 @@
-// --- audio.js (完全版 v291.0: AudioContext再開処理強化) ---
+// --- audio.js (完全版 v297.0: 音量制御対応) ---
 
 let audioCtx = null;
 let currentSource = null;
-let abortController = null; // 通信キャンセル用
+let abortController = null; 
+window.ttsGainNode = null; // 音量制御用
 
-// 口パク管理用グローバル変数
 window.isNellSpeaking = false;
 
-// 外部から初期化・再開するための関数
 window.initAudioContext = async function() {
     try {
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            window.ttsGainNode = audioCtx.createGain();
+            window.ttsGainNode.connect(audioCtx.destination);
+            
+            // 現在の音量を適用
+            const targetVol = window.isMuted ? 0 : (window.appVolume || 0.5);
+            window.ttsGainNode.gain.value = targetVol;
         }
         
-        // サスペンド状態なら再開を試みる（ユーザー操作直後に呼ぶ必要がある）
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
             console.log("AudioContext resumed");
@@ -24,7 +28,6 @@ window.initAudioContext = async function() {
     }
 };
 
-// 通常のTTSを強制停止する関数
 window.cancelNellSpeech = function() {
     if (currentSource) {
         try { currentSource.stop(); } catch(e) {}
@@ -40,20 +43,16 @@ window.cancelNellSpeech = function() {
 async function speakNell(text, mood = "normal") {
     if (!text || text === "") return;
 
-    // 1. 前の音声を停止
     window.cancelNellSpeech();
 
-    // 2. 新しい通信用コントローラー
     abortController = new AbortController();
     const signal = abortController.signal;
 
     window.isNellSpeaking = false;
 
-    // AudioContextの準備
     await window.initAudioContext();
 
     try {
-        // タイムアウト設定 (5秒)
         const timeoutId = setTimeout(() => abortController.abort(), 5000);
 
         const res = await fetch('/synthesize', {
@@ -80,7 +79,17 @@ async function speakNell(text, mood = "normal") {
 
         const source = audioCtx.createBufferSource();
         source.buffer = buffer;
-        source.connect(audioCtx.destination);
+        
+        // GainNodeを経由して接続 (音量制御のため)
+        if (window.ttsGainNode) {
+            source.connect(window.ttsGainNode);
+            // 再生直前にも念のため音量同期
+            const currentVol = window.isMuted ? 0 : (window.appVolume || 0.5);
+            window.ttsGainNode.gain.setValueAtTime(currentVol, audioCtx.currentTime);
+        } else {
+            source.connect(audioCtx.destination);
+        }
+        
         currentSource = source;
         
         window.isNellSpeaking = true;
