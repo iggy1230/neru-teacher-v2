@@ -1,9 +1,9 @@
-// --- js/analyze.js (v293.0: 修正・軽量化版) ---
+// --- js/analyze.js (v293.1: 構文エラー修正版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
 // ==========================================
-// 1. 最重要：UI操作・モード選択関数
+// 1. UI操作・モード選択関数
 // ==========================================
 // ★ selectMode
 window.selectMode = function(m) {
@@ -19,6 +19,7 @@ if (typeof window.switchScreen === 'function') {
         document.getElementById('screen-main').classList.remove('hidden');
     }
 
+    // 画面要素のリセット
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'chat-free-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
     ids.forEach(id => { 
         const el = document.getElementById(id); 
@@ -44,6 +45,7 @@ if (typeof window.switchScreen === 'function') {
     const backBtn = document.getElementById('main-back-btn');
     if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
     
+    // 既存の機能を停止
     if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
     if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
     if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); 
@@ -56,6 +58,7 @@ if (typeof window.switchScreen === 'function') {
     if(miniKarikari) miniKarikari.classList.remove('hidden');
     if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
     
+    // モードごとの初期化
     if (m === 'chat') { 
         document.getElementById('chat-view').classList.remove('hidden'); 
         window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
@@ -77,7 +80,7 @@ if (typeof window.switchScreen === 'function') {
         window.updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); 
     } 
     else if (m === 'review') { 
-        window.renderMistakeSelection(); 
+        if(typeof window.renderMistakeSelection === 'function') window.renderMistakeSelection(); 
         document.getElementById('embedded-chat-section').classList.remove('hidden'); 
         document.getElementById('conversation-log').classList.remove('hidden');
         if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
@@ -227,8 +230,7 @@ toggle = !toggle;
 };
 window.startMouthAnimation();
 window.addEventListener('DOMContentLoaded', () => {
-// DOMContentLoaded でのイベント設定はHTMLのonclick属性で十分な場合もあるが、
-// ファイルアップロードのchangeイベントはJSで設定する必要がある。
+// DOMContentLoaded でのイベント設定
 const camIn = document.getElementById('hw-input-camera');
 const albIn = document.getElementById('hw-input-album');
 if(camIn) camIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
@@ -357,7 +359,7 @@ fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'applicati
 .then(d => { setTimeout(() => { window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 1500); })
 .catch(e => { setTimeout(() => { window.updateNellMessage("おいしいにゃ！", "happy", false); }, 1500); });
 };
-// ※ ゲームロジックは js/game-engine.js に移動しました
+// ※ ゲームロジックは js/game-engine.js に移動済み
 window.renderMistakeSelection = function() {
 if (!currentUser.mistakes || currentUser.mistakes.length === 0) {
 window.updateNellMessage("ノートは空っぽにゃ！", "happy", false);

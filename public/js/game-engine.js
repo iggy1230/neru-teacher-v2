@@ -1,9 +1,14 @@
-// --- js/game-engine.js (v293.0: カリカリ・キャッチ ゲームエンジン) ---
+// --- js/game-engine.js (v293.1: 修正版) ---
 /**
 ゲーム画面を表示し、初期化を行う
 */
 window.showGame = function() {
+if (typeof window.switchScreen === 'function') {
 window.switchScreen('screen-game');
+} else {
+document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+document.getElementById('screen-game').classList.remove('hidden');
+}
 document.getElementById('mini-karikari-display').classList.remove('hidden');
 if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
 window.initGame();
@@ -58,9 +63,10 @@ const scoreEl = document.getElementById('game-score');
 if(scoreEl) scoreEl.innerText = window.score;
 // ブロック生成 (5列 x 4行)
 window.bricks = [];
-for(let c=0; c<5; c++) {
-for(let r=0; r<4; r++) {
-window.bricks.push({ x: 30 + c55, y: 30 + r30, w: 40, h: 20, status: 1 });
+for(let c = 0; c < 5; c++) {
+for(let r = 0; r < 4; r++) {
+// ★修正: 掛け算記号の前後にスペースを入れて誤認識を防止
+window.bricks.push({ x: 30 + (c * 55), y: 30 + (r * 30), w: 40, h: 20, status: 1 });
 }
 }
 // 操作イベント設定
