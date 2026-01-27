@@ -1,4 +1,4 @@
-// --- js/main.js (v293.0: 統合メイン制御) ---
+// --- js/main.js (v294.0: 修正版) ---
 // Analyze.js の機能を統合し、全体の初期化を担当
 // ==========================================
 // 1. UI操作・モード選択
@@ -92,53 +92,6 @@ if (typeof window.switchScreen === 'function') {
 } catch (e) {
     console.error("selectMode Error:", e);
     alert("エラーが発生したにゃ。再読み込みしてにゃ。");
-}
-};
-// ==========================================
-// ログ管理
-// ==========================================
-window.addLogItem = function(role, text) {
-const container = document.getElementById('log-content');
-if (!container) return;
-const div = document.createElement('div');
-div.className = log-item log-${role};
-const name = role === 'user' ? (currentUser ? currentUser.name : 'あなた') : 'ネル先生';
-div.innerHTML = <span class="log-role">${name}:</span><span>${text}</span>;
-container.appendChild(div);
-container.scrollTop = container.scrollHeight;
-};
-window.addToSessionHistory = function(role, text) {
-if (!window.chatSessionHistory) window.chatSessionHistory = [];
-window.chatSessionHistory.push({ role: role, text: text });
-if (window.chatSessionHistory.length > 10) {
-window.chatSessionHistory.shift();
-}
-};
-window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
-speak = false;
-}
-code
-Code
-const gameScreen = document.getElementById('screen-game');
-const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
-const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
-const el = document.getElementById(targetId);
-
-let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
-
-if (el) el.innerText = displayText;
-
-if (t && t.includes("もぐもぐ")) { if(window.safePlay) window.safePlay(window.sfxBori); }
-
-if (saveToMemory) { window.saveToNellMemory('nell', t); }
-
-if (speak && typeof speakNell === 'function') {
-    let textForSpeech = displayText.replace(/【.*?】/g, "").trim();
-    textForSpeech = textForSpeech.replace(/🐾/g, "");
-    if (textForSpeech.length > 0) {
-        await speakNell(textForSpeech, mood);
-    }
 }
 };
 // ==========================================

@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v293.0: 修正版 - 定義順序修正) ---
+// --- js/camera-service.js (v294.0: 修正版) ---
 // ==========================================
 // プレビューカメラ制御 (共通)
 // ==========================================
@@ -6,6 +6,8 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
 const video = document.getElementById(videoId);
 const container = document.getElementById(containerId);
 if (!video || !container) return;
+code
+Code
 try {
     if (window.previewStream) {
         window.previewStream.getTracks().forEach(t => t.stop());
@@ -32,7 +34,6 @@ if (window.previewStream) {
 window.previewStream.getTracks().forEach(t => t.stop());
 window.previewStream = null;
 }
-// 全ての可能性のあるビデオ要素を停止
 ['live-chat-video', 'live-chat-video-embedded', 'live-chat-video-simple', 'live-chat-video-free'].forEach(vid => {
 const v = document.getElementById(vid);
 if(v) v.srcObject = null;
@@ -42,7 +43,6 @@ const c = document.getElementById(cid);
 if(c) c.style.display = 'none';
 });
 };
-// 汎用カメラトグル
 window.toggleHttpCamera = function(context) {
 let videoId, containerId, btnId;
 if (context === 'embedded') {
@@ -50,6 +50,8 @@ videoId = 'live-chat-video-embedded'; containerId = 'live-chat-video-container-e
 } else if (context === 'simple') {
 videoId = 'live-chat-video-simple'; containerId = 'live-chat-video-container-simple'; btnId = 'live-camera-btn-simple';
 } else return;
+code
+Code
 const btn = document.getElementById(btnId);
 
 if (window.previewStream && window.previewStream.active) {
@@ -63,8 +65,8 @@ if (window.previewStream && window.previewStream.active) {
     });
 }
 };
-window.toggleEmbeddedCamera = function() { window.toggleHttpCamera('embedded'); }
-window.toggleSimpleCamera = function() { window.toggleHttpCamera('simple'); }
+window.toggleEmbeddedCamera = function() { window.toggleHttpCamera('embedded'); };
+window.toggleSimpleCamera = function() { window.toggleHttpCamera('simple'); };
 // ==========================================
 // お宝図鑑カメラ・解析
 // ==========================================
@@ -73,6 +75,8 @@ const videoId = 'live-chat-video';
 const containerId = 'live-chat-video-container';
 const btnId = 'live-camera-btn';
 const btn = document.getElementById(btnId);
+code
+Code
 if (window.previewStream && window.previewStream.active) {
     window.captureAndIdentifyItem();
 } else {
@@ -90,6 +94,8 @@ const canvas = document.createElement('canvas');
 canvas.width = OUTPUT_SIZE;
 canvas.height = OUTPUT_SIZE;
 const ctx = canvas.getContext('2d');
+code
+Code
 const size = Math.min(sourceCanvas.width, sourceCanvas.height);
 const sx = (sourceCanvas.width - size) / 2;
 const sy = (sourceCanvas.height - size) / 2;
@@ -120,6 +126,8 @@ return canvas.toDataURL('image/jpeg', 0.8);
 };
 window.captureAndIdentifyItem = async function() {
 if (window.isLiveImageSending) return;
+code
+Code
 if (window.isAlwaysListening && window.continuousRecognition) {
     try { window.continuousRecognition.stop(); } catch(e){}
 }
@@ -382,6 +390,8 @@ window.sfxBunseki.currentTime = 0;
 window.sfxBunseki.loop = true;
 if(window.safePlay) window.safePlay(window.sfxBunseki);
 } catch(e){}
+code
+Code
 let p = 0; 
 const timer = setInterval(() => { 
     if (!window.isAnalyzing) { clearInterval(timer); return; } 
@@ -449,12 +459,12 @@ window.analysisTimers.forEach(t => clearTimeout(t));
 window.analysisTimers = [];
 }
 };
-// ★修正: イベントリスナーを定義の後に配置
 // DOMContentLoadedでイベントを設定 (関数定義後なので安全)
 window.addEventListener('DOMContentLoaded', () => {
-// 宿題カメラの入力イベント設定
 const camIn = document.getElementById('hw-input-camera');
 const albIn = document.getElementById('hw-input-album');
+code
+Code
 if(camIn) {
     camIn.addEventListener('change', (e) => { 
         if(e.target.files && e.target.files.length > 0) {
