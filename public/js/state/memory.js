@@ -1,4 +1,4 @@
-// --- memory.js (完全版 v291.0: コレクション保護対応) ---
+// --- memory.js (完全版 v296.0: 本当の解説対応) ---
 
 (function(global) {
     const Memory = {};
@@ -66,7 +66,7 @@
         }
     };
 
-    // サーバー更新用（★重要修正箇所）
+    // サーバー更新用
     Memory.updateProfileFromChat = async function(userId, chatLog) {
         if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
@@ -82,8 +82,6 @@
                 let newProfileText = await res.json();
                 if (Array.isArray(newProfileText)) newProfileText = newProfileText[0];
                 
-                // サーバーはcollectionの中身（画像）を返さないので、
-                // 手元の currentProfile.collection を新しいプロフィールに移植して保存する
                 const updatedProfile = {
                     ...newProfileText,
                     collection: currentProfile.collection || []
@@ -112,8 +110,8 @@
         return context;
     };
 
-    // 図鑑にアイテムを追加
-    Memory.addToCollection = async function(userId, itemName, imageBase64, description = "") {
+    // ★修正: 図鑑にアイテムを追加 (realDescription引数を追加)
+    Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "") {
         console.log(`[Memory] addToCollection: ${itemName}`);
         try {
             const profile = await Memory.getUserProfile(userId);
@@ -126,7 +124,8 @@
                 name: itemName,
                 image: imageBase64,
                 date: new Date().toISOString(),
-                description: description 
+                description: description,
+                realDescription: realDescription // 本当の解説も保存
             };
 
             profile.collection.unshift(newItem); 
