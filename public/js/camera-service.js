@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v293.0: カメラ・画像解析機能) ---
+// --- js/camera-service.js (v294.1: 分析セリフ更新版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -415,12 +415,24 @@ window.startAnalysis = async function(b64) {
     }, 300);
     
     const performAnalysisNarration = async () => {
-        const msgs = [ { text: "じーっと見て、問題を書き写してるにゃ…", mood: "thinking" }, { text: "ふむふむ…この問題、なかなか手強いにゃ…", mood: "thinking" }, { text: "しっぽの先まで集中して考え中だにゃ…", mood: "thinking" }, { text: "ネル先生のピピピッ！と光るヒゲが、正解をバッチリ受信してるにゃ！", mood: "thinking" } ];
+        // ★修正: 新しいセリフリストを適用
+        const msgs = [
+            { text: "じーっと見て、問題を書き写してるにゃ…", mood: "thinking" },
+            { text: "肉球がちょっとじゃまだにゃ…", mood: "thinking" },
+            { text: "ふむふむ…この問題、なかなか手強いにゃ…", mood: "thinking" },
+            { text: "今、ネル先生の天才的な頭脳で解いてるからにゃね…", mood: "thinking" },
+            { text: "この問題、どこかで見たことあるにゃ…えーっと…", mood: "thinking" },
+            { text: "しっぽの先まで集中して考え中だにゃ…", mood: "thinking" },
+            { text: "この問題は手強いにゃ…。でも大丈夫、ネル先生のピピピッ！と光るヒゲが、正解をバッチリ受信してるにゃ！", mood: "thinking" },
+            { text: "にゃるほど…だいたい分かってきたにゃ…", mood: "thinking" },
+            { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "thinking" }
+        ];
+        
         for (const item of msgs) { 
             if (!window.isAnalyzing) return; 
             if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(item.text, item.mood, false); 
             if (!window.isAnalyzing) return; 
-            await new Promise(r => setTimeout(r, 1500)); 
+            await new Promise(r => setTimeout(r, 2000)); // 読みやすいように時間を少し延長(2000ms)
         }
     };
     performAnalysisNarration();
@@ -452,7 +464,7 @@ window.startAnalysis = async function(b64) {
             const doneMsg = "読めたにゃ！"; 
             if (window.currentMode === 'grade') { 
                 if(typeof window.showGradingView === 'function') window.showGradingView(true); 
-                if(typeof window.updateNellMessage === 'function') window.updateNellMessage(doneMsg, "happy", false).then(() => setTimeout(window.updateGradingMessage, 1500)); 
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage(doneMsg, "happy", false).then(() => { if(typeof window.updateGradingMessage === 'function') setTimeout(window.updateGradingMessage, 1500); }); 
             } else { 
                 if(typeof window.renderProblemSelection === 'function') window.renderProblemSelection(); 
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(doneMsg, "happy", false); 
