@@ -1,6 +1,7 @@
 // --- js/analyze.js (v293.0: 修正・軽量化版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
+// ゲーム機能 -> game-engine.js
 
 // ==========================================
 // 1. 最重要：UI操作・モード選択関数
@@ -149,69 +150,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
 };
 
 // ==========================================
-// 汎用テキスト送信
-// ==========================================
-
-window.sendHttpText = async function(context) {
-    let inputId;
-    if (context === 'embedded') { inputId = 'embedded-text-input'; }
-    else if (context === 'simple') { inputId = 'simple-text-input'; }
-    else return;
-
-    const input = document.getElementById(inputId);
-    if (!input) return;
-    const text = input.value.trim();
-    if (!text) return;
-
-    if (window.isAlwaysListening && window.continuousRecognition) {
-        try { window.continuousRecognition.stop(); } catch(e){}
-    }
-    
-    window.addLogItem('user', text);
-    window.addToSessionHistory('user', text);
-
-    try {
-        window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
-        
-        const res = await fetch('/chat-dialogue', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                text: text, 
-                name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory
-            })
-        });
-
-        if(res.ok) {
-            const data = await res.json();
-            const speechText = data.speech || data.reply || "教えてあげるにゃ！";
-            window.addLogItem('nell', speechText);
-            window.addToSessionHistory('nell', speechText);
-            await window.updateNellMessage(speechText, "happy", true, true);
-            
-            let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
-            const embedBoard = document.getElementById(boardId);
-            if (embedBoard && data.board && data.board.trim() !== "") {
-                embedBoard.innerText = data.board;
-                embedBoard.classList.remove('hidden');
-            }
-            input.value = ""; 
-        }
-    } catch(e) {
-        console.error("Text Chat Error:", e);
-        window.updateNellMessage("ごめん、ちょっとわからなかったにゃ。", "thinking", false, true);
-    } finally {
-        if (window.isAlwaysListening) {
-             try { window.continuousRecognition.start(); } catch(e){}
-        }
-    }
-};
-
-window.sendEmbeddedText = function() { window.sendHttpText('embedded'); }
-window.sendSimpleText = function() { window.sendHttpText('simple'); }
-
-// ==========================================
 // 3. その他共通機能
 // ==========================================
 
@@ -233,17 +171,6 @@ window.startMouthAnimation = function() {
     }, 150);
 };
 window.startMouthAnimation();
-
-window.addEventListener('DOMContentLoaded', () => {
-    // DOMContentLoaded でのイベント設定はHTMLのonclick属性で十分な場合もあるが、
-    // ファイルアップロードのchangeイベントはJSで設定する必要がある。
-    const camIn = document.getElementById('hw-input-camera'); 
-    const albIn = document.getElementById('hw-input-album'); 
-    if(camIn) camIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
-    if(albIn) albIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
-    const startCamBtn = document.getElementById('start-webcam-btn');
-    if (startCamBtn && window.startHomeworkWebcam) startCamBtn.onclick = window.startHomeworkWebcam;
-});
 
 window.saveToNellMemory = function(role, text) {
     if (!currentUser || !currentUser.id) return;
@@ -543,114 +470,3 @@ window.backToProblemSelection = function() {
 window.pressThanks = function() { window.backToProblemSelection(); };
 window.finishGrading = async function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "採点完了！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); window.updateMiniKarikari(); window.showKarikariEffect(100); } await window.updateNellMessage("よくがんばったにゃ！カリカリ100個あげる！", "excited", false); setTimeout(() => { if(typeof window.backToLobby === 'function') window.backToLobby(true); }, 3000); };
 window.pressAllSolved = function(btnElement) { if(btnElement) { btnElement.disabled = true; btnElement.innerText = "すごい！"; } if (currentUser) { currentUser.karikari += 100; saveAndSync(); window.showKarikariEffect(100); window.updateMiniKarikari(); window.updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited", false).then(() => { setTimeout(() => { if(typeof window.backToLobby === 'function') window.backToLobby(true); }, 3000); }); } };
-
-window.initGame = function() {
-    window.gameCanvas = document.getElementById('game-canvas');
-    if(!window.gameCanvas) return;
-    window.ctx = window.gameCanvas.getContext('2d');
-    
-    window.paddle = { x: window.gameCanvas.width / 2 - 40, y: window.gameCanvas.height - 30, w: 80, h: 10 };
-    window.ball = { x: window.gameCanvas.width / 2, y: window.gameCanvas.height - 40, r: 8, dx: 4, dy: -4 };
-    window.score = 0;
-    document.getElementById('game-score').innerText = window.score;
-    
-    window.bricks = [];
-    for(let c=0; c<5; c++) {
-        for(let r=0; r<4; r++) {
-            window.bricks.push({ x: 30 + c*55, y: 30 + r*30, w: 40, h: 20, status: 1 });
-        }
-    }
-    
-    const movePaddle = (e) => {
-        const rect = window.gameCanvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        let relativeX = clientX - rect.left;
-        if(relativeX > 0 && relativeX < window.gameCanvas.width) {
-            window.paddle.x = relativeX - window.paddle.w/2;
-        }
-    };
-    window.gameCanvas.onmousemove = movePaddle;
-    window.gameCanvas.ontouchmove = (e) => { e.preventDefault(); movePaddle(e); };
-};
-
-window.drawGame = function() {
-    if(!window.gameRunning) return;
-    window.ctx.clearRect(0, 0, window.gameCanvas.width, window.gameCanvas.height);
-    
-    window.ctx.beginPath();
-    window.ctx.arc(window.ball.x, window.ball.y, window.ball.r, 0, Math.PI*2);
-    window.ctx.fillStyle = "#ff5722";
-    window.ctx.fill();
-    window.ctx.closePath();
-    
-    window.ctx.beginPath();
-    window.ctx.rect(window.paddle.x, window.paddle.y, window.paddle.w, window.paddle.h);
-    window.ctx.fillStyle = "#8d6e63";
-    window.ctx.fill();
-    window.ctx.closePath();
-    
-    window.bricks.forEach(b => {
-        if(b.status === 1) {
-            window.ctx.beginPath();
-            window.ctx.rect(b.x, b.y, b.w, b.h);
-            window.ctx.fillStyle = "#ffb74d"; 
-            window.ctx.fill();
-            window.ctx.closePath();
-        }
-    });
-    
-    window.ball.x += window.ball.dx;
-    window.ball.y += window.ball.dy;
-    
-    if(window.ball.x + window.ball.dx > window.gameCanvas.width - window.ball.r || window.ball.x + window.ball.dx < window.ball.r) window.ball.dx = -window.ball.dx;
-    if(window.ball.y + window.ball.dy < window.ball.r) window.ball.dy = -window.ball.dy;
-    
-    if(window.ball.y + window.ball.dy > window.gameCanvas.height - window.ball.r - 30) {
-        if(window.ball.x > window.paddle.x && window.ball.x < window.paddle.x + window.paddle.w) {
-            window.ball.dy = -window.ball.dy;
-            if(window.safePlay) window.safePlay(window.sfxPaddle);
-        } else if(window.ball.y + window.ball.dy > window.gameCanvas.height - window.ball.r) {
-            window.gameRunning = false;
-            if(window.safePlay) window.safePlay(window.sfxOver);
-            window.updateNellMessage("あ〜あ、落ちちゃったにゃ…", "sad");
-            window.fetchGameComment("end", window.score);
-            const startBtn = document.getElementById('start-game-btn');
-            if(startBtn) { startBtn.disabled = false; startBtn.innerText = "もう一回！"; }
-            return;
-        }
-    }
-    
-    let allCleared = true;
-    window.bricks.forEach(b => {
-        if(b.status === 1) {
-            allCleared = false;
-            if(window.ball.x > b.x && window.ball.x < b.x + b.w && window.ball.y > b.y && window.ball.y < b.y + b.h) {
-                window.ball.dy = -window.ball.dy;
-                b.status = 0;
-                window.score += 10;
-                document.getElementById('game-score').innerText = window.score;
-                if(window.safePlay) window.safePlay(window.sfxHit);
-                
-                if (window.score % 50 === 0) {
-                    const comment = window.gameHitComments[Math.floor(Math.random() * window.gameHitComments.length)];
-                    window.updateNellMessage(comment, "excited", false, false);
-                }
-            }
-        }
-    });
-    
-    if (allCleared) {
-        window.gameRunning = false;
-        window.updateNellMessage("全部取ったにゃ！すごいにゃ！！", "excited");
-        currentUser.karikari += 50; 
-        saveAndSync();
-        window.updateMiniKarikari();
-        window.showKarikariEffect(50);
-        window.fetchGameComment("end", window.score);
-        const startBtn = document.getElementById('start-game-btn');
-        if(startBtn) { startBtn.disabled = false; startBtn.innerText = "もう一回！"; }
-        return;
-    }
-    
-    window.gameAnimId = requestAnimationFrame(window.drawGame);
-};
