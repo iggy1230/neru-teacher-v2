@@ -1,4 +1,4 @@
-// --- server.js (完全版 v298.0: 図鑑検索・位置情報対応) ---
+// --- server.js (完全版 v296.0: 図鑑解説強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -20,6 +20,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// 静的ファイルの配信設定
 const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
@@ -233,48 +234,30 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★ お宝図鑑用 画像解析API (Google検索・位置情報連携版) ---
+// --- ★ お宝図鑑用 画像解析API (解説強化版) ---
 app.post('/identify-item', async (req, res) => {
     try {
-        const { image, name, location } = req.body; // location: { lat, lon }
-        
-        // ★ Google検索ツールを有効化
-        const tools = [{ google_search: {} }];
+        const { image, name } = req.body;
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
-            tools: tools,
-            // 検索を使うためJSONモードは一旦解除し、プロンプトでJSON出力を強制する
+            generationConfig: { responseMimeType: "application/json" }
         });
-
-        let locationInfo = "";
-        if (location && location.lat && location.lon) {
-            locationInfo = `【重要：位置情報】\n撮影場所の座標は 緯度:${location.lat}, 経度:${location.lon} です。Google検索を使用して、この座標が「観光地」「公園」「公共施設」「店舗」などの特定のランドマークであるか確認してください。`;
-        }
 
         const prompt = `
         あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。
-        送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
-        
-        ${locationInfo}
+        送られてきた画像を解析し、以下のJSON形式で応答してください。
 
-        【特定と命名のルール】
-        1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称（施設名や史跡名）」を \`itemName\` に設定してください。（例：「公園」ではなく「〇〇公園」、「お城」ではなく「〇〇城」）
-        2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。（例：「携帯ゲーム機」ではなく「Nintendo Switch」、「車」ではなく「プリウス」、「花」ではなく「アサガオ」）。
-        3. **一般的な商品**: 位置情報があっても、それがコンビニや家の中にある一般的な商品（お菓子、おもちゃ、文房具など）の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
-
-        【解説のルール】
+        【重要：2つの解説を作成する】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。勘違いや独自の使い方、語尾は「にゃ」。
-        2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。位置情報から特定した場合は、その場所の説明を含めてください。
+        2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
 
-        【出力フォーマット (JSON文字列のみ出力)】
-        \`\`\`json
+        【出力フォーマット (JSON)】
         {
-            "itemName": "正式名称",
-            "description": "ネル先生の面白い解説（100文字程度）",
-            "realDescription": "本当の解説（120文字程度）。正確な名称や場所の知識。",
+            "itemName": "画像の中の主要な物体の名前（短く）",
+            "description": "ネル先生の面白い解説（100文字程度）。猫視点で、思わず笑ってしまう内容。",
+            "realDescription": "本当の解説（120文字程度）。その物体の正式な用途や、子供が「へぇ〜」と思うような豆知識。学習に役立つ内容。",
             "speechText": "『これは（itemName）だにゃ！（description）』という形式の読み上げ用セリフ。"
         }
-        \`\`\`
         `;
 
         const result = await model.generateContent([
@@ -283,28 +266,8 @@ app.post('/identify-item', async (req, res) => {
         ]);
 
         const responseText = result.response.text();
-        
-        // JSON抽出処理
-        let json;
-        try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                json = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
-            } else {
-                throw new Error("JSON parse failed");
-            }
-        } catch (e) {
-            console.warn("JSON Parse Fallback:", responseText);
-            // フォールバック（最低限の応答）
-            json = {
-                itemName: "なぞの物体",
-                description: "ちょっとよくわからなかったにゃ。もう一回見せてにゃ？",
-                realDescription: "AIが解析できませんでした。",
-                speechText: "よくわからなかったにゃ。"
-            };
-        }
+        const cleanText = responseText.replace(/```json|```/g, '').trim();
+        const json = JSON.parse(cleanText);
         
         res.json(json);
 
