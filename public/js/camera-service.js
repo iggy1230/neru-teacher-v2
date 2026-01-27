@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v298.0: GPS対応版) ---
+// --- js/camera-service.js (v296.0: 解説保存修正版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -129,18 +129,6 @@ window.createTreasureImage = function(sourceCanvas) {
     return canvas.toDataURL('image/jpeg', 0.8);
 };
 
-// GPS取得ヘルパー
-const getLocation = () => {
-    return new Promise((resolve) => {
-        if (!navigator.geolocation) return resolve(null);
-        navigator.geolocation.getCurrentPosition(
-            (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-            (err) => { console.warn("GPS Error:", err); resolve(null); },
-            { timeout: 5000, enableHighAccuracy: true } 
-        );
-    });
-};
-
 window.captureAndIdentifyItem = async function() {
     if (window.isLiveImageSending) return;
     
@@ -159,14 +147,6 @@ window.captureAndIdentifyItem = async function() {
         btn.innerHTML = "<span>📡</span> 解析中にゃ...";
         btn.style.backgroundColor = "#ccc";
         btn.disabled = true;
-    }
-
-    // GPS取得（非同期）
-    let locationData = null;
-    try {
-        locationData = await getLocation();
-    } catch(e) {
-        console.warn("Location fetch skipped");
     }
 
     const canvas = document.createElement('canvas');
@@ -191,8 +171,7 @@ window.captureAndIdentifyItem = async function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 image: base64Data,
-                name: currentUser ? currentUser.name : "生徒",
-                location: locationData // 位置情報も送信
+                name: currentUser ? currentUser.name : "生徒"
             })
         });
 
@@ -210,6 +189,7 @@ window.captureAndIdentifyItem = async function() {
 
         if (data.itemName && window.NellMemory) {
             const description = data.description || "（解説はないにゃ）";
+            // ★修正: realDescriptionも渡す
             const realDescription = data.realDescription || "";
             await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description, realDescription);
             
@@ -406,10 +386,6 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
     return window.processImageForAI(tempCv).split(',')[1]; 
 };
 
-// ==========================================
-// 宿題分析 (AI API連携)
-// ==========================================
-
 window.startAnalysis = async function(b64) {
     if (window.isAnalyzing) return;
     window.isAnalyzing = true; 
@@ -443,7 +419,6 @@ window.startAnalysis = async function(b64) {
             { text: "にゃるほど…だいたい分かってきたにゃ…", mood: "thinking" },
             { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "thinking" }
         ];
-        
         for (const item of msgs) { 
             if (!window.isAnalyzing) return; 
             if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(item.text, item.mood, false); 
