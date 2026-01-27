@@ -1307,4 +1307,107 @@ window.pressAllSolved = function(btnElement) {
         }); 
     } 
 };
+// --- js/main.js に追記 ---
+
+// 11. 宿題分析ロジック (重要)
+window.startAnalysis = async function(imageBlob) {
+    if (window.isAnalyzing) return;
+    window.isAnalyzing = true;
+
+    // 読み込み中表示
+    window.updateNellMessage("問題を読んでるにゃ…ちょっと待ってにゃ！", "thinking", false);
+    
+    // UIを隠す
+    const hwSection = document.getElementById('homework-section');
+    if(hwSection) hwSection.classList.add('hidden');
+    document.getElementById('mode-selection').classList.add('hidden');
+
+    const formData = new FormData();
+    formData.append('image', imageBlob);
+
+    try {
+        const response = await fetch('/analyze-homework', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) throw new Error("Server Error");
+
+        const data = await response.json();
+        console.log("Analysis Result:", data);
+
+        // 結果を保存
+        window.transcribedProblems = data.problems || [];
+        
+        // 問題選択画面へ
+        if (window.renderProblemSelection) {
+            window.renderProblemSelection();
+        } else {
+            // 万が一関数がない場合のフォールバック
+            console.error("renderProblemSelection missing");
+            alert("分析できたけど、表示機能が見当たらないにゃ…。");
+        }
+
+    } catch (e) {
+        console.error("Analysis Error:", e);
+        window.updateNellMessage("ごめん、読み取れなかったにゃ。もう一回綺麗に撮ってほしいにゃ！", "sad");
+        // 失敗したら元の画面に戻す
+        if(hwSection) hwSection.classList.remove('hidden');
+    } finally {
+        window.isAnalyzing = false;
+    }
+};
+
+// 問題選択画面の描画
+window.renderProblemSelection = function() {
+    const container = document.getElementById('problem-list-container');
+    const view = document.getElementById('problem-selection-view');
+    if (!container || !view) return;
+
+    container.innerHTML = ""; // クリア
+    view.classList.remove('hidden');
+    
+    // 戻るボタンの設定
+    const backBtn = document.getElementById('main-back-btn');
+    if(backBtn) {
+        backBtn.classList.remove('hidden');
+        backBtn.onclick = window.backToLobby;
+    }
+
+    window.updateNellMessage("どの問題を教えてほしいにゃ？", "normal");
+
+    if (window.transcribedProblems.length === 0) {
+        container.innerHTML = "<p>問題が見つからなかったにゃ…。</p>";
+        return;
+    }
+
+    window.transcribedProblems.forEach((prob, index) => {
+        const item = document.createElement('div');
+        item.className = "problem-item";
+        item.innerHTML = `
+            <div class="problem-number">問${index + 1}</div>
+            <div class="problem-text">${prob.question.substring(0, 40)}${prob.question.length > 40 ? '...' : ''}</div>
+        `;
+        item.onclick = () => {
+            // 解説モードへ
+            window.startHint(prob.id);
+        };
+        container.appendChild(item);
+    });
+};
+
+// ロビー（モード選択）に戻る
+window.backToLobby = function(refresh = false) {
+    // 画面リセット
+    document.querySelectorAll('.app-section, #problem-selection-view, #final-view, #hint-detail-container, #chalkboard').forEach(el => el.classList.add('hidden'));
+    
+    document.getElementById('mode-selection').classList.remove('hidden');
+    const backBtn = document.getElementById('main-back-btn');
+    if(backBtn) backBtn.classList.add('hidden');
+    
+    window.updateNellMessage("次はなにするにゃ？", "normal");
+    
+    // カメラ停止
+    if(window.stopPreviewCamera) window.stopPreviewCamera();
+};
 console.log("✅ main.js loaded.");

@@ -432,5 +432,63 @@ window.handleFileUpload = async function(file) {
     }; 
     reader.readAsDataURL(file); 
 };
+// --- js/camera-service.js に追記 ---
 
+// 切り抜き実行＆分析開始
+window.performPerspectiveCrop = function() {
+    if (!window.cropper) {
+        console.error("Cropper not initialized");
+        return;
+    }
+
+    // クロップデータを取得
+    const canvas = window.cropper.getCroppedCanvas();
+    if (!canvas) return;
+
+    // Blobに変換して送信
+    canvas.toBlob(function(blob) {
+        // モーダルを閉じる
+        const modal = document.getElementById('cropper-modal');
+        if(modal) modal.classList.add('hidden');
+        
+        // クリーンアップ
+        if (window.cropImg) {
+            window.cropImg.src = '';
+            window.cropImg = null;
+        }
+        if (window.cropper) {
+            window.cropper.destroy();
+            window.cropper = null;
+        }
+        
+        // main.js の分析関数を呼び出す
+        if (window.startAnalysis) {
+            window.startAnalysis(blob);
+        } else {
+            console.error("startAnalysis is missing!");
+            alert("エラー：分析機能が見つかりません(main.jsを確認してにゃ)");
+        }
+    }, 'image/jpeg', 0.9);
+};
+
+// Cropperの初期化 (もし足りていなければ)
+window.initCustomCropper = function(imageElement, points) {
+    if(window.cropper) window.cropper.destroy();
+    
+    window.cropper = new Cropper(imageElement, {
+        viewMode: 1,
+        dragMode: 'move',
+        autoCropArea: 0.9,
+        restore: false,
+        guides: true,
+        center: true,
+        highlight: false,
+        cropBoxMovable: true,
+        cropBoxResizable: true,
+        toggleDragModeOnDblclick: false,
+        ready: function() {
+            // 必要なら初期範囲を設定
+        }
+    });
+};
 console.log("✅ camera-service.js loaded.");
