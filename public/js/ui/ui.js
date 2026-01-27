@@ -1,4 +1,4 @@
-// --- ui.js (完全版 v293.0: ロビー帰還時リセット強化版) ---
+// --- ui.js (完全版 v296.0: 図鑑表示修正) ---
 
 // 音声ファイルのパス設定（assetsフォルダ対応）
 const sfxChime = new Audio('assets/sounds/system/jpn_sch_chime.mp3');
@@ -59,7 +59,6 @@ window.backToGate = function() {
     switchScreen('screen-gate');
 };
 
-// 【重要修正】ロビーに戻る際に対話機能を全て停止
 window.backToLobby = function(suppressGreeting = false) {
     switchScreen('screen-lobby');
     
@@ -78,22 +77,19 @@ window.backToLobby = function(suppressGreeting = false) {
         window.stopPreviewCamera();
     }
 
-    // 4. 音声再生停止（ネル先生を黙らせる）
+    // 4. 音声再生停止
     if (typeof window.cancelNellSpeech === 'function') {
         window.cancelNellSpeech();
     }
 
-    // フラグリセット
     if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
 
-    // 挨拶処理
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
     if (shouldGreet && typeof currentUser !== 'undefined' && currentUser) {
         if (typeof updateNellMessage === 'function') {
             updateNellMessage(`おかえり、${currentUser.name}さん！`, "happy");
         }
     }
-    // アイコンリセット
     const icon = document.querySelector('.nell-avatar-wrap img'); 
     if(icon) icon.src = "assets/images/characters/nell-normal.png"; 
 };
@@ -181,7 +177,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// ★ 図鑑 (Collection)
+// ★ 図鑑 (Collection) - 改良版
 // ==========================================
 
 window.showCollection = async function() {
@@ -240,6 +236,8 @@ window.showCollectionDetail = function(item, index) {
 
     const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
     const description = item.description || "（ネル先生の解説はまだないみたいだにゃ…）";
+    // ★追加: 本当の解説
+    const realDescription = item.realDescription || "（まだ情報がないみたいだにゃ…）";
 
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
@@ -258,10 +256,17 @@ window.showCollectionDetail = function(item, index) {
                     ${item.name}
                 </div>
                 
-                <div style="background:#fff3e0; padding:15px; border-radius:10px; position:relative; border:2px solid #ffe0b2;">
+                <div style="background:#fff3e0; padding:15px; border-radius:10px; position:relative; border:2px solid #ffe0b2; margin-bottom: 20px;">
                     <div style="position:absolute; top:-12px; left:15px; background:#ff9800; color:white; font-size:0.8rem; padding:2px 10px; border-radius:15px; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.1);">ネル先生の解説</div>
                     <p style="margin:10px 0 0 0; font-size:1rem; line-height:1.6; color:#5d4037;">
                         ${description}
+                    </p>
+                </div>
+
+                <div style="background:#e3f2fd; padding:15px; border-radius:10px; position:relative; border:2px solid #90caf9;">
+                    <div style="position:absolute; top:-12px; left:15px; background:#1e88e5; color:white; font-size:0.8rem; padding:2px 10px; border-radius:15px; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.1);">🎓 ほんとうのこと</div>
+                    <p style="margin:10px 0 0 0; font-size:0.95rem; line-height:1.6; color:#0d47a1;">
+                        ${realDescription}
                     </p>
                 </div>
                 
