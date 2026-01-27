@@ -1,4 +1,4 @@
-// --- js/analyze.js (v294.0: 構文エラー修正完全版) ---
+// --- js/analyze.js (v294.2: 採点ロジック修正完全版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -523,7 +523,23 @@ window.checkOneProblem = function(id) {
     if (markElem && container) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; window.updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false); } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; window.updateNellMessage("おしい！もう一回考えてみて！", "gentle", false); } } 
 };
 window.updateMarkDisplay = function(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } };
-window.updateGradingMessage = function() { let correctCount = 1; window.transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); const scoreRate = correctCount / (window.transcribedProblems.length || 1); if (scoreRate === 1.0) window.updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited", false); else if (scoreRate >= 0.5) window.updateNellMessage(`あと${window.transcribedProblems.length - correctCount}問！直してみるにゃ！`, "happy", false); else window.updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle", false); };
+
+// ★修正箇所: 正解数カウントの初期値を0にし、満点判定を修正
+window.updateGradingMessage = function() { 
+    let correctCount = 0; 
+    window.transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); 
+    
+    const total = window.transcribedProblems.length || 1;
+    
+    if (correctCount === window.transcribedProblems.length) {
+        window.updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited", false); 
+    } else if (correctCount >= total * 0.5) {
+        window.updateNellMessage(`あと${total - correctCount}問！直してみるにゃ！`, "happy", false); 
+    } else {
+        window.updateNellMessage(`間違ってても大丈夫！入力し直してみて！`, "gentle", false); 
+    }
+};
+
 window.backToProblemSelection = function() { 
     document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); 
     if (window.currentMode === 'grade') window.showGradingView(); else { window.renderProblemSelection(); window.updateNellMessage("他も見るにゃ？", "normal", false); } 

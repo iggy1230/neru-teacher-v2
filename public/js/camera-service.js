@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v294.1: 分析セリフ更新版) ---
+// --- js/camera-service.js (v294.2: 完了音削除版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -400,8 +400,9 @@ window.startAnalysis = async function(b64) {
     document.getElementById('thinking-view').classList.remove('hidden'); 
     document.getElementById('upload-controls').classList.add('hidden'); 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
+    
+    // ★修正箇所: sfxHirameku(完了音)を鳴らさないように削除 (sfxBunsekiは鳴らす)
     try { 
-        if(window.safePlay) window.safePlay(window.sfxHirameku); 
         window.sfxBunseki.currentTime = 0; 
         window.sfxBunseki.loop = true;
         if(window.safePlay) window.safePlay(window.sfxBunseki);
@@ -415,7 +416,6 @@ window.startAnalysis = async function(b64) {
     }, 300);
     
     const performAnalysisNarration = async () => {
-        // ★修正: 新しいセリフリストを適用
         const msgs = [
             { text: "じーっと見て、問題を書き写してるにゃ…", mood: "thinking" },
             { text: "肉球がちょっとじゃまだにゃ…", mood: "thinking" },
@@ -432,7 +432,7 @@ window.startAnalysis = async function(b64) {
             if (!window.isAnalyzing) return; 
             if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(item.text, item.mood, false); 
             if (!window.isAnalyzing) return; 
-            await new Promise(r => setTimeout(r, 2000)); // 読みやすいように時間を少し延長(2000ms)
+            await new Promise(r => setTimeout(r, 2000));
         }
     };
     performAnalysisNarration();

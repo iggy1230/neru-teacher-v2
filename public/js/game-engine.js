@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v294.0: 修正版) ---
+// --- js/game-engine.js (v294.2: 絵文字ブロック版) ---
 
 /**
  * ゲーム画面を表示し、初期化を行う
@@ -113,13 +113,14 @@ window.drawGame = function() {
     window.ctx.fill();
     window.ctx.closePath();
     
-    // ブロック描画
+    // ブロック描画 (★修正: 絵文字を描画)
     window.bricks.forEach(b => {
         if(b.status === 1) {
             window.ctx.beginPath();
-            window.ctx.rect(b.x, b.y, b.w, b.h);
-            window.ctx.fillStyle = "#ffb74d"; 
-            window.ctx.fill();
+            window.ctx.font = "20px sans-serif";
+            window.ctx.textAlign = "center";
+            window.ctx.textBaseline = "middle";
+            window.ctx.fillText("🍖", b.x + b.w/2, b.y + b.h/2);
             window.ctx.closePath();
         }
     });
@@ -151,22 +152,20 @@ window.drawGame = function() {
         }
     }
     
-    // ブロック衝突判定 (修正: ボールの半径を考慮)
+    // ブロック衝突判定
     let allCleared = true;
     window.bricks.forEach(b => {
         if(b.status === 1) {
             allCleared = false;
-            // 簡易的な衝突判定（ボールの中心座標がブロック矩形内にあるか）
             if(window.ball.x > b.x && window.ball.x < b.x + b.w && window.ball.y > b.y && window.ball.y < b.y + b.h) {
-                window.ball.dy = -window.ball.dy; // 反射
-                b.status = 0; // ブロック消滅
+                window.ball.dy = -window.ball.dy;
+                b.status = 0;
                 window.score += 10;
                 const scoreEl = document.getElementById('game-score');
                 if(scoreEl) scoreEl.innerText = window.score;
                 
                 if(window.safePlay) window.safePlay(window.sfxHit);
                 
-                // 50点ごとに応援コメント
                 if (window.score % 50 === 0 && window.gameHitComments) {
                     const comment = window.gameHitComments[Math.floor(Math.random() * window.gameHitComments.length)];
                     if(typeof window.updateNellMessage === 'function') window.updateNellMessage(comment, "excited", false, false);
