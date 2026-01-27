@@ -26,7 +26,7 @@ app.use(express.static(publicDir));
 
 // --- AI Model Constants (ユーザー指定) ---
 const MODEL_HOMEWORK = "gemini-2.5-pro"; // 宿題分析用
-const MODEL_FAST = "gemini-2.0-flash-exp"; // その他汎用
+const MODEL_FAST = "gemini-1.5-flash"; // その他汎用
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -101,7 +101,7 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // 指定通り gemini-2.0-flash-exp を使用
+        // 指定通り gemini-1.5-flash を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -239,7 +239,7 @@ app.post('/analyze', async (req, res) => {
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name } = req.body;
-        // 指定通り gemini-2.0-flash-exp を使用
+        // 指定通り gemini-1.5-flash を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -331,7 +331,7 @@ app.post('/chat-dialogue', async (req, res) => {
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
-            // 指定通り gemini-2.0-flash-exp を使用
+            // 指定通り gemini-1.5-flash を使用
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -350,7 +350,7 @@ app.post('/chat-dialogue', async (req, res) => {
         } catch (genError) {
             console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
             const modelFallback = genAI.getGenerativeModel({ 
-                model: "gemini-2.0-flash-exp"
+                model: "gemini-1.5-flash"
             });
             if (image) {
                 result = await modelFallback.generateContent([
@@ -429,7 +429,7 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // 指定通り gemini-2.0-flash-exp を使用
+        // 指定通り gemini-1.5-flash を使用
         const model = genAI.getGenerativeModel({ model: MODEL_FAST });
         let prompt = "";
         let mood = "excited";
@@ -521,7 +521,7 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // 指定通り gemini-2.0-flash-exp を使用
+                        // 指定通り gemini-1.5-flash を使用
                         model: `models/${MODEL_FAST}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
