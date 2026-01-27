@@ -1,4 +1,5 @@
-// --- js/constants.js (v293.0: 変数・定数定義) ---
+// --- js/constants.js (v297.0: 音量管理対応版) ---
+
 // ==========================================
 // グローバル変数・状態フラグ
 // ==========================================
@@ -14,6 +15,59 @@ window.gradingTimer = null;
 window.isComposing = false;
 // 履歴用配列
 window.chatSessionHistory = [];
+
+// ==========================================
+// 音量設定 (新規)
+// ==========================================
+window.appVolume = 0.5; // 初期音量 50%
+window.isMuted = false;
+
+// ==========================================
+// リソース定義 (Audio, Images)
+// ==========================================
+
+// 効果音を一括管理するためのリスト
+window.audioList = [];
+
+function createAudio(path) {
+    const audio = new Audio(path);
+    audio.volume = window.isMuted ? 0 : window.appVolume;
+    window.audioList.push(audio);
+    return audio;
+}
+
+// システム音
+window.sfxChime = createAudio('assets/sounds/system/jpn_sch_chime.mp3');
+window.sfxBtn = createAudio('assets/sounds/ui/botan1.mp3'); 
+window.sfxOver = createAudio('assets/sounds/system/gameover.mp3');
+window.sfxBunseki = createAudio('assets/sounds/system/bunseki.mp3');
+window.sfxBunseki.volume = 0.05; // これは元々小さいので、個別調整が必要ならロジックで対応
+// 便宜上リストから外して個別管理するか、applyVolumeで比率を維持するロジックが必要だが、
+// 簡易的にリストには入れつつ、再生時に再調整する方針とする。
+
+// UI/アクション音
+window.sfxBori = createAudio('assets/sounds/ui/boribori.mp3');
+window.sfxHit = createAudio('assets/sounds/voice/cat1c.mp3');
+window.sfxPaddle = createAudio('assets/sounds/ui/poka02.mp3');
+window.sfxHirameku = createAudio('assets/sounds/voice/hirameku.mp3');
+window.sfxMaru = createAudio('assets/sounds/ui/maru.mp3');
+window.sfxBatu = createAudio('assets/sounds/ui/batu.mp3');
+window.sfxDoor = createAudio('assets/sounds/system/class_door1.mp3');
+
+// ゲーム用コメント
+window.gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
+
+// 画像リソース
+window.subjectImages = {
+    'こくご': { base: 'assets/images/characters/nell-kokugo.png', talk: 'assets/images/characters/nell-kokugo-talk.png' },
+    'さんすう': { base: 'assets/images/characters/nell-sansu.png', talk: 'assets/images/characters/nell-sansu-talk.png' },
+    'りか': { base: 'assets/images/characters/nell-rika.png', talk: 'assets/images/characters/nell-rika-talk.png' },
+    'しゃかい': { base: 'assets/images/characters/nell-shakai.png', talk: 'assets/images/characters/nell-shakai-talk.png' },
+    'おはなし': { base: 'assets/images/characters/nell-normal.png', talk: 'assets/images/characters/nell-talk.png' }
+};
+window.defaultIcon = 'assets/images/characters/nell-normal.png';
+window.talkIcon = 'assets/images/characters/nell-talk.png';
+
 // ==========================================
 // 音声・通信・認識関連
 // ==========================================
@@ -42,6 +96,7 @@ window.latestDetectedName = null;
 // 常時聞き取り用
 window.isAlwaysListening = false;
 window.continuousRecognition = null;
+
 // ==========================================
 // ゲーム・Cropper・タイマー関連
 // ==========================================
@@ -67,44 +122,28 @@ window.studyTimerRunning = false;
 window.studyTimerCheck = 0;
 // プレビューカメラ
 window.previewStream = null;
-// ==========================================
-// リソース定義 (Audio, Images)
-// ==========================================
-// 効果音
-window.sfxBori = new Audio('assets/sounds/ui/boribori.mp3');
-window.sfxHit = new Audio('assets/sounds/voice/cat1c.mp3');
-window.sfxPaddle = new Audio('assets/sounds/ui/poka02.mp3');
-window.sfxOver = new Audio('assets/sounds/system/gameover.mp3');
-window.sfxBunseki = new Audio('assets/sounds/system/bunseki.mp3');
-window.sfxBunseki.volume = 0.05;
-window.sfxHirameku = new Audio('assets/sounds/voice/hirameku.mp3');
-window.sfxMaru = new Audio('assets/sounds/ui/maru.mp3');
-window.sfxBatu = new Audio('assets/sounds/ui/batu.mp3');
-// ゲーム用コメント
-window.gameHitComments = ["うまいにゃ！", "すごいにゃ！", "さすがにゃ！", "がんばれにゃ！"];
-// 画像リソース
-window.subjectImages = {
-'こくご': { base: 'assets/images/characters/nell-kokugo.png', talk: 'assets/images/characters/nell-kokugo-talk.png' },
-'さんすう': { base: 'assets/images/characters/nell-sansu.png', talk: 'assets/images/characters/nell-sansu-talk.png' },
-'りか': { base: 'assets/images/characters/nell-rika.png', talk: 'assets/images/characters/nell-rika-talk.png' },
-'しゃかい': { base: 'assets/images/characters/nell-shakai.png', talk: 'assets/images/characters/nell-shakai-talk.png' },
-'おはなし': { base: 'assets/images/characters/nell-normal.png', talk: 'assets/images/characters/nell-talk.png' }
-};
-window.defaultIcon = 'assets/images/characters/nell-normal.png';
-window.talkIcon = 'assets/images/characters/nell-talk.png';
+
 // ==========================================
 // 共通ヘルパー関数
 // ==========================================
 window.safePlay = function(audioObj) {
-if (!audioObj) return Promise.resolve();
-try {
-audioObj.currentTime = 0;
-const playPromise = audioObj.play();
-if (playPromise !== undefined) {
-return playPromise.catch(error => {
-console.warn("Audio play failed (ignored):", error);
-});
-}
-} catch (e) { console.warn("Audio error:", e); }
-return Promise.resolve();
+    if (!audioObj) return Promise.resolve();
+    try {
+        // 再生前に現在の音量を適用
+        audioObj.volume = window.isMuted ? 0 : window.appVolume;
+        
+        // 特殊な音量調整が必要なファイルへの対応
+        if (audioObj === window.sfxBunseki) {
+             audioObj.volume = window.isMuted ? 0 : (window.appVolume * 0.1); // 分析音は小さめに
+        }
+
+        audioObj.currentTime = 0;
+        const playPromise = audioObj.play();
+        if (playPromise !== undefined) {
+            return playPromise.catch(error => {
+                console.warn("Audio play failed (ignored):", error);
+            });
+        }
+    } catch (e) { console.warn("Audio error:", e); }
+    return Promise.resolve();
 };
