@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v293.0: 音声・チャット機能) ---
+// --- js/voice-service.js (v301.0: カメラ制御・カメラトグル修正版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -126,7 +126,7 @@ window.stopAlwaysOnListening = function() {
     }
 };
 
-// WebSocketチャット用画像送信
+// WebSocketチャット用画像送信 (トグル方式に修正)
 window.captureAndSendLiveImage = function(context = 'main') {
     if (context === 'main') {
         if (window.currentMode === 'chat-free') context = 'free';
@@ -142,8 +142,29 @@ window.captureAndSendLiveImage = function(context = 'main') {
     if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
+
+    const btn = document.getElementById('live-camera-btn-free');
+    const videoContainer = document.getElementById('live-chat-video-container-free');
+    const videoId = 'live-chat-video-free';
+
+    // ★修正: プレビューがまだ出ていない場合（カメラ未起動の場合）はプレビューを開始する
+    if (!window.previewStream || !window.previewStream.active) {
+        if (window.isAlwaysListening && window.continuousRecognition) {
+            try { window.continuousRecognition.stop(); } catch(e){}
+        }
+        
+        window.startPreviewCamera(videoId, 'live-chat-video-container-free').then(() => {
+            if (btn) {
+                btn.innerHTML = "<span>📸</span> 撮影して送信";
+                btn.style.backgroundColor = "#ff5252"; 
+            }
+        });
+        return;
+    }
+
+    // --- ここから下はプレビューが出ている状態でボタンを押した時（撮影＆送信） ---
+    
     if (window.isLiveImageSending) return; 
-    let videoId = 'live-chat-video-free';
     const video = document.getElementById(videoId);
     if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
 
@@ -151,7 +172,6 @@ window.captureAndSendLiveImage = function(context = 'main') {
     window.ignoreIncomingAudio = true; 
     window.isLiveImageSending = true;
     
-    const btn = document.getElementById('live-camera-btn-free');
     if (btn) {
         btn.innerHTML = "<span>📡</span> 送信中にゃ...";
         btn.style.backgroundColor = "#ccc";
@@ -179,7 +199,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    const videoContainer = document.getElementById('live-chat-video-container-free');
+    // スナップショットを少し表示
     if (videoContainer) {
         const oldPreview = document.getElementById('snapshot-preview-overlay');
         if(oldPreview) oldPreview.remove();
@@ -207,6 +227,10 @@ window.captureAndSendLiveImage = function(context = 'main') {
     setTimeout(() => {
         window.isLiveImageSending = false;
         window.isMicMuted = false;
+        
+        // ★修正: 送信後はカメラを閉じて元のボタン表示に戻す
+        if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); 
+        
         if (btn) {
              btn.innerHTML = "<span>📷</span> 写真を見せてお話";
              btn.style.backgroundColor = "#009688";
@@ -316,6 +340,9 @@ window.stopLiveChat = function() {
     if(window.stopSpeakingTimer) clearTimeout(window.stopSpeakingTimer); 
     if(window.speakingStartTimer) clearTimeout(window.speakingStartTimer); 
     
+    // ★修正: カメラも停止
+    if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
+
     const btn = document.getElementById('mic-btn-free');
     if (btn) { 
         btn.innerText = "🎤 おはなしする"; 
@@ -413,8 +440,12 @@ window.startLiveChat = async function(context = 'main') {
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.text) { 
-                            window.streamTextBuffer += p.text;
-                            if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false); 
+                            // ★修正: バッファにためる前に、システムっぽい出力（User says: など）が含まれていないか簡易チェック
+                            // 基本的にはプロンプトで抑制するが、万が一のために
+                            if (!p.text.startsWith("User") && !p.text.startsWith("Model")) {
+                                window.streamTextBuffer += p.text;
+                                if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false); 
+                            }
                         } 
                         if (p.inlineData) window.playLivePcmAudio(p.inlineData.data); 
                     }); 
@@ -465,23 +496,13 @@ window.startMicrophone = async function() {
             window.recognition.start(); 
         } 
         
-        const useVideo = true;
+        // ★修正: ここではカメラ映像を取得しない（音声のみ）
         window.mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { sampleRate: 16000, channelCount: 1 }, 
-            video: useVideo ? { facingMode: "environment" } : false 
+            video: false 
         }); 
         
-        if (useVideo) {
-            let videoId = 'live-chat-video-free';
-            let containerId = 'live-chat-video-container-free';
-            const video = document.getElementById(videoId);
-            if (video) {
-                video.srcObject = window.mediaStream;
-                video.play();
-                document.getElementById(containerId).style.display = 'block';
-            }
-        }
-
+        // 音声処理用のWorklet
         const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
         const blob = new Blob([processorCode], { type: 'application/javascript' }); 
         await window.audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
