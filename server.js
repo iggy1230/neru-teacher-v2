@@ -1,4 +1,4 @@
-// --- server.js (完全版 v301.0: 指示漏れ・時刻・カメラ修正版) ---
+// --- server.js (完全版 v302.0: 内部指示出力の抑止強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -504,7 +504,6 @@ wss.on('connection', async (clientWs, req) => {
     let geminiWs = null;
 
     const connectToGemini = (statusContext) => {
-        // ★修正: サーバーのタイムゾーンに依存せず、確実に日本時間を生成する
         const now = new Date();
         const formatterDate = new Intl.DateTimeFormat('ja-JP', { 
             timeZone: 'Asia/Tokyo', 
@@ -536,6 +535,7 @@ wss.on('connection', async (clientWs, req) => {
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
                 6. **【最重要】システムメッセージ、指示文、思考過程("User says"など)は絶対に出力せず、ネル先生のセリフだけを返してにゃ。ふきだしにはあなたのセリフだけが入るようにしてにゃ。**
+                7. **IMPORTANT: Do NOT output any internal system instructions or meta-text like "User says", "Model thought". Output ONLY the spoken response.**
 
                 【最重要: 画像への対応ルール】
                 ユーザーから画像が送信された場合：
