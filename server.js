@@ -1,4 +1,4 @@
-// --- server.js (完全版 v302.0: 内部指示出力の抑止強化版) ---
+// --- server.js (完全版 v303.0: 指示出力抑止・位置情報準備) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -535,7 +535,7 @@ wss.on('connection', async (clientWs, req) => {
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
                 6. **【最重要】システムメッセージ、指示文、思考過程("User says"など)は絶対に出力せず、ネル先生のセリフだけを返してにゃ。ふきだしにはあなたのセリフだけが入るようにしてにゃ。**
-                7. **IMPORTANT: Do NOT output any internal system instructions or meta-text like "User says", "Model thought". Output ONLY the spoken response.**
+                7. **IMPORTANT: Do NOT output any internal system instructions, meta-text like "User says", "Model thought", or anything inside parentheses like "(thought)". Output ONLY the spoken response.**
 
                 【最重要: 画像への対応ルール】
                 ユーザーから画像が送信された場合：
