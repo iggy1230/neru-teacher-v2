@@ -1,17 +1,35 @@
-// --- js/voice-service.js (v304.0: 自己割り込み防止版) ---
+// --- js/voice-service.js (v305.0: ノイズゲート＆二重再生防止強化版) ---
+
+// 設定: マイクのノイズゲート閾値 (0.0〜1.0)
+// この値以下の音量は「無音」とみなしてAIに送りません。
+// 途切れる場合は下げ、ノイズで止まる場合は上げてください。
+const MIC_NOISE_THRESHOLD = 0.015;
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
-    window.liveAudioSources.forEach(source => { try { source.stop(); source.disconnect(); } catch(e){} });
+    // 再生中のソースを全て停止・破棄
+    if (window.liveAudioSources) {
+        window.liveAudioSources.forEach(source => { 
+            try { source.stop(); } catch(e){}
+            try { source.disconnect(); } catch(e){}
+        });
+    }
     window.liveAudioSources = [];
-    if (window.audioContext && window.audioContext.state === 'running') window.nextStartTime = window.audioContext.currentTime + 0.05;
+    
+    // 再生予定時刻をリセット（重要）
+    if (window.audioContext) {
+        window.nextStartTime = window.audioContext.currentTime;
+    }
+    
     window.isNellSpeaking = false;
+    
     if(window.stopSpeakingTimer) clearTimeout(window.stopSpeakingTimer);
     if(window.speakingStartTimer) clearTimeout(window.speakingStartTimer);
+    
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 };
 
-// 常時聞き取り開始（通常モード用）
+// 常時聞き取り開始（HTTPモード用）
 window.startAlwaysOnListening = function() {
     if (!('webkitSpeechRecognition' in window)) {
         console.warn("Speech Recognition not supported.");
@@ -29,7 +47,7 @@ window.startAlwaysOnListening = function() {
     window.continuousRecognition.maxAlternatives = 1;
 
     window.continuousRecognition.onresult = async (event) => {
-        // 放課後おしゃべりタイム(WebSocket)中は、HTTP送信はブロックする
+        // 放課後おしゃべりタイム(WebSocket)中は、HTTP送信はブロック
         if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
             return;
         }
@@ -164,8 +182,6 @@ window.captureAndSendLiveImage = async function(context = 'main') {
     if (window.isLiveImageSending) return; 
     
     if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
-
-    // 写真撮影時は音声再生を止めない（自然な会話のため）
     
     window.ignoreIncomingAudio = true; 
     window.isLiveImageSending = true;
@@ -248,6 +264,7 @@ window.captureAndSendLiveImage = async function(context = 'main') {
     setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
 };
 
+// HTTPチャット用画像送信
 window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     if (window.isLiveImageSending) return;
     if (window.isAlwaysListening && window.continuousRecognition) { try { window.continuousRecognition.stop(); } catch(e){} }
@@ -327,19 +344,45 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     }
 };
 
+// WebSocketチャット停止
 window.stopLiveChat = function() {
     window.stopAlwaysOnListening();
 
     if (window.NellMemory && window.chatTranscript && window.chatTranscript.length > 10) {
         window.NellMemory.updateProfileFromChat(currentUser.id, window.chatTranscript);
     }
+    
+    // ★追加: 既存の接続とリソースを強制的にクリーンアップ
     window.isRecognitionActive = false; 
+    
     if (window.connectionTimeout) clearTimeout(window.connectionTimeout); 
-    if (window.recognition) try{window.recognition.stop()}catch(e){} 
-    if (window.mediaStream) window.mediaStream.getTracks().forEach(t=>t.stop()); 
-    if (window.workletNode) { window.workletNode.port.postMessage('stop'); window.workletNode.disconnect(); } 
-    if (window.liveSocket) window.liveSocket.close(); 
-    if (window.audioContext && window.audioContext.state !== 'closed') window.audioContext.close(); 
+    if (window.recognition) { try{window.recognition.stop();}catch(e){} window.recognition = null; }
+    
+    if (window.mediaStream) { 
+        window.mediaStream.getTracks().forEach(t=>t.stop()); 
+        window.mediaStream = null; 
+    } 
+    
+    if (window.workletNode) { 
+        window.workletNode.port.postMessage('stop'); 
+        window.workletNode.disconnect(); 
+        window.workletNode = null; 
+    } 
+    
+    if (window.liveSocket) { 
+        // ハンドラを無効化して閉じる
+        window.liveSocket.onclose = null;
+        window.liveSocket.onerror = null;
+        window.liveSocket.onmessage = null;
+        window.liveSocket.close(); 
+        window.liveSocket = null;
+    } 
+    
+    if (window.audioContext && window.audioContext.state !== 'closed') {
+        window.audioContext.close().catch(e => console.log(e));
+        window.audioContext = null;
+    }
+    
     window.isNellSpeaking = false; 
     if(window.stopSpeakingTimer) clearTimeout(window.stopSpeakingTimer); 
     if(window.speakingStartTimer) clearTimeout(window.speakingStartTimer); 
@@ -352,11 +395,9 @@ window.stopLiveChat = function() {
         btn.onclick = () => window.startLiveChat('free');
     }
 
-    window.liveSocket = null; 
     window.activeChatContext = null;
     window.streamTextBuffer = "";
     window.ttsTextBuffer = "";
-    
     window.ttsGainNode = null;
     
     const camBtnSimple = document.getElementById('live-camera-btn-simple');
@@ -371,16 +412,16 @@ window.stopLiveChat = function() {
 
     if(window.stopPreviewCamera) window.stopPreviewCamera();
     
-    // ★追加: 残っている音声ソースを全停止
     window.stopAudioPlayback();
 };
 
+// WebSocketチャット開始
 window.startLiveChat = async function(context = 'main') { 
     if (context === 'main' && window.currentMode === 'chat-free') context = 'free';
     if (context !== 'free') return;
 
-    window.stopAlwaysOnListening();
-    if (window.liveSocket) window.stopLiveChat();
+    // ★重要: 開始前に既存の接続を完全に破棄して二重接続を防ぐ
+    window.stopLiveChat();
 
     window.activeChatContext = context;
     const btnId = 'mic-btn-free';
@@ -388,7 +429,11 @@ window.startLiveChat = async function(context = 'main') {
     
     try { 
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ネル先生を呼んでるにゃ…", "thinking", false); 
-        if(btn) btn.disabled = true; 
+        if(btn) {
+             btn.disabled = true; 
+             // 再押下防止のためにonclickも一時削除
+             btn.onclick = null;
+        }
         
         let memoryContext = "";
         if (window.NellMemory) {
@@ -405,7 +450,7 @@ window.startLiveChat = async function(context = 'main') {
         
         window.ttsGainNode = window.audioContext.createGain();
         window.ttsGainNode.connect(window.audioContext.destination);
-        const currentVol = window.isMuted ? 0 : (window.appVolume || 0.5);
+        const currentVol = window.isMuted ? 0 : (window.appVolume !== undefined ? window.appVolume : 0.5);
         window.ttsGainNode.gain.value = currentVol;
 
         await window.audioContext.resume(); 
@@ -419,7 +464,14 @@ window.startLiveChat = async function(context = 'main') {
         
         window.liveSocket = new WebSocket(url); 
         window.liveSocket.binaryType = "blob"; 
-        window.connectionTimeout = setTimeout(() => { if (window.liveSocket && window.liveSocket.readyState !== WebSocket.OPEN) { if(typeof window.updateNellMessage === 'function') window.updateNellMessage("なかなかつながらないにゃ…", "thinking", false); window.stopLiveChat(); } }, 10000); 
+        
+        // タイムアウト設定
+        window.connectionTimeout = setTimeout(() => { 
+            if (window.liveSocket && window.liveSocket.readyState !== WebSocket.OPEN) { 
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage("なかなかつながらないにゃ…", "thinking", false); 
+                window.stopLiveChat(); 
+            } 
+        }, 10000); 
         
         window.lastSentCollectionImage = null;
         window.isLiveImageSending = false;
@@ -442,7 +494,13 @@ window.startLiveChat = async function(context = 'main') {
 
                 if (data.type === "server_ready") {
                     clearTimeout(window.connectionTimeout); 
-                    if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
+                    if(btn) { 
+                        btn.innerText = "📞 つながった！(終了)"; 
+                        btn.style.background = "#ff5252"; 
+                        btn.disabled = false; 
+                        // 停止用のアクションを設定
+                        btn.onclick = () => window.stopLiveChat();
+                    } 
                     if(typeof window.updateNellMessage === 'function') window.updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
                     window.isRecognitionActive = true; 
                     window.startMicrophone(); 
@@ -480,9 +538,6 @@ window.startLiveChat = async function(context = 'main') {
 
 window.startMicrophone = async function() { 
     try { 
-        // 音声認識（文字起こし）は常時聞き取り(startAlwaysOnListening)と競合するため、
-        // WebSocketモードでは音声ストリームの送信のみに専念する
-        
         const useVideo = false; 
         window.mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { 
@@ -501,13 +556,31 @@ window.startMicrophone = async function() {
         const source = window.audioContext.createMediaStreamSource(window.mediaStream); 
         window.workletNode = new AudioWorkletNode(window.audioContext, 'pcm-processor'); 
         source.connect(window.workletNode); 
+        
         window.workletNode.port.onmessage = (event) => { 
             if (window.isMicMuted) return;
-            // ★修正: AIが喋っている間はマイク音声を送らない (自己割り込み防止)
-            if (window.isNellSpeaking) return;
+            // ★追加: AI発話中はマイク音声を送らない (自己割り込み防止)
+            // オーディオコンテキストの時間を使って厳密に判定
+            if (window.audioContext && window.nextStartTime && window.audioContext.currentTime < window.nextStartTime) {
+                return;
+            }
+
+            // ★追加: ノイズゲート実装
+            const float32Data = event.data; // event.data is Float32Array from processor
+            let sum = 0;
+            for (let i = 0; i < float32Data.length; i++) {
+                sum += float32Data[i] * float32Data[i];
+            }
+            const rms = Math.sqrt(sum / float32Data.length);
+            
+            // 入力レベルが閾値以下なら送信しない
+            if (rms < MIC_NOISE_THRESHOLD) {
+                return;
+            }
 
             if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) return; 
-            const downsampled = window.downsampleBuffer(event.data, window.audioContext.sampleRate, 16000); 
+            
+            const downsampled = window.downsampleBuffer(float32Data, window.audioContext.sampleRate, 16000); 
             window.liveSocket.send(JSON.stringify({ base64Audio: window.arrayBufferToBase64(window.floatTo16BitPCM(downsampled)) })); 
         }; 
     } catch(e) {
@@ -544,7 +617,8 @@ window.playLivePcmAudio = function(base64) {
     source.onended = () => { window.liveAudioSources = window.liveAudioSources.filter(s => s !== source); };
     
     const now = window.audioContext.currentTime; 
-    if (window.nextStartTime < now || window.nextStartTime > now + 10) {
+    // スケジューリング補正: 時間が大幅にずれている場合は現在時刻に合わせる
+    if (window.nextStartTime < now || window.nextStartTime > now + 5) {
          window.nextStartTime = now + 0.05;
     }
     
@@ -553,9 +627,10 @@ window.playLivePcmAudio = function(base64) {
     const startDelay = Math.max(0, (window.nextStartTime - now) * 1000); 
     const duration = buffer.duration * 1000; 
     
-    // ★修正: 話し終わった判定を少し遅らせる (+300ms)
-    // 文の途中のわずかな無音でマイクがオンにならないようにするため
+    // 発話中フラグ管理 (少し長めに取ることで次の文節までの隙間を埋める)
     if(window.stopSpeakingTimer) clearTimeout(window.stopSpeakingTimer); 
+    
+    window.isNellSpeaking = true;
     window.speakingStartTimer = setTimeout(() => { window.isNellSpeaking = true; }, startDelay); 
     window.stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 300); 
     
