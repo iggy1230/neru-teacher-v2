@@ -1,4 +1,4 @@
-// --- js/analyze.js (v300.0: WebSocket連携修正版) ---
+// --- js/analyze.js (v294.2: 採点ロジック修正完全版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -126,11 +126,8 @@ window.addToSessionHistory = function(role, text) {
 };
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    // ★重要: WebSocket接続中（リアルタイム対話中）かつ chat-free の場合は、HTTP TTSの発話を強制的に抑制
-    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
-        if (window.currentMode === 'chat-free' || window.currentMode === 'simple-chat') {
-            speak = false;
-        }
+    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
+        speak = false;
     }
 
     const gameScreen = document.getElementById('screen-game');
@@ -527,6 +524,7 @@ window.checkOneProblem = function(id) {
 };
 window.updateMarkDisplay = function(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } };
 
+// ★修正箇所: 正解数カウントの初期値を0にし、満点判定を修正
 window.updateGradingMessage = function() { 
     let correctCount = 0; 
     window.transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); 
