@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v301.1: 二重再生防止版) ---
+// --- js/voice-service.js (v300.5: AudioContext接続修正版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -122,8 +122,8 @@ window.stopAlwaysOnListening = function() {
     }
 };
 
-// WebSocketチャット用画像送信
-window.captureAndSendLiveImage = async function(context = 'main') {
+// WebSocketチャット用画像送信 (トグル動作 & プレビュー制御)
+window.captureAndSendLiveImage = function(context = 'main') {
     if (context === 'main') {
         if (window.currentMode === 'chat-free') context = 'free';
         else if (window.activeChatContext === 'embedded') context = 'embedded';
@@ -144,7 +144,7 @@ window.captureAndSendLiveImage = async function(context = 'main') {
     const btn = document.getElementById('live-camera-btn-free');
     const video = document.getElementById(videoId);
 
-    // カメラ未起動 -> 起動
+    // カメラが動いていない（まだ表示されていない）場合 -> プレビュー開始
     if (!window.previewStream || !window.previewStream.active) {
         if(window.startPreviewCamera) {
             window.startPreviewCamera(videoId, containerId).then(() => {
@@ -157,8 +157,9 @@ window.captureAndSendLiveImage = async function(context = 'main') {
         return;
     }
 
-    // カメラ起動中 -> 送信
+    // カメラが動いている（プレビュー中）場合 -> 撮影・送信
     if (window.isLiveImageSending) return; 
+    
     if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
 
     window.stopAudioPlayback();
@@ -166,24 +167,17 @@ window.captureAndSendLiveImage = async function(context = 'main') {
     window.isLiveImageSending = true;
     
     if (btn) {
-        btn.innerHTML = "<span>📡</span> 解析中にゃ...";
+        btn.innerHTML = "<span>📡</span> 送信中にゃ...";
         btn.style.backgroundColor = "#ccc";
     }
     window.isMicMuted = true;
 
-    // 画像取得
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // GPS取得 (camera-service.jsの関数を使用)
-    let locationData = null;
-    if (typeof getLocation === 'function') {
-        try { locationData = await getLocation(); } catch(e) { console.warn("Loc skip"); }
-    }
-
     const notif = document.createElement('div');
     notif.innerText = `📝 写真を送ったにゃ！`;
     notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #8bc34a; color:#558b2f; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
@@ -197,11 +191,13 @@ window.captureAndSendLiveImage = async function(context = 'main') {
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
+    // 送信したのでカメラを停止して隠す
     if(window.stopPreviewCamera) window.stopPreviewCamera();
 
+    // プレビュー用サムネイルを表示（少しの間だけ）
     const videoContainer = document.getElementById(containerId);
     if (videoContainer) {
-        videoContainer.style.display = 'block';
+        videoContainer.style.display = 'block'; 
         const oldPreview = document.getElementById('snapshot-preview-overlay');
         if(oldPreview) oldPreview.remove();
         const previewImg = document.createElement('img');
@@ -213,20 +209,14 @@ window.captureAndSendLiveImage = async function(context = 'main') {
         
         setTimeout(() => { 
             if(previewImg && previewImg.parentNode) previewImg.remove();
-            videoContainer.style.display = 'none';
+            videoContainer.style.display = 'none'; 
         }, 3000);
     }
 
-    // ★修正: speak=false にしてHTTPのTTS発話を防止 (WSからの音声ストリームのみにする)
     if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, false);
     
     if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
-        let locText = "";
-        if (locationData) {
-            locText = `（位置情報: 緯度${locationData.lat}, 経度${locationData.lon}）`;
-        }
-        let promptText = `（ユーザーが写真を見せました${locText}）この画像に写っているものを詳しく、具体的な商品名や場所の名前も含めて、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。`;
-        
+        let promptText = "（ユーザーが写真を見せました）この画像に写っているものを詳しく、具体的な商品名なども含めて、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。";
         window.liveSocket.send(JSON.stringify({ 
             clientContent: { 
                 turns: [{ role: "user", parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] }],
@@ -249,7 +239,10 @@ window.captureAndSendLiveImage = async function(context = 'main') {
 // HTTPチャット用画像送信
 window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     if (window.isLiveImageSending) return;
-    if (window.isAlwaysListening && window.continuousRecognition) { try { window.continuousRecognition.stop(); } catch(e){} }
+    
+    if (window.isAlwaysListening && window.continuousRecognition) {
+        try { window.continuousRecognition.stop(); } catch(e){}
+    }
     
     let videoId, btnId, activeColor;
     if (context === 'embedded') { videoId = 'live-chat-video-embedded'; btnId = 'live-camera-btn-embedded'; activeColor = '#66bb6a'; }
@@ -260,7 +253,10 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     
     window.isLiveImageSending = true;
     const btn = document.getElementById(btnId);
-    if (btn) { btn.innerHTML = "<span>📡</span> 送信中にゃ..."; btn.style.backgroundColor = "#ccc"; }
+    if (btn) {
+        btn.innerHTML = "<span>📡</span> 送信中にゃ...";
+        btn.style.backgroundColor = "#ccc";
+    }
 
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
@@ -269,10 +265,6 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
-    // GPS取得
-    let locationData = null;
-    if (typeof getLocation === 'function') { try { locationData = await getLocation(); } catch(e) { console.warn("Loc fetch skipped"); } }
-
     const flash = document.createElement('div');
     flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
     document.body.appendChild(flash);
@@ -281,18 +273,14 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
 
     try {
-        // HTTPモードはTTSが必要なので speak=true
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
-
-        let locText = "";
-        if (locationData) { locText = `（位置情報: 緯度${locationData.lat}, 経度${locationData.lon}）`; }
 
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 image: base64Data,
-                text: `この問題を教えてください。${locText}`,
+                text: "この問題を教えてください。",
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory
             })
@@ -322,17 +310,19 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
         window.isLiveImageSending = false;
         
         if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); 
-        if (btn) { btn.innerHTML = "<span>📷</span> カメラで見せて質問"; btn.style.backgroundColor = activeColor; }
+        if (btn) {
+            btn.innerHTML = "<span>📷</span> カメラで見せて質問";
+            btn.style.backgroundColor = activeColor;
+        }
         
-        if (window.isAlwaysListening) { try { window.continuousRecognition.start(); } catch(e){} }
+        if (window.isAlwaysListening) {
+             try { window.continuousRecognition.start(); } catch(e){}
+        }
     }
 };
 
 // WebSocketチャット停止
 window.stopLiveChat = function() {
-    // 既存の常時聞き取りを確実に停止
-    window.stopAlwaysOnListening();
-
     if (window.NellMemory && window.chatTranscript && window.chatTranscript.length > 10) {
         window.NellMemory.updateProfileFromChat(currentUser.id, window.chatTranscript);
     }
@@ -360,6 +350,7 @@ window.stopLiveChat = function() {
     window.streamTextBuffer = "";
     window.ttsTextBuffer = "";
     
+    // ★追加: 停止時にGainNodeも破棄
     window.ttsGainNode = null;
     
     const camBtnSimple = document.getElementById('live-camera-btn-simple');
@@ -372,6 +363,7 @@ window.stopLiveChat = function() {
     window.isLiveImageSending = false;
     window.isMicMuted = false; 
 
+    // カメラも停止して隠す
     if(window.stopPreviewCamera) window.stopPreviewCamera();
 };
 
@@ -380,12 +372,10 @@ window.startLiveChat = async function(context = 'main') {
     if (context === 'main' && window.currentMode === 'chat-free') context = 'free';
     if (context !== 'free') return;
 
-    window.stopAlwaysOnListening();
-    if (window.liveSocket) window.stopLiveChat();
-
     window.activeChatContext = context;
     const btnId = 'mic-btn-free';
     const btn = document.getElementById(btnId);
+    if (window.liveSocket) { window.stopLiveChat(); return; } 
     
     try { 
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ネル先生を呼んでるにゃ…", "thinking", false); 
@@ -402,10 +392,13 @@ window.startLiveChat = async function(context = 'main') {
         
         if (window.initAudioContext) await window.initAudioContext(); 
         
+        // ★修正: 新しいAudioContextを作成し、それに合わせたGainNodeを作成して接続
         window.audioContext = new (window.AudioContext || window.webkitAudioContext)(); 
         
+        // ここでGainNodeを作り直して window.ttsGainNode に再代入
         window.ttsGainNode = window.audioContext.createGain();
         window.ttsGainNode.connect(window.audioContext.destination);
+        // 現在の音量を適用
         const currentVol = window.isMuted ? 0 : (window.appVolume || 0.5);
         window.ttsGainNode.gain.value = currentVol;
 
@@ -453,6 +446,7 @@ window.startLiveChat = async function(context = 'main') {
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.text) { 
+                            // 思考漏れフィルタリング
                             const hasJapanese = /[ぁ-んァ-ン一-龠]/.test(p.text);
                             const isVeryShort = p.text.trim().length < 5;
                             const isMarkdown = /^\s*(\*\*|\*|_)/.test(p.text);
@@ -513,15 +507,9 @@ window.startMicrophone = async function() {
             window.recognition.start(); 
         } 
         
-        const useVideo = false; 
+        const useVideo = false; // 音声通話モードではビデオは基本OFF
         window.mediaStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: { 
-                sampleRate: 16000, 
-                channelCount: 1,
-                echoCancellation: true,      
-                noiseSuppression: true,      
-                autoGainControl: true        
-            }, 
+            audio: { sampleRate: 16000, channelCount: 1 }, 
             video: useVideo 
         }); 
         
@@ -545,6 +533,7 @@ window.startMicrophone = async function() {
 window.playLivePcmAudio = function(base64) { 
     if (!window.audioContext || window.ignoreIncomingAudio) return; 
     
+    // Resume context if suspended
     if (window.audioContext.state === 'suspended') {
         window.audioContext.resume().catch(e => console.warn(e));
     }
@@ -561,8 +550,14 @@ window.playLivePcmAudio = function(base64) {
     const source = window.audioContext.createBufferSource(); 
     source.buffer = buffer; 
     
+    // ★修正: 新しいコンテキストのGainNodeを使用
     if (window.ttsGainNode) {
-        try { source.connect(window.ttsGainNode); } catch(e) { source.connect(window.audioContext.destination); }
+        try {
+            source.connect(window.ttsGainNode);
+        } catch(e) {
+            // 万が一接続に失敗したら直接出力へ
+            source.connect(window.audioContext.destination);
+        }
     } else {
         source.connect(window.audioContext.destination);
     }
@@ -571,6 +566,7 @@ window.playLivePcmAudio = function(base64) {
     source.onended = () => { window.liveAudioSources = window.liveAudioSources.filter(s => s !== source); };
     
     const now = window.audioContext.currentTime; 
+    // スケジューリング補正: 時間が大幅にずれている場合は現在時刻に合わせる
     if (window.nextStartTime < now || window.nextStartTime > now + 10) {
          window.nextStartTime = now + 0.05;
     }

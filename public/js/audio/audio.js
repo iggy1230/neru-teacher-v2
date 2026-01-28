@@ -1,10 +1,9 @@
-// --- js/audio.js (v301.0: AudioContext分離・安定版) ---
+// --- audio.js (完全版 v297.0: 音量制御対応) ---
 
 let audioCtx = null;
 let currentSource = null;
 let abortController = null; 
-
-// ※ ttsGainNodeは voice-service.js 側とは共有せず、ここで独自に生成・破棄します
+window.ttsGainNode = null; // 音量制御用
 
 window.isNellSpeaking = false;
 
@@ -12,11 +11,17 @@ window.initAudioContext = async function() {
     try {
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            window.ttsGainNode = audioCtx.createGain();
+            window.ttsGainNode.connect(audioCtx.destination);
+            
+            // 現在の音量を適用
+            const targetVol = window.isMuted ? 0 : (window.appVolume || 0.5);
+            window.ttsGainNode.gain.value = targetVol;
         }
         
         if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
-            console.log("AudioContext resumed (HTTP)");
+            console.log("AudioContext resumed");
         }
     } catch(e) {
         console.warn("AudioContext init/resume failed:", e);
@@ -38,7 +43,6 @@ window.cancelNellSpeech = function() {
 async function speakNell(text, mood = "normal") {
     if (!text || text === "") return;
 
-    // 前の音声を停止
     window.cancelNellSpeech();
 
     abortController = new AbortController();
@@ -46,7 +50,6 @@ async function speakNell(text, mood = "normal") {
 
     window.isNellSpeaking = false;
 
-    // AudioContext準備
     await window.initAudioContext();
 
     try {
@@ -77,13 +80,15 @@ async function speakNell(text, mood = "normal") {
         const source = audioCtx.createBufferSource();
         source.buffer = buffer;
         
-        // ★修正: ローカルなGainNodeを作成して接続 (Context不整合エラーの回避)
-        const localGain = audioCtx.createGain();
-        const currentVol = window.isMuted ? 0 : (window.appVolume !== undefined ? window.appVolume : 0.5);
-        localGain.gain.value = currentVol;
-
-        source.connect(localGain);
-        localGain.connect(audioCtx.destination);
+        // GainNodeを経由して接続 (音量制御のため)
+        if (window.ttsGainNode) {
+            source.connect(window.ttsGainNode);
+            // 再生直前にも念のため音量同期
+            const currentVol = window.isMuted ? 0 : (window.appVolume || 0.5);
+            window.ttsGainNode.gain.setValueAtTime(currentVol, audioCtx.currentTime);
+        } else {
+            source.connect(audioCtx.destination);
+        }
         
         currentSource = source;
         
@@ -95,8 +100,6 @@ async function speakNell(text, mood = "normal") {
                 if (currentSource === source) {
                     window.isNellSpeaking = false;
                     currentSource = null;
-                    // ガベージコレクションのために切断
-                    try { source.disconnect(); localGain.disconnect(); } catch(e){}
                 }
                 resolve();
             };
