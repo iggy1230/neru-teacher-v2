@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v303.0: 音声途切れ修正版) ---
+// --- js/voice-service.js (v304.0: 自己割り込み防止版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -37,7 +37,7 @@ window.startAlwaysOnListening = function() {
         const text = event.results[0][0].transcript;
         if (!text || text.trim() === "") return;
 
-        // 割り込み判定 (HTTPモード用)
+        // HTTPモード時の割り込み判定
         const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
         const isStopCommand = stopKeywords.some(w => text.includes(w));
         const isLongEnough = text.length >= 10;
@@ -128,7 +128,6 @@ window.stopAlwaysOnListening = function() {
     }
 };
 
-// WebSocketチャット用画像送信
 window.captureAndSendLiveImage = async function(context = 'main') {
     if (context === 'main') {
         if (window.currentMode === 'chat-free') context = 'free';
@@ -166,9 +165,7 @@ window.captureAndSendLiveImage = async function(context = 'main') {
     
     if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
 
-    // ★修正: ここでは stopAudioPlayback() を呼ばないようにする
-    // 写真撮影時にAIが喋っていても、それを中断させない方が自然な場合がある
-    // window.stopAudioPlayback();
+    // 写真撮影時は音声再生を止めない（自然な会話のため）
     
     window.ignoreIncomingAudio = true; 
     window.isLiveImageSending = true;
@@ -251,7 +248,6 @@ window.captureAndSendLiveImage = async function(context = 'main') {
     setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
 };
 
-// HTTPチャット用画像送信
 window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     if (window.isLiveImageSending) return;
     if (window.isAlwaysListening && window.continuousRecognition) { try { window.continuousRecognition.stop(); } catch(e){} }
@@ -484,37 +480,8 @@ window.startLiveChat = async function(context = 'main') {
 
 window.startMicrophone = async function() { 
     try { 
-        if ('webkitSpeechRecognition' in window) { 
-            window.recognition = new webkitSpeechRecognition(); 
-            window.recognition.continuous = true; 
-            window.recognition.interimResults = true; 
-            window.recognition.lang = 'ja-JP'; 
-            
-            window.recognition.onresult = (event) => { 
-                let currentText = "";
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    currentText += event.results[i][0].transcript;
-                }
-                // ★修正: 以下の割り込み停止ロジックを削除（WebSocket使用中）
-                // 理由: スピーカーからのエコーを拾ってしまい、AIの発話を止めてしまうため
-                
-                // const cleanText = currentText.trim();
-                // ... (中略) ...
-                // if (window.isNellSpeaking && cleanText.length > 0) { ... window.stopAudioPlayback(); }
-                
-                for (let i = event.resultIndex; i < event.results.length; ++i) { 
-                    if (event.results[i].isFinal) { 
-                        const userText = event.results[i][0].transcript;
-                        if(typeof window.saveToNellMemory === 'function') window.saveToNellMemory('user', userText); 
-                        window.streamTextBuffer = ""; 
-                        const el = document.getElementById('user-speech-text-free'); 
-                        if(el) el.innerText = userText; 
-                    }
-                } 
-            }; 
-            window.recognition.onend = () => { if (window.isRecognitionActive && window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) try{window.recognition.start()}catch(e){} }; 
-            window.recognition.start(); 
-        } 
+        // 音声認識（文字起こし）は常時聞き取り(startAlwaysOnListening)と競合するため、
+        // WebSocketモードでは音声ストリームの送信のみに専念する
         
         const useVideo = false; 
         window.mediaStream = await navigator.mediaDevices.getUserMedia({ 
@@ -536,6 +503,9 @@ window.startMicrophone = async function() {
         source.connect(window.workletNode); 
         window.workletNode.port.onmessage = (event) => { 
             if (window.isMicMuted) return;
+            // ★修正: AIが喋っている間はマイク音声を送らない (自己割り込み防止)
+            if (window.isNellSpeaking) return;
+
             if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) return; 
             const downsampled = window.downsampleBuffer(event.data, window.audioContext.sampleRate, 16000); 
             window.liveSocket.send(JSON.stringify({ base64Audio: window.arrayBufferToBase64(window.floatTo16BitPCM(downsampled)) })); 
@@ -583,9 +553,11 @@ window.playLivePcmAudio = function(base64) {
     const startDelay = Math.max(0, (window.nextStartTime - now) * 1000); 
     const duration = buffer.duration * 1000; 
     
+    // ★修正: 話し終わった判定を少し遅らせる (+300ms)
+    // 文の途中のわずかな無音でマイクがオンにならないようにするため
     if(window.stopSpeakingTimer) clearTimeout(window.stopSpeakingTimer); 
     window.speakingStartTimer = setTimeout(() => { window.isNellSpeaking = true; }, startDelay); 
-    window.stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 100); 
+    window.stopSpeakingTimer = setTimeout(() => { window.isNellSpeaking = false; }, startDelay + duration + 300); 
     
     window.nextStartTime += buffer.duration; 
 };
