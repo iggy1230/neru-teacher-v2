@@ -1,4 +1,4 @@
-// --- server.js (完全版 v300.0: モデル構成刷新版) ---
+// --- server.js (完全版 v301.0: 指示漏れ・時刻・カメラ修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -504,11 +504,18 @@ wss.on('connection', async (clientWs, req) => {
     let geminiWs = null;
 
     const connectToGemini = (statusContext) => {
+        // ★修正: サーバーのタイムゾーンに依存せず、確実に日本時間を生成する
         const now = new Date();
-        const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Tokyo' };
-        const timeOptions = { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' };
-        const todayStr = now.toLocaleDateString('ja-JP', dateOptions);
-        const timeStr = now.toLocaleTimeString('ja-JP', timeOptions);
+        const formatterDate = new Intl.DateTimeFormat('ja-JP', { 
+            timeZone: 'Asia/Tokyo', 
+            year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
+        });
+        const formatterTime = new Intl.DateTimeFormat('ja-JP', { 
+            timeZone: 'Asia/Tokyo', 
+            hour: '2-digit', minute: '2-digit' 
+        });
+        const todayStr = formatterDate.format(now);
+        const timeStr = formatterTime.format(now);
         
         const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
         
@@ -528,6 +535,7 @@ wss.on('connection', async (clientWs, req) => {
                 3. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
+                6. **【最重要】システムメッセージ、指示文、思考過程("User says"など)は絶対に出力せず、ネル先生のセリフだけを返してにゃ。ふきだしにはあなたのセリフだけが入るようにしてにゃ。**
 
                 【最重要: 画像への対応ルール】
                 ユーザーから画像が送信された場合：
