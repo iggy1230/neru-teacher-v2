@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v302.0: バッファクリア強化版) ---
+// --- js/voice-service.js (v303.0: 音声途切れ修正版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -11,7 +11,7 @@ window.stopAudioPlayback = function() {
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 };
 
-// 常時聞き取り開始
+// 常時聞き取り開始（通常モード用）
 window.startAlwaysOnListening = function() {
     if (!('webkitSpeechRecognition' in window)) {
         console.warn("Speech Recognition not supported.");
@@ -29,7 +29,7 @@ window.startAlwaysOnListening = function() {
     window.continuousRecognition.maxAlternatives = 1;
 
     window.continuousRecognition.onresult = async (event) => {
-        // 放課後おしゃべりタイム(WebSocket)中は、こちらのHTTP送信はブロックする
+        // 放課後おしゃべりタイム(WebSocket)中は、HTTP送信はブロックする
         if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
             return;
         }
@@ -37,7 +37,7 @@ window.startAlwaysOnListening = function() {
         const text = event.results[0][0].transcript;
         if (!text || text.trim() === "") return;
 
-        // 割り込み判定
+        // 割り込み判定 (HTTPモード用)
         const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
         const isStopCommand = stopKeywords.some(w => text.includes(w));
         const isLongEnough = text.length >= 10;
@@ -128,6 +128,7 @@ window.stopAlwaysOnListening = function() {
     }
 };
 
+// WebSocketチャット用画像送信
 window.captureAndSendLiveImage = async function(context = 'main') {
     if (context === 'main') {
         if (window.currentMode === 'chat-free') context = 'free';
@@ -165,7 +166,10 @@ window.captureAndSendLiveImage = async function(context = 'main') {
     
     if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
 
-    window.stopAudioPlayback();
+    // ★修正: ここでは stopAudioPlayback() を呼ばないようにする
+    // 写真撮影時にAIが喋っていても、それを中断させない方が自然な場合がある
+    // window.stopAudioPlayback();
+    
     window.ignoreIncomingAudio = true; 
     window.isLiveImageSending = true;
     
@@ -247,6 +251,7 @@ window.captureAndSendLiveImage = async function(context = 'main') {
     setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
 };
 
+// HTTPチャット用画像送信
 window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     if (window.isLiveImageSending) return;
     if (window.isAlwaysListening && window.continuousRecognition) { try { window.continuousRecognition.stop(); } catch(e){} }
@@ -490,13 +495,13 @@ window.startMicrophone = async function() {
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
                     currentText += event.results[i][0].transcript;
                 }
-                const cleanText = currentText.trim();
-                const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
-                if (window.isNellSpeaking && cleanText.length > 0) {
-                    const isLongEnough = cleanText.length >= 10;
-                    const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
-                    if (isLongEnough || isStopCommand) window.stopAudioPlayback();
-                }
+                // ★修正: 以下の割り込み停止ロジックを削除（WebSocket使用中）
+                // 理由: スピーカーからのエコーを拾ってしまい、AIの発話を止めてしまうため
+                
+                // const cleanText = currentText.trim();
+                // ... (中略) ...
+                // if (window.isNellSpeaking && cleanText.length > 0) { ... window.stopAudioPlayback(); }
+                
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
                     if (event.results[i].isFinal) { 
                         const userText = event.results[i][0].transcript;
