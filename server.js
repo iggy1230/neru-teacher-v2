@@ -26,7 +26,7 @@ app.use(express.static(publicDir));
 // --- AI Model Constants ---
 const MODEL_HOMEWORK = "gemini-2.5-pro";
 const MODEL_FAST = "gemini-2.5-flash";
-const MODEL_REALTIME = "gemini-live-2.5-flash-native-audio"; 
+const MODEL_REALTIME = "gemini-3-flash-preview"; 
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
