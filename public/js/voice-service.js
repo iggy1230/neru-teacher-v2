@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v300.5: AudioContext接続修正版) ---
+// --- js/voice-service.js (v301.2: リアルタイム会話の競合対策版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -350,7 +350,7 @@ window.stopLiveChat = function() {
     window.streamTextBuffer = "";
     window.ttsTextBuffer = "";
     
-    // ★追加: 停止時にGainNodeも破棄
+    // 停止時にGainNodeも破棄
     window.ttsGainNode = null;
     
     const camBtnSimple = document.getElementById('live-camera-btn-simple');
@@ -369,6 +369,9 @@ window.stopLiveChat = function() {
 
 // WebSocketチャット開始
 window.startLiveChat = async function(context = 'main') { 
+    // ★重要: HTTP側の聞き取りを停止して競合を防ぐ
+    if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
+
     if (context === 'main' && window.currentMode === 'chat-free') context = 'free';
     if (context !== 'free') return;
 
@@ -392,7 +395,7 @@ window.startLiveChat = async function(context = 'main') {
         
         if (window.initAudioContext) await window.initAudioContext(); 
         
-        // ★修正: 新しいAudioContextを作成し、それに合わせたGainNodeを作成して接続
+        // AudioContextを作成し、GainNodeを作成して接続
         window.audioContext = new (window.AudioContext || window.webkitAudioContext)(); 
         
         // ここでGainNodeを作り直して window.ttsGainNode に再代入
@@ -453,6 +456,7 @@ window.startLiveChat = async function(context = 'main') {
                             
                             if ((hasJapanese || isVeryShort) && !isMarkdown) {
                                 window.streamTextBuffer += p.text;
+                                // 第4引数(speak)はfalseを指定（音声ストリームで再生されるため）
                                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false);
                             }
                         } 
@@ -550,12 +554,11 @@ window.playLivePcmAudio = function(base64) {
     const source = window.audioContext.createBufferSource(); 
     source.buffer = buffer; 
     
-    // ★修正: 新しいコンテキストのGainNodeを使用
+    // GainNodeを使用
     if (window.ttsGainNode) {
         try {
             source.connect(window.ttsGainNode);
         } catch(e) {
-            // 万が一接続に失敗したら直接出力へ
             source.connect(window.audioContext.destination);
         }
     } else {
@@ -566,7 +569,7 @@ window.playLivePcmAudio = function(base64) {
     source.onended = () => { window.liveAudioSources = window.liveAudioSources.filter(s => s !== source); };
     
     const now = window.audioContext.currentTime; 
-    // スケジューリング補正: 時間が大幅にずれている場合は現在時刻に合わせる
+    // スケジューリング補正
     if (window.nextStartTime < now || window.nextStartTime > now + 10) {
          window.nextStartTime = now + 0.05;
     }
