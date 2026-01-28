@@ -1,4 +1,4 @@
-// --- js/analyze.js (v294.2: 採点ロジック修正完全版) ---
+// --- js/analyze.js (v303.0: モード別位置監視・給食高速化版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -10,6 +10,9 @@
 // ★ selectMode
 window.selectMode = function(m) {
     try {
+        // 前のモードの後始末（位置情報監視停止）
+        if (typeof window.stopLocationWatch === 'function') window.stopLocationWatch();
+
         window.currentMode = m; 
         window.chatSessionHistory = [];
 
@@ -65,6 +68,8 @@ window.selectMode = function(m) {
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+            // ★修正: 図鑑モードでは位置情報の監視を開始
+            if(typeof window.startLocationWatch === 'function') window.startLocationWatch();
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
@@ -360,6 +365,7 @@ window.updateTimerDisplay = function() {
 window.updateMiniKarikari = function() { if(currentUser) { const el = document.getElementById('mini-karikari-count'); if(el) el.innerText = currentUser.karikari; const el2 = document.getElementById('karikari-count'); if(el2) el2.innerText = currentUser.karikari; } };
 window.showKarikariEffect = function(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } };
 
+// ★修正: 給食レスポンスのウェイト短縮
 window.giveLunch = function() { 
     if (currentUser.karikari < 1) return window.updateNellMessage("カリカリがないにゃ……", "thinking", false); 
     window.updateNellMessage("もぐもぐ……", "normal", false); 
@@ -370,8 +376,8 @@ window.giveLunch = function() {
     window.lunchCount++; 
     fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
         .then(r => r.json())
-        .then(d => { setTimeout(() => { window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 1500); })
-        .catch(e => { setTimeout(() => { window.updateNellMessage("おいしいにゃ！", "happy", false); }, 1500); }); 
+        .then(d => { setTimeout(() => { window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 100); }) // 1500 -> 100
+        .catch(e => { setTimeout(() => { window.updateNellMessage("おいしいにゃ！", "happy", false); }, 100); }); 
 }; 
 
 // ※ ゲームロジックは js/game-engine.js に移動済み
@@ -524,7 +530,6 @@ window.checkOneProblem = function(id) {
 };
 window.updateMarkDisplay = function(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } };
 
-// ★修正箇所: 正解数カウントの初期値を0にし、満点判定を修正
 window.updateGradingMessage = function() { 
     let correctCount = 0; 
     window.transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); 

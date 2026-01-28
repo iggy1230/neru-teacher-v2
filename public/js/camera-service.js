@@ -1,4 +1,39 @@
-// --- js/camera-service.js (v299.1: 撮影フリーズ対策版) ---
+// --- js/camera-service.js (v303.0: 位置情報常時監視版) ---
+
+// ==========================================
+// 位置情報管理 (新規追加)
+// ==========================================
+window.currentLocation = null;
+window.locationWatchId = null;
+
+window.startLocationWatch = function() {
+    if (!navigator.geolocation) return;
+    if (window.locationWatchId !== null) return; // 既に開始済み
+
+    console.log("📍 Location Watch Started");
+    window.locationWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+            window.currentLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            // 精度向上のため、コンソール等で確認可能
+            // console.log("📍 Location Updated:", window.currentLocation);
+        },
+        (err) => {
+            console.warn("📍 Location Watch Error:", err);
+            // エラー時はnullのままにするか、前回値を保持
+        },
+        { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 }
+    );
+};
+
+window.stopLocationWatch = function() {
+    if (window.locationWatchId !== null) {
+        navigator.geolocation.clearWatch(window.locationWatchId);
+        window.locationWatchId = null;
+        console.log("📍 Location Watch Stopped");
+    }
+    // 次回の使用のためにnullにはしないでおく（直前の位置を保持した方がUXが良い場合がある）
+    // window.currentLocation = null; 
+};
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -129,36 +164,10 @@ window.createTreasureImage = function(sourceCanvas) {
     return canvas.toDataURL('image/jpeg', 0.8);
 };
 
-// GPS取得ヘルパー (タイムアウト付き)
-const getLocation = () => {
-    return new Promise((resolve) => {
-        if (!navigator.geolocation) return resolve(null);
-        
-        // 3秒でタイムアウトさせる（UIフリーズ防止）
-        const timeoutId = setTimeout(() => {
-            console.warn("GPS Timeout");
-            resolve(null);
-        }, 3000);
-
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                clearTimeout(timeoutId);
-                resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude });
-            },
-            (err) => { 
-                clearTimeout(timeoutId);
-                console.warn("GPS Error:", err); 
-                resolve(null); 
-            },
-            { timeout: 3000, enableHighAccuracy: false } // 高精度は遅いのでOFFにする場合もあるが、一旦Timeoutで制御
-        );
-    });
-};
-
 window.captureAndIdentifyItem = async function() {
     if (window.isLiveImageSending) return;
     
-    // 1. まずマイクを停止 (音声競合回避)
+    // 1. マイク停止
     if (window.isAlwaysListening && window.continuousRecognition) {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
@@ -168,7 +177,7 @@ window.captureAndIdentifyItem = async function() {
         return alert("カメラが動いてないにゃ...。");
     }
 
-    // 2. UIを即座に更新 (フリーズ感をなくすため、awaitの前に実行)
+    // 2. UI更新
     window.isLiveImageSending = true;
     const btn = document.getElementById('live-camera-btn');
     if (btn) {
@@ -177,7 +186,7 @@ window.captureAndIdentifyItem = async function() {
         btn.disabled = true;
     }
 
-    // 3. 画像キャプチャを先に実行 (カメラ映像を確保)
+    // 3. 画像キャプチャ
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -186,27 +195,13 @@ window.captureAndIdentifyItem = async function() {
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     const treasureDataUrl = window.createTreasureImage(canvas);
 
-    // 4. フラッシュエフェクト (視覚フィードバック)
+    // 4. フラッシュ
     const flash = document.createElement('div');
     flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    // 5. 音声リアクション (GPS待ちの間に喋らせる)
-    if(typeof window.updateNellMessage === 'function') {
-        // awaitしないことで、発話と並行してGPS取得へ進む
-        window.updateNellMessage("ん？どこで何を見つけたのかにゃ…？", "thinking", false, true);
-    }
-
-    // 6. GPS取得 (ここで少し待つ可能性があるが、画像は確保済み)
-    let locationData = null;
-    try {
-        locationData = await getLocation();
-    } catch(e) {
-        console.warn("Location fetch skipped");
-    }
-
-    // 7. API送信
+    // 5. API送信 (★修正: 保持している位置情報を即座に使用)
     try {
         const res = await fetch('/identify-item', {
             method: 'POST',
@@ -214,7 +209,7 @@ window.captureAndIdentifyItem = async function() {
             body: JSON.stringify({ 
                 image: base64Data,
                 name: currentUser ? currentUser.name : "生徒",
-                location: locationData // 位置情報も送信
+                location: window.currentLocation // 待たずにこれを使う
             })
         });
 
@@ -256,14 +251,12 @@ window.captureAndIdentifyItem = async function() {
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回見せてにゃ？", "thinking", false, true);
     } finally {
         window.isLiveImageSending = false;
-        
         window.stopPreviewCamera(); 
         if (btn) {
             btn.innerHTML = "<span>📷</span> お宝を見せる（図鑑登録）";
             btn.style.backgroundColor = "#ff85a1"; 
             btn.disabled = false;
         }
-        
         if (window.isAlwaysListening && window.currentMode === 'chat') {
             try { window.continuousRecognition.start(); } catch(e){}
         }
@@ -448,7 +441,6 @@ window.startAnalysis = async function(b64) {
     document.getElementById('upload-controls').classList.add('hidden'); 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden');
     
-    // ★修正箇所: sfxHirameku(完了音)を鳴らさないように削除 (sfxBunsekiは鳴らす)
     try { 
         window.sfxBunseki.currentTime = 0; 
         window.sfxBunseki.loop = true;
