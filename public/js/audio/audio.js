@@ -1,26 +1,33 @@
-// --- audio.js (完全版 v297.0: 音量制御対応) ---
+// --- js/audio.js (完全版 v302.0: AudioContext同期修正版) ---
 
-let audioCtx = null;
+// グローバルな window.audioContext を正として扱うため、
+// ファイルスコープの audioCtx 変数は廃止します。
 let currentSource = null;
 let abortController = null; 
-window.ttsGainNode = null; // 音量制御用
+// window.ttsGainNode はグローバルで共有
 
 window.isNellSpeaking = false;
 
 window.initAudioContext = async function() {
     try {
-        if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            window.ttsGainNode = audioCtx.createGain();
-            window.ttsGainNode.connect(audioCtx.destination);
+        // window.audioContext がなければ作成、あればそれを使う
+        if (!window.audioContext) {
+            window.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        
+        // GainNode がなければ、現在の Context に紐づけて作成
+        // (voice-service.js で Context がリセットされた場合、GainNode も作り直す必要があるためチェック)
+        if (!window.ttsGainNode || window.ttsGainNode.context !== window.audioContext) {
+            window.ttsGainNode = window.audioContext.createGain();
+            window.ttsGainNode.connect(window.audioContext.destination);
             
             // 現在の音量を適用
             const targetVol = window.isMuted ? 0 : (window.appVolume || 0.5);
             window.ttsGainNode.gain.value = targetVol;
         }
         
-        if (audioCtx.state === 'suspended') {
-            await audioCtx.resume();
+        if (window.audioContext.state === 'suspended') {
+            await window.audioContext.resume();
             console.log("AudioContext resumed");
         }
     } catch(e) {
@@ -50,7 +57,9 @@ async function speakNell(text, mood = "normal") {
 
     window.isNellSpeaking = false;
 
+    // 最新のコンテキストを準備
     await window.initAudioContext();
+    const ctx = window.audioContext; // 最新のコンテキストを取得
 
     try {
         const timeoutId = setTimeout(() => abortController.abort(), 5000);
@@ -73,21 +82,27 @@ async function speakNell(text, mood = "normal") {
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-        const buffer = await audioCtx.decodeAudioData(bytes.buffer);
+        // 必ず最新の ctx でデコードする
+        const buffer = await ctx.decodeAudioData(bytes.buffer);
         
         if (signal.aborted) return;
 
-        const source = audioCtx.createBufferSource();
+        // 必ず最新の ctx でソースを作成する
+        const source = ctx.createBufferSource();
         source.buffer = buffer;
         
-        // GainNodeを経由して接続 (音量制御のため)
-        if (window.ttsGainNode) {
+        // GainNodeを経由して接続
+        // エラー回避: Source と GainNode のコンテキストが一致しているか確認
+        if (window.ttsGainNode && window.ttsGainNode.context === ctx) {
             source.connect(window.ttsGainNode);
             // 再生直前にも念のため音量同期
             const currentVol = window.isMuted ? 0 : (window.appVolume || 0.5);
-            window.ttsGainNode.gain.setValueAtTime(currentVol, audioCtx.currentTime);
+            window.ttsGainNode.gain.setValueAtTime(currentVol, ctx.currentTime);
         } else {
-            source.connect(audioCtx.destination);
+            // もしコンテキストが一致しない場合は、安全策として destination に直結
+            // (通常 initAudioContext で同期されるためここは通らないはずだが、念のため)
+            console.warn("TTS GainNode context mismatch. Connecting to destination directly.");
+            source.connect(ctx.destination);
         }
         
         currentSource = source;
