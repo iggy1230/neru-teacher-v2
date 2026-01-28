@@ -25,7 +25,7 @@ app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
 const MODEL_HOMEWORK = "gemini-2.5-pro"; // 宿題分析用
-const MODEL_FAST = "gemini-2.0-flash-exp"; // その他汎用
+const MODEL_FAST = "gemini-2.5-flash"; // その他汎用
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
