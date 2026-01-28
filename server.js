@@ -42,8 +42,7 @@ let genAI, ttsClient;
 try {
 if (!process.env.GEMINI_API_KEY) console.error("⚠️ GEMINI_API_KEY が設定されていません。");
 genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-code
-Code
+
 if (process.env.GOOGLE_CREDENTIALS_JSON) {
     try {
         const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
@@ -94,8 +93,7 @@ const model = genAI.getGenerativeModel({
 model: MODEL_FAST,
 generationConfig: { responseMimeType: "application/json" }
 });
-code
-Code
+
 const prompt = `
     あなたは生徒の長期記憶を管理するAIです。
     以下の「現在のプロフィール」と「直近の会話ログ」をもとに、プロフィールを更新してください。
@@ -154,8 +152,7 @@ const prompt = `
 app.post('/analyze', async (req, res) => {
 try {
 const { image, mode, grade, subject, name } = req.body;
-code
-Code
+
 const model = genAI.getGenerativeModel({ 
         model: MODEL_HOMEWORK, 
         generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -227,8 +224,7 @@ const model = genAI.getGenerativeModel({
 app.post('/identify-item', async (req, res) => {
 try {
 const { image, name, location } = req.body;
-code
-Code
+
 const tools = [{ google_search: {} }];
     const model = genAI.getGenerativeModel({ 
         model: MODEL_FAST,
@@ -304,8 +300,7 @@ const tools = [{ google_search: {} }];
 app.post('/chat-dialogue', async (req, res) => {
 try {
 const { text, name, image, history } = req.body;
-code
-Code
+
 const now = new Date();
     const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
     const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
@@ -412,8 +407,7 @@ try {
 const { count, name } = req.body;
 await appendToServerLog(name, 給食をくれた(${count}個目)。);
 const isSpecial = (count % 10 === 0);
-code
-Code
+
 const model = genAI.getGenerativeModel({ 
         model: MODEL_FAST,
         safetySettings: [
@@ -451,8 +445,7 @@ const { type, name, score } = req.body;
 const model = genAI.getGenerativeModel({ model: MODEL_FAST });
 let prompt = "";
 let mood = "excited";
-code
-Code
+
 if (type === 'start') {
         prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。語尾は「にゃ」。`;
     } else if (type === 'end') {
@@ -475,8 +468,7 @@ const params = parse(req.url, true).query;
 let grade = params.grade || "1";
 let name = decodeURIComponent(params.name || "生徒");
 let mode = params.mode || "simple-chat";
-code
-Code
+
 if (mode === 'chat') { 
     clientWs.close();
     return;
