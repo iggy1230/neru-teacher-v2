@@ -562,7 +562,7 @@ wss.on('connection', async (clientWs, req) => {
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
                             speech_config: { 
-                                voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
+                                voice_config: { prebuilt_voice_config: { voice_name: "Kore" } }, 
                                 language_code: "ja-JP" 
                             } 
                         }, 
