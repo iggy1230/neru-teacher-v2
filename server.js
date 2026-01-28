@@ -1,4 +1,4 @@
-// --- server.js (完全版 v299.1: 時刻修正＆WS認識強化版) ---
+// --- server.js (完全版 v299.0: 図鑑会話継続対応) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -233,10 +233,10 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- お宝図鑑用 画像解析API ---
+// --- ★ お宝図鑑用 画像解析API (Google検索・位置情報連携・会話誘導版) ---
 app.post('/identify-item', async (req, res) => {
     try {
-        const { image, name, location } = req.body;
+        const { image, name, location } = req.body; // location: { lat, lon }
         
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
@@ -256,20 +256,20 @@ app.post('/identify-item', async (req, res) => {
         ${locationInfo}
 
         【特定と命名のルール】
-        1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
-        2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。（例：「携帯ゲーム機」ではなく「Nintendo Switch」）。
-        3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
+        1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称（施設名や史跡名）」を \`itemName\` に設定してください。（例：「公園」ではなく「〇〇公園」、「お城」ではなく「〇〇城」）
+        2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。（例：「携帯ゲーム機」ではなく「Nintendo Switch」、「車」ではなく「プリウス」、「花」ではなく「アサガオ」）。
+        3. **一般的な商品**: 位置情報があっても、それがコンビニや家の中にある一般的な商品（お菓子、おもちゃ、文房具など）の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
-        2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
+        2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。位置情報から特定した場合は、その場所の説明を含めてください。
 
         【出力フォーマット (JSON文字列のみ出力)】
         \`\`\`json
         {
             "itemName": "正式名称",
-            "description": "ネル先生の面白い解説＋問いかけ",
-            "realDescription": "本当の解説",
+            "description": "ネル先生の面白い解説＋問いかけ（120文字程度）",
+            "realDescription": "本当の解説（120文字程度）。正確な名称や場所の知識。",
             "speechText": "『これは（itemName）だにゃ！（description）』"
         }
         \`\`\`
@@ -310,7 +310,7 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- HTTPチャット会話 ---
+// --- ★ HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
         const { text, name, image, history } = req.body;
@@ -342,10 +342,10 @@ app.post('/chat-dialogue', async (req, res) => {
         ${contextPrompt}
 
         【出力フォーマット】
-        **必ず以下のJSON形式の文字列だけ**を出力してください。
+        **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownコードブロックは含んでも構いません。
         {
             "speech": "ネル先生のセリフ。語尾は必ず「にゃ」や「だにゃ」。親しみやすく。",
-            "board": "黒板に書く内容。"
+            "board": "黒板に書く内容。ここには**セリフや口調を含めない**こと。数式、答え、漢字、箇条書きの解説、検索結果の要約など、学習に必要な情報のみを簡潔に書く。該当するものがない場合は空文字で良い。"
         }
         
         ユーザー発言: ${text}
@@ -499,10 +499,7 @@ wss.on('connection', async (clientWs, req) => {
     const connectToGemini = (statusContext) => {
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Tokyo' };
-        // ★修正: 時間も含める
-        const timeOptions = { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' };
         const todayStr = now.toLocaleDateString('ja-JP', dateOptions);
-        const timeStr = now.toLocaleTimeString('ja-JP', timeOptions);
         
         const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
         
@@ -514,7 +511,7 @@ wss.on('connection', async (clientWs, req) => {
                 あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
 
                 【重要：現在の時刻設定】
-                **現在は ${todayStr} ${timeStr} です。**
+                **現在は ${todayStr} です。**
 
                 【話し方のルール】
                 1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
@@ -523,12 +520,11 @@ wss.on('connection', async (clientWs, req) => {
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
 
-                【最重要: 画像への対応ルール】
+                【最重要: 画像への対応ルール（勉強質問モード）】
                 ユーザーから画像が送信された場合：
                 1. それは「勉強の問題」や「教えてほしい画像」です。
                 2. 画像の内容を詳しく解析し、子供にもわかるように優しく、丁寧に教えてください。
-                3. **重要: 一般的なカテゴリ名（例：ゲーム機、車）ではなく、具体的な商品名や固有名詞（例：Nintendo Switch、プリウス）を特定して答えてください。**
-                4. 図鑑登録ツールは使用しないでください。
+                3. **図鑑登録ツールは使用しないでください。**
 
                 【生徒についての記憶】
                 ${statusContext}
