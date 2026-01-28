@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v301.0: カメラ制御・カメラトグル修正版) ---
+// --- js/voice-service.js (v302.0: 内部ログフィルタリング強化版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -126,7 +126,7 @@ window.stopAlwaysOnListening = function() {
     }
 };
 
-// WebSocketチャット用画像送信 (トグル方式に修正)
+// WebSocketチャット用画像送信 (トグル方式)
 window.captureAndSendLiveImage = function(context = 'main') {
     if (context === 'main') {
         if (window.currentMode === 'chat-free') context = 'free';
@@ -147,7 +147,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
     const videoContainer = document.getElementById('live-chat-video-container-free');
     const videoId = 'live-chat-video-free';
 
-    // ★修正: プレビューがまだ出ていない場合（カメラ未起動の場合）はプレビューを開始する
+    // プレビューがまだ出ていない場合（カメラ未起動の場合）はプレビューを開始する
     if (!window.previewStream || !window.previewStream.active) {
         if (window.isAlwaysListening && window.continuousRecognition) {
             try { window.continuousRecognition.stop(); } catch(e){}
@@ -228,7 +228,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
         window.isLiveImageSending = false;
         window.isMicMuted = false;
         
-        // ★修正: 送信後はカメラを閉じて元のボタン表示に戻す
+        // 送信後はカメラを閉じて元のボタン表示に戻す
         if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); 
         
         if (btn) {
@@ -340,7 +340,7 @@ window.stopLiveChat = function() {
     if(window.stopSpeakingTimer) clearTimeout(window.stopSpeakingTimer); 
     if(window.speakingStartTimer) clearTimeout(window.speakingStartTimer); 
     
-    // ★修正: カメラも停止
+    // カメラも停止
     if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
 
     const btn = document.getElementById('mic-btn-free');
@@ -440,12 +440,19 @@ window.startLiveChat = async function(context = 'main') {
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.text) { 
-                            // ★修正: バッファにためる前に、システムっぽい出力（User says: など）が含まれていないか簡易チェック
-                            // 基本的にはプロンプトで抑制するが、万が一のために
-                            if (!p.text.startsWith("User") && !p.text.startsWith("Model")) {
-                                window.streamTextBuffer += p.text;
-                                if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false); 
-                            }
+                            // ★修正: フィルタリングロジックの強化
+                            // 1. メタ指示系パターンの除外
+                            const ignorePatterns = [/^User.*:/i, /^Model.*:/i, /^System.*:/i, /^Instructions?:/i];
+                            if (ignorePatterns.some(regex => regex.test(p.text))) return;
+
+                            // 2. 日本語を含まず、かつ英字が含まれる長い文は内部ログとみなして除外
+                            const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(p.text);
+                            const hasEnglish = /[a-zA-Z]/.test(p.text);
+                            if (!hasJapanese && hasEnglish && p.text.length > 20) return;
+
+                            // フィルタリングを通過したものだけ表示
+                            window.streamTextBuffer += p.text;
+                            if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false); 
                         } 
                         if (p.inlineData) window.playLivePcmAudio(p.inlineData.data); 
                     }); 
@@ -496,7 +503,7 @@ window.startMicrophone = async function() {
             window.recognition.start(); 
         } 
         
-        // ★修正: ここではカメラ映像を取得しない（音声のみ）
+        // ここではカメラ映像を取得しない（音声のみ）
         window.mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { sampleRate: 16000, channelCount: 1 }, 
             video: false 
