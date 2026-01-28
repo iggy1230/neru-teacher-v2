@@ -1,4 +1,4 @@
-// --- server.js (完全版 v300.4: 思考漏れ対策強化版) ---
+// --- server.js (完全版 v302.0: 音声重複バグ修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -24,9 +24,9 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-const MODEL_HOMEWORK = "gemini-2.5-pro";         // 宿題分析用
-const MODEL_FAST = "gemini-2.5-flash";           // 基本
-const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-12-2025"; // リアルタイム対話
+const MODEL_HOMEWORK = "gemini-2.5-pro";
+const MODEL_FAST = "gemini-2.5-flash";
+const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-12-2025"; 
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -578,6 +578,7 @@ wss.on('connection', async (clientWs, req) => {
 
             geminiWs.on('message', (data) => {
                 try {
+                    // ★修正: サーバーサイドツール処理
                     const response = JSON.parse(data);
                     
                     if (response.serverContent?.modelTurn?.parts) {
@@ -599,11 +600,14 @@ wss.on('connection', async (clientWs, req) => {
                         });
                     }
                     
-                    if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
-                    
+                    // ★最重要修正: 転送は「必ず1回」だけ行う (tryの外で)
                 } catch (e) {
                     console.error("Gemini WS Handling Error:", e);
-                    if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
+                }
+                
+                // ★修正: try/catchの外で転送。これで重複を防ぐ
+                if (clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(data);
                 }
             });
 
