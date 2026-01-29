@@ -1,4 +1,4 @@
-// --- server.js (完全版 v303.0: 位置情報プロンプト強化版) ---
+// --- server.js (完全版 v304.0: 位置情報埋め込み・天気予報改善版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -317,7 +317,7 @@ app.post('/identify-item', async (req, res) => {
 // --- HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        const { text, name, image, history, location } = req.body;
+        let { text, name, image, history, location } = req.body;
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -333,15 +333,18 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
-        // ★修正: 位置情報を強く認識させるプロンプト
+        // ★修正: 位置情報をユーザー入力に強制的に追記
+        // これにより、AIは確実に「検索クエリ」に座標を含めるようになる
         let locationPrompt = "";
         if (location && location.lat && location.lon) {
             locationPrompt = `
             【重要：現在地情報】
             ユーザーの現在地は 緯度:${location.lat}, 経度:${location.lon} です。
-            ユーザーが「天気」「周辺情報」「ここはどこ？」など、**場所に関連する質問**をした場合は、必ずこの座標を検索キーワードに含めて（例：「${location.lat},${location.lon} 天気」）Google検索を実行してください。
-            単に「天気」とだけ検索すると現在地が反映されないため禁止します。
+            天気や場所に関する質問には、必ずこの座標を用いてGoogle検索してください。
             `;
+            
+            // ユーザーの発言自体に座標情報を付加してAIに渡す
+            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。天気や場所の質問ならこの座標で検索してください）`;
         }
 
         let prompt = `
