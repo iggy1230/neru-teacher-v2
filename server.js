@@ -1,4 +1,4 @@
-// --- server.js (完全版 v300.0: モデル構成刷新版) ---
+// --- server.js (完全版 v301.0: Gemini切断時のクライアント通知追加) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -24,7 +24,7 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants (ユーザー指定) ---
-const MODEL_HOMEWORK = "gemini-2.5-pro";         // 宿題分析用（高精度）
+const MODEL_HOMEWORK = "gemini-3-pro-preview";         // 宿題分析用（高精度）
 const MODEL_FAST = "gemini-2.5-flash";           // 基本（会話・反応・記憶整理）
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // リアルタイムWebSocket（対話）
 
@@ -610,7 +610,20 @@ wss.on('connection', async (clientWs, req) => {
             });
 
             geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
-            geminiWs.on('close', () => console.log("Gemini WS Closed"));
+            
+            // ★追加: Gemini側からの切断を検知し、クライアントに通知して切断する
+            geminiWs.on('close', (code, reason) => {
+                console.log(`Gemini WS Closed: ${code} ${reason}`);
+                if (clientWs.readyState === WebSocket.OPEN) {
+                    // クライアントに通知 (type: "gemini_closed")
+                    try {
+                        clientWs.send(JSON.stringify({ type: "gemini_closed" }));
+                    } catch(e) {}
+                    
+                    // クライアント側で再接続ロジックを動かすために接続を閉じる
+                    clientWs.close();
+                }
+            });
 
         } catch(e) { 
             console.error("Gemini Connection Error:", e);
