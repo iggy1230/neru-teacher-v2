@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v303.0: Master GainNode接続対応版) ---
+// --- js/voice-service.js (v307.0: カメラ自動起動無効化・送信後クローズ版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -32,6 +32,7 @@ window.startAlwaysOnListening = function() {
         const text = event.results[0][0].transcript;
         if (!text || text.trim() === "") return;
 
+        // 割り込み判定
         const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
         const isStopCommand = stopKeywords.some(w => text.includes(w));
         const isLongEnough = text.length >= 10;
@@ -49,6 +50,7 @@ window.startAlwaysOnListening = function() {
         console.log(`[User Said] ${text}`);
         window.continuousRecognition.stop();
         
+        // 音声認識結果を表示
         let targetId = 'user-speech-text-embedded';
         if (window.currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
         
@@ -80,6 +82,7 @@ window.startAlwaysOnListening = function() {
                     await window.updateNellMessage(speechText, "normal", true, true);
                 }
                 
+                // 黒板表示
                 let boardId = 'embedded-chalkboard';
                 if (window.currentMode === 'simple-chat') boardId = 'chalkboard-simple';
                 const embedBoard = document.getElementById(boardId);
@@ -114,6 +117,7 @@ window.startAlwaysOnListening = function() {
     try { window.continuousRecognition.start(); } catch(e) { console.log("Rec start failed", e); }
 };
 
+// 常時聞き取り停止
 window.stopAlwaysOnListening = function() {
     window.isAlwaysListening = false;
     if (window.continuousRecognition) {
@@ -122,6 +126,7 @@ window.stopAlwaysOnListening = function() {
     }
 };
 
+// WebSocketチャット用画像送信
 window.captureAndSendLiveImage = function(context = 'main') {
     if (context === 'main') {
         if (window.currentMode === 'chat-free') context = 'free';
@@ -138,15 +143,31 @@ window.captureAndSendLiveImage = function(context = 'main') {
         return alert("まずは「おはなしする」でネル先生とつながってにゃ！");
     }
     if (window.isLiveImageSending) return; 
+    
     let videoId = 'live-chat-video-free';
+    let containerId = 'live-chat-video-container-free';
     const video = document.getElementById(videoId);
-    if (!video || !video.srcObject || !video.srcObject.active) return alert("カメラが動いてないにゃ...");
+    const btn = document.getElementById('live-camera-btn-free');
+
+    // カメラがまだ動いていない場合は起動する（マイク通話中でない場合など）
+    if (!video || !video.srcObject || !video.srcObject.active) {
+        if (typeof window.startPreviewCamera === 'function') {
+            window.startPreviewCamera(videoId, containerId).then(() => {
+                if (btn) {
+                    btn.innerHTML = "<span>📸</span> 撮影して送信";
+                    btn.style.backgroundColor = "#ff5252";
+                }
+            });
+        } else {
+            alert("カメラ機能が読み込まれていないにゃ...");
+        }
+        return;
+    }
 
     window.stopAudioPlayback();
     window.ignoreIncomingAudio = true; 
     window.isLiveImageSending = true;
     
-    const btn = document.getElementById('live-camera-btn-free');
     if (btn) {
         btn.innerHTML = "<span>📡</span> 送信中にゃ...";
         btn.style.backgroundColor = "#ccc";
@@ -159,6 +180,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
+    // 通知
     const notif = document.createElement('div');
     notif.innerText = `📝 問題を送ったにゃ！`;
     notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #8bc34a; color:#558b2f; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
@@ -167,6 +189,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
     
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     
+    // フラッシュ
     const flash = document.createElement('div');
     flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
     document.body.appendChild(flash);
@@ -200,6 +223,12 @@ window.captureAndSendLiveImage = function(context = 'main') {
     setTimeout(() => {
         window.isLiveImageSending = false;
         window.isMicMuted = false;
+        
+        // ★修正: 送信完了後は必ずカメラ画面を閉じる
+        if (typeof window.stopPreviewCamera === 'function') {
+            window.stopPreviewCamera();
+        }
+        
         if (btn) {
              btn.innerHTML = "<span>📷</span> 写真を見せてお話";
              btn.style.backgroundColor = "#009688";
@@ -208,6 +237,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
     setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
 };
 
+// HTTPチャット用画像送信
 window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     if (window.isLiveImageSending) return;
     
@@ -368,7 +398,6 @@ window.startLiveChat = async function(context = 'main') {
         
         if (window.initAudioContext) await window.initAudioContext(); 
         
-        // AudioContextの再取得 (初期化時にwindow.audioCtxが作られるが、念のため)
         if (!window.audioContext && window.audioCtx) {
             window.audioContext = window.audioCtx;
         } else if (!window.audioContext) {
@@ -511,7 +540,9 @@ window.startMicrophone = async function() {
             window.recognition.start(); 
         } 
         
-        const useVideo = true;
+        // ★修正: chat-freeモードでは初期ビデオOFF (音声のみ)
+        const useVideo = (window.currentMode !== 'chat-free');
+
         window.mediaStream = await navigator.mediaDevices.getUserMedia({ 
             audio: { sampleRate: 16000, channelCount: 1 }, 
             video: useVideo ? { facingMode: "environment" } : false 
@@ -548,8 +579,6 @@ window.startMicrophone = async function() {
 window.playLivePcmAudio = function(base64) { 
     if (!window.audioContext || window.ignoreIncomingAudio) return; 
     
-    // ★修正: window.audioCtx（AudioContext）と window.masterGainNode がある前提で動作する
-    // voice-service内では window.audioContext という変数も使われているので統一する
     if (!window.audioContext && window.audioCtx) window.audioContext = window.audioCtx;
 
     const binary = window.atob(base64); 
@@ -563,7 +592,6 @@ window.playLivePcmAudio = function(base64) {
     const source = window.audioContext.createBufferSource(); 
     source.buffer = buffer; 
     
-    // ★重要: Master Gain Node に接続して音量制御を効かせる
     if (window.masterGainNode) {
         source.connect(window.masterGainNode);
     } else {
