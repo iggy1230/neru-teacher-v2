@@ -24,7 +24,7 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants (ユーザー指定) ---
-const MODEL_HOMEWORK = "gemini-3-pro-preview";         // 宿題分析用（高精度）
+const MODEL_HOMEWORK = "gemini-2.5-pro";         // 宿題分析用（高精度）
 const MODEL_FAST = "gemini-2.5-flash";           // 基本（会話・反応・記憶整理）
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // リアルタイムWebSocket（対話）
 
