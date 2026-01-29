@@ -1,4 +1,4 @@
-// --- js/analyze.js (v304.0: 位置情報取得タイミング強化版) ---
+// --- js/analyze.js (v305.0: 位置情報高精度モード版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -9,7 +9,7 @@ window.currentLocation = null;
 // 位置情報取得ヘルパー
 window.fetchCurrentLocation = function() {
     if (!navigator.geolocation) return;
-    console.log("Fetching location...");
+    console.log("Fetching location (High Accuracy)...");
     navigator.geolocation.getCurrentPosition(
         (pos) => {
             window.currentLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
@@ -19,7 +19,8 @@ window.fetchCurrentLocation = function() {
             console.warn("Location fetch failed:", err);
             window.currentLocation = null;
         },
-        { timeout: 10000, enableHighAccuracy: false } // タイムアウトを10秒に延長
+        // ★修正: 高精度モードをONにし、タイムアウトを15秒に延長
+        { timeout: 15000, enableHighAccuracy: true } 
     );
 };
 
