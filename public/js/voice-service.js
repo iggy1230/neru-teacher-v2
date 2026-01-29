@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v304.0: ログフィルタリング強化・カメラ制御版) ---
+// --- js/voice-service.js (v305.0: 画像解析ログ遮断強化版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -315,25 +315,29 @@ window.startLiveChat = async function(context = 'main') {
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.text) { 
                             // ★修正: フィルタリング強化 (ご指摘の部分)
-                            // 1. **Describing... などのメタヘッダーを排除
-                            if (/^\*\*Describing/i.test(p.text)) return;
-                            if (/^I've got an image/i.test(p.text)) return;
+                            const text = p.text;
 
-                            // 2. 既存のメタパターン排除
+                            // 1. メタヘッダー系の排除 (**Analyzing...**, **Describing...**, **Image Analysis** など)
+                            if (/^\*\*(Analyzing|Describing|Image|Analysis)/i.test(text)) return;
+
+                            // 2. 画像受領・描写の定型句を排除
+                            if (/^(I received an image|The image (shows|depicts|features)|It looks like|This is an image)/i.test(text)) return;
+
+                            // 3. 既存のメタパターン排除
                             const ignorePatterns = [/^User.*:/i, /^Model.*:/i, /^System.*:/i, /^Instructions?:/i];
-                            const isMeta = ignorePatterns.some(regex => regex.test(p.text));
-                            const isBracketed = /^(\(|\[|【|（).+?(\)|\]|】|）)$/.test(p.text.trim());
+                            if (ignorePatterns.some(regex => regex.test(text))) return;
+
+                            // 4. 括弧書きの排除
+                            if (/^(\(|\[|【|（).+?(\)|\]|】|）)$/.test(text.trim())) return;
                             
-                            // 3. 日本語を含まず、英語のみで特定のキーワードを含むか短い文
-                            const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(p.text);
-                            const hasEnglish = /[a-zA-Z]/.test(p.text);
-                            // "Describing the Image" のようなフレーズが含まれていたらアウト
-                            const isEnglishInstruction = !hasJapanese && hasEnglish && (/instruction|guideline|response|describing/i.test(p.text));
+                            // 5. 日本語を含まず、英語のみで一定の長さがあるものは弾く (ネル先生は日本語)
+                            const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text);
+                            const hasEnglishChars = /[a-zA-Z]/.test(text);
+                            if (!hasJapanese && hasEnglishChars && text.length > 15) return;
                             
-                            if (!isMeta && !isBracketed && !isEnglishInstruction) {
-                                window.streamTextBuffer += p.text;
-                                if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false); 
-                            }
+                            // フィルタ通過
+                            window.streamTextBuffer += text;
+                            if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false); 
                         } 
                         if (p.inlineData) window.playLivePcmAudio(p.inlineData.data); 
                     }); 
