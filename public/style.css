@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v303.0: 音量UI刷新版) --- */
+/* --- style.css (完全版 v304.0: 設定ボタン強制削除・音量バー設置) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1027,6 +1027,11 @@ button { font-family: inherit; }
     font-size: 1rem;
     line-height: 1;
     padding: 0;
+}
+
+/* ★修正: 古い設定ボタンを強制非表示 */
+.settings-btn-fixed {
+    display: none !important;
 }
 
 /* 新: 音量コントロール固定表示 */
