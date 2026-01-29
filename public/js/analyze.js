@@ -1,4 +1,4 @@
-// --- js/analyze.js (v300.1: 給食レスポンス改善版) ---
+// --- js/analyze.js (v295.2: フキダシ表示修正版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -126,6 +126,9 @@ window.addToSessionHistory = function(role, text) {
 };
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
+    // リアルタイムモード（chat-free）かつWebSocket接続中は、音声はサーバーからのPCMで再生されるため
+    // speakNellによるTTSは無効化する（speak = false）。
+    // これにより、フキダシの更新処理だけが行われる。
     if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
         speak = false;
     }
@@ -135,14 +138,31 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
+    // --- フキダシ表示用のテキストクリーニング ---
+    // ここでの変更は画面表示（innerText）にのみ影響し、
+    // リアルタイムモードの音声（PCMストリーム）には影響しません。
+    let displayText = t || "";
+    
+    // 1. [DISPLAY:...] や 【DISPLAY:...】 などの指示タグを除去
+    displayText = displayText.replace(/(?:\[|\【)?DISPLAY[:：].*?(?:\]|\】)?/gi, "");
+    
+    // 2. 英語の指示ヘッダー (Thinking Process: ... 等) を除去
+    displayText = displayText.replace(/^(?:System|User|Model|Assistant)[:：].*?$/gim, "");
+    
+    // 3. 文頭・文末のト書き（括弧書き）を除去
+    displayText = displayText.replace(/^\s*[\(（【\[].*?[\)）】\]]\s*/gm, ""); 
+    displayText = displayText.replace(/\s*[\(（【\[].*?[\)）】\]]\s*$/gm, "");
+    
+    displayText = displayText.trim();
     
     if (el) el.innerText = displayText;
     
     if (t && t.includes("もぐもぐ")) { if(window.safePlay) window.safePlay(window.sfxBori); }
     
-    if (saveToMemory) { window.saveToNellMemory('nell', t); }
+    if (saveToMemory) { window.saveToNellMemory('nell', displayText); }
     
+    // speakがtrueの場合（HTTPチャットなど）のみTTSを実行
+    // リアルタイムモードではここは実行されない
     if (speak && typeof speakNell === 'function') {
         let textForSpeech = displayText.replace(/【.*?】/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
@@ -362,30 +382,16 @@ window.showKarikariEffect = function(amount) { const container = document.queryS
 
 window.giveLunch = function() { 
     if (currentUser.karikari < 1) return window.updateNellMessage("カリカリがないにゃ……", "thinking", false); 
-    
-    // ★修正箇所: 先に「もぐもぐ」と言わせる
     window.updateNellMessage("もぐもぐ……", "normal", false); 
-    
     currentUser.karikari--; 
     if(typeof saveAndSync === 'function') saveAndSync(); 
     window.updateMiniKarikari(); 
     window.showKarikariEffect(-1); 
     window.lunchCount++; 
-    
-    // 非同期でリアクション取得 (setTimeoutによる待機を削除し即座に更新)
-    fetch('/lunch-reaction', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) 
-    })
-    .then(r => r.json())
-    .then(d => { 
-        // サーバーから返答が来たら即座に反映
-        window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); 
-    })
-    .catch(e => { 
-        window.updateNellMessage("おいしいにゃ！", "happy", false); 
-    }); 
+    fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
+        .then(r => r.json())
+        .then(d => { setTimeout(() => { window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 1500); })
+        .catch(e => { setTimeout(() => { window.updateNellMessage("おいしいにゃ！", "happy", false); }, 1500); }); 
 }; 
 
 // ※ ゲームロジックは js/game-engine.js に移動済み
