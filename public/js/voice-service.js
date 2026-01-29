@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v307.0: カメラ自動起動無効化・送信後クローズ版) ---
+// --- js/voice-service.js (v308.1: 音声対話への位置情報連携追加版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -61,13 +61,15 @@ window.startAlwaysOnListening = function() {
         if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('user', text);
 
         try {
+            // ★修正: 音声入力時も位置情報をサーバーに送信する
             const res = await fetch('/chat-dialogue', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     text: text, 
                     name: currentUser ? currentUser.name : "生徒",
-                    history: window.chatSessionHistory 
+                    history: window.chatSessionHistory,
+                    location: window.currentLocation // 位置情報を追加
                 })
             });
             
@@ -224,7 +226,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
         window.isLiveImageSending = false;
         window.isMicMuted = false;
         
-        // ★修正: 送信完了後は必ずカメラ画面を閉じる
+        // 送信完了後は必ずカメラ画面を閉じる
         if (typeof window.stopPreviewCamera === 'function') {
             window.stopPreviewCamera();
         }
@@ -276,6 +278,7 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     try {
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
 
+        // ★修正: 画像送信時も位置情報を送る
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -283,7 +286,8 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
                 image: base64Data,
                 text: "この問題を教えてください。",
                 name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory
+                history: window.chatSessionHistory,
+                location: window.currentLocation // 位置情報を追加
             })
         });
 
@@ -336,7 +340,6 @@ window.stopLiveChat = function() {
     if (window.liveSocket) {
         window.liveSocket.close(); 
     }
-    // ★修正: ここで変数をnullリセットして、再作成を強制する
     if (window.audioContext && window.audioContext.state !== 'closed') {
         window.audioContext.close(); 
     }
@@ -415,6 +418,12 @@ window.startLiveChat = async function(context = 'main') {
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; 
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`; 
+        
+        // ★修正: リアルタイムチャット開始時も現在地情報をコンテキストに含める
+        if (window.currentLocation) {
+            statusSummary += ` 現在地は緯度${window.currentLocation.lat}、経度${window.currentLocation.lon}だにゃ。`;
+        }
+
         let modeParam = 'chat-free';
 
         const url = `${wsProto}//${location.host}?grade=${currentUser.grade}&name=${encodeURIComponent(currentUser.name)}&mode=${modeParam}`; 
@@ -546,7 +555,7 @@ window.startMicrophone = async function() {
             window.recognition.start(); 
         } 
         
-        // ★修正: chat-freeモードでは初期ビデオOFF (音声のみ)
+        // chat-freeモードでは初期ビデオOFF (音声のみ)
         const useVideo = (window.currentMode !== 'chat-free');
 
         window.mediaStream = await navigator.mediaDevices.getUserMedia({ 
