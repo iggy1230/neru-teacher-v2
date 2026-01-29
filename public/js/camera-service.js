@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v307.0: 位置情報エラー通知強化版) ---
+// --- js/camera-service.js (v308.0: iPhone対応・リサイズ・GPS延長版) ---
 
 // ==========================================
 // 位置情報管理
@@ -26,7 +26,6 @@ window.startLocationWatch = function() {
             console.warn("📍 Location Watch Error:", err);
             let msg = "位置情報がわからないにゃ…";
             
-            // エラーコード別のメッセージ
             switch(err.code) {
                 case 1: // PERMISSION_DENIED
                     msg = "位置情報の許可がないにゃ。ブラウザの設定で許可してほしいにゃ！";
@@ -39,11 +38,8 @@ window.startLocationWatch = function() {
                     break;
             }
 
-            // ネル先生に報告させる（ユーザー操作後のタイミングなので関数は存在するはず）
             if (typeof window.updateNellMessage === 'function') {
                 window.updateNellMessage(msg, "sad", false);
-            } else {
-                alert(msg);
             }
         },
         { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 }
@@ -58,22 +54,21 @@ window.stopLocationWatch = function() {
     }
 };
 
-// 単発で位置情報を取得するヘルパー（タイムアウト付き）
+// 単発で位置情報を取得するヘルパー
 const getOneShotLocation = () => {
     return new Promise((resolve) => {
         if (!navigator.geolocation) return resolve(null);
         
-        // 3秒で諦める
+        // ★修正: iPhone等のGPS測位時間を考慮して10秒待つ
         const timeoutId = setTimeout(() => {
             console.warn("📍 Location One-shot Timeout");
             resolve(null);
-        }, 3000); 
+        }, 10000); 
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 clearTimeout(timeoutId);
                 const loc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-                // キャッシュも更新しておく
                 window.currentLocation = loc;
                 resolve(loc);
             },
@@ -82,7 +77,7 @@ const getOneShotLocation = () => {
                 console.warn("📍 Location One-shot Error:", err);
                 resolve(null);
             },
-            { enableHighAccuracy: false, timeout: 3000 } 
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 } 
         );
     });
 };
@@ -101,14 +96,21 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
             window.previewStream.getTracks().forEach(t => t.stop());
         }
         try {
+            // ★修正: 解像度の目安を指定して、極端に巨大な映像を防ぐ
             window.previewStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment" },
+                video: { 
+                    facingMode: "environment",
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
                 audio: false 
             });
         } catch(e) {
             window.previewStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         }
         video.srcObject = window.previewStream;
+        // iOSでの再生互換性のため
+        video.setAttribute('playsinline', true);
         await video.play();
         container.style.display = 'block';
 
@@ -219,7 +221,6 @@ window.createTreasureImage = function(sourceCanvas) {
 window.captureAndIdentifyItem = async function() {
     if (window.isLiveImageSending) return;
     
-    // 1. マイク停止
     if (window.isAlwaysListening && window.continuousRecognition) {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
@@ -229,7 +230,6 @@ window.captureAndIdentifyItem = async function() {
         return alert("カメラが動いてないにゃ...。");
     }
 
-    // 2. UI更新
     window.isLiveImageSending = true;
     const btn = document.getElementById('live-camera-btn');
     if (btn) {
@@ -238,13 +238,28 @@ window.captureAndIdentifyItem = async function() {
         btn.disabled = true;
     }
 
-    // 3. 画像キャプチャ
+    // 3. 画像キャプチャ & リサイズ処理 (★修正)
+    const MAX_WIDTH = 800; // 長辺の最大サイズ
+    let w = video.videoWidth || 640;
+    let h = video.videoHeight || 480;
+    
+    // アスペクト比を維持してリサイズ
+    if (w > h) {
+        if (w > MAX_WIDTH) { h *= MAX_WIDTH / w; w = MAX_WIDTH; }
+    } else {
+        if (h > MAX_WIDTH) { w *= MAX_WIDTH / h; h = MAX_WIDTH; }
+    }
+
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, w, h);
+    
     const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+    
+    // 図鑑用サムネイルは元の比率で切り抜くため、元のvideoから作成しても良いが
+    // ここではリサイズ後のcanvasを使っても問題ない
     const treasureDataUrl = window.createTreasureImage(canvas);
 
     // 4. フラッシュ
@@ -253,9 +268,10 @@ window.captureAndIdentifyItem = async function() {
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    // 5. 位置情報の確保 (Watchで取れていなければ、ここでワンショット試行)
+    // 5. 位置情報の確保
     let loc = window.currentLocation;
     if (!loc) {
+        // まだ取れていなければ、ここで粘る(10秒)
         loc = await getOneShotLocation();
     }
 
@@ -267,7 +283,7 @@ window.captureAndIdentifyItem = async function() {
             body: JSON.stringify({ 
                 image: base64Data,
                 name: currentUser ? currentUser.name : "生徒",
-                location: loc // 確保した位置情報を使用
+                location: loc 
             })
         });
 
@@ -321,7 +337,7 @@ window.captureAndIdentifyItem = async function() {
     }
 };
 
-// ...以下、宿題カメラ関連コードは変更なし...
+// ... (以下変更なし) ...
 window.startHomeworkWebcam = async function() {
     const modal = document.getElementById('camera-modal');
     const video = document.getElementById('camera-video');
