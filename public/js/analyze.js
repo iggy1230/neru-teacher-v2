@@ -1,4 +1,4 @@
-// --- js/analyze.js (v294.2: 採点ロジック修正完全版) ---
+// --- js/analyze.js (v296.0: フキダシ表示改善・音声維持版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -125,26 +125,39 @@ window.addToSessionHistory = function(role, text) {
     }
 };
 
+// ★修正: フキダシの指示文除去処理を追加しつつ、音声出力制御は変更しない
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
-        speak = false;
-    }
-
     const gameScreen = document.getElementById('screen-game');
     const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
+    // --- 表示用テキストのクリーニング ---
+    let cleanText = t || "";
     
-    if (el) el.innerText = displayText;
+    // 1. [DISPLAY:...] や 【DISPLAY:...】 などの指示タグを除去
+    cleanText = cleanText.replace(/(?:\[|【)DISPLAY[:：].*?(?:\]|】)/gi, "");
+    
+    // 2. 役割ラベル System:, Model: 等の除去 (行頭にある場合)
+    cleanText = cleanText.replace(/^(?:System|User|Model|Assistant)[:：].*?$/gim, "");
+    
+    // 3. 文頭・文末のト書き（括弧書き）を除去
+    cleanText = cleanText.replace(/^\s*[\(（【\[].*?[\)）】\]]/gm, ""); 
+    cleanText = cleanText.replace(/[\(（【\[].*?[\)）】\]]\s*$/gm, "");
+    
+    cleanText = cleanText.trim();
+    
+    // フキダシにはクリーニング後のテキストを表示
+    if (el) el.innerText = cleanText;
     
     if (t && t.includes("もぐもぐ")) { if(window.safePlay) window.safePlay(window.sfxBori); }
     
-    if (saveToMemory) { window.saveToNellMemory('nell', t); }
+    if (saveToMemory) { window.saveToNellMemory('nell', cleanText); }
     
+    // speakがtrueの場合のみTTSを実行（リアルタイムモードではfalseで呼ばれるため影響しない）
     if (speak && typeof speakNell === 'function') {
-        let textForSpeech = displayText.replace(/【.*?】/g, "").trim();
+        // TTS用にもクリーニング済みのテキストを使用
+        let textForSpeech = cleanText.replace(/【.*?】/g, "").replace(/\[.*?\]/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
         if (textForSpeech.length > 0) {
             await speakNell(textForSpeech, mood);
