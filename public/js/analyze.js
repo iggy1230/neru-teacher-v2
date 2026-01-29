@@ -1,4 +1,4 @@
-// --- js/analyze.js (v296.2: 思考プロセス除去強化・音声維持版) ---
+// --- js/analyze.js (v302.0: 給食反応高速化版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -126,9 +126,6 @@ window.addToSessionHistory = function(role, text) {
 };
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    // リアルタイムモード（chat-free）かつWebSocket接続中は、音声はサーバーからのPCMで再生されるため
-    // speakNellによるTTSは無効化する（speak = false）。
-    // これにより、フキダシの更新処理だけが行われる。
     if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
         speak = false;
     }
@@ -141,44 +138,28 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     // --- 表示用テキストのクリーニング ---
     let cleanText = t || "";
 
-    // ★重要: 行ごとの強力なフィルタリング
-    // 日本語（ひらがな・カタカナ・漢字）が含まれない行は、AIの思考プロセスやシステムログとみなして削除する
     cleanText = cleanText.split('\n').filter(line => {
         const trimmed = line.trim();
-        if (!trimmed) return true; // 空行は一旦維持
-
-        // 1. 明らかなシステムタグ行は削除
+        if (!trimmed) return true;
         if (/^(?:System|User|Model|Assistant|Display|Thinking)[:：]/i.test(trimmed)) return false;
         if (/^\*\*.*\*\*$/.test(trimmed)) return false;
         if (/^\[.*\]$/.test(trimmed)) return false;
-
-        // 2. 日本語が含まれているかチェック
         const hasJapanese = /[ぁ-んァ-ン一-龠]/.test(line);
-        if (!hasJapanese) {
-            // 日本語が含まれず、かつ英字が含まれている場合は、英語の思考/ログとみなして削除
-            // (記号だけの行 "..." や "!!!" は残すために英字チェックを入れる)
-            if (/[a-zA-Z]/.test(line)) {
-                return false;
-            }
-        }
+        if (!hasJapanese && /[a-zA-Z]/.test(line)) return false;
         return true;
     }).join('\n');
 
-    // 3. 文中の指示タグ等の除去
     cleanText = cleanText.replace(/(?:\[|【)DISPLAY[:：].*?(?:\]|】)/gi, "");
     cleanText = cleanText.replace(/^\s*[\(（【\[].*?[\)）】\]]/gm, ""); 
     cleanText = cleanText.replace(/[\(（【\[].*?[\)）】\]]\s*$/gm, "");
-    
     cleanText = cleanText.trim();
     
-    // 表示更新
     if (el) el.innerText = cleanText;
     
     if (t && t.includes("もぐもぐ")) { if(window.safePlay) window.safePlay(window.sfxBori); }
     
     if (saveToMemory) { window.saveToNellMemory('nell', cleanText); }
     
-    // TTS再生（HTTPモード時など、speakがtrueの場合のみ）
     if (speak && typeof speakNell === 'function') {
         let textForSpeech = cleanText.replace(/【.*?】/g, "").replace(/\[.*?\]/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
@@ -398,16 +379,26 @@ window.showKarikariEffect = function(amount) { const container = document.queryS
 
 window.giveLunch = function() { 
     if (currentUser.karikari < 1) return window.updateNellMessage("カリカリがないにゃ……", "thinking", false); 
+    
+    // まず「もぐもぐ」を表示・発話
     window.updateNellMessage("もぐもぐ……", "normal", false); 
+    
     currentUser.karikari--; 
     if(typeof saveAndSync === 'function') saveAndSync(); 
     window.updateMiniKarikari(); 
     window.showKarikariEffect(-1); 
     window.lunchCount++; 
+    
+    // 裏でAPI通信を開始し、返答があり次第すぐにしゃべらせる（setTimeout削除）
     fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
         .then(r => r.json())
-        .then(d => { setTimeout(() => { window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 1500); })
-        .catch(e => { setTimeout(() => { window.updateNellMessage("おいしいにゃ！", "happy", false); }, 1500); }); 
+        .then(d => { 
+            // サーバーからのレスポンスが返ったら即座に反映
+            window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); 
+        })
+        .catch(e => { 
+            window.updateNellMessage("おいしいにゃ！", "happy", false); 
+        }); 
 }; 
 
 // ※ ゲームロジックは js/game-engine.js に移動済み
