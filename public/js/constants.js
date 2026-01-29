@@ -1,4 +1,4 @@
-// --- js/constants.js (v297.0: 音量管理対応版) ---
+// --- js/constants.js (v300.0: GPS・音量管理対応版) ---
 
 // ==========================================
 // グローバル変数・状態フラグ
@@ -17,10 +17,15 @@ window.isComposing = false;
 window.chatSessionHistory = [];
 
 // ==========================================
-// 音量設定 (新規)
+// 音量設定 (v297.0)
 // ==========================================
 window.appVolume = 0.5; // 初期音量 50%
 window.isMuted = false;
+
+// ==========================================
+// 位置情報 (v300.0)
+// ==========================================
+window.currentLocation = null;
 
 // ==========================================
 // リソース定義 (Audio, Images)
@@ -42,8 +47,6 @@ window.sfxBtn = createAudio('assets/sounds/ui/botan1.mp3');
 window.sfxOver = createAudio('assets/sounds/system/gameover.mp3');
 window.sfxBunseki = createAudio('assets/sounds/system/bunseki.mp3');
 window.sfxBunseki.volume = 0.05; // これは元々小さいので、個別調整が必要ならロジックで対応
-// 便宜上リストから外して個別管理するか、applyVolumeで比率を維持するロジックが必要だが、
-// 簡易的にリストには入れつつ、再生時に再調整する方針とする。
 
 // UI/アクション音
 window.sfxBori = createAudio('assets/sounds/ui/boribori.mp3');

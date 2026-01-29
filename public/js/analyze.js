@@ -1,4 +1,4 @@
-// --- js/analyze.js (v304.0: 給食プリロード・位置情報監視制御版) ---
+// --- js/analyze.js (v300.0: GPS先行取得・チャットフキダシ修正版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -7,35 +7,9 @@
 // 1. UI操作・モード選択関数
 // ==========================================
 
-// ★ 給食プリロード用変数
-window.nextLunchReaction = null;
-
-// ★ 給食反応を裏で取得しておく関数
-window.preloadLunchReaction = function() {
-    if (!currentUser) return;
-    // 次の回数（現在 + 1）で予測
-    const nextCount = (window.lunchCount || 0) + 1;
-    
-    console.log(`🍱 Preloading lunch reaction for #${nextCount}...`);
-    fetch('/lunch-reaction', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ count: nextCount, name: currentUser.name }) 
-    })
-    .then(r => r.json())
-    .then(data => {
-        window.nextLunchReaction = data;
-        console.log("🍱 Lunch reaction preloaded!");
-    })
-    .catch(e => console.error("Lunch Preload Error:", e));
-};
-
 // ★ selectMode
 window.selectMode = function(m) {
     try {
-        // 前のモードの後始末（位置情報監視停止）
-        if (typeof window.stopLocationWatch === 'function') window.stopLocationWatch();
-
         window.currentMode = m; 
         window.chatSessionHistory = [];
 
@@ -87,12 +61,16 @@ window.selectMode = function(m) {
         
         // モードごとの初期化
         if (m === 'chat') { 
+            // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            // ★修正: 図鑑モードでは位置情報の監視を開始
-            if(typeof window.startLocationWatch === 'function') window.startLocationWatch();
+            
+            // ★ GPS先行取得: モードに入った瞬間に位置情報を取得開始しておく
+            if (typeof window.prefetchLocation === 'function') {
+                window.prefetchLocation();
+            }
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
@@ -101,14 +79,14 @@ window.selectMode = function(m) {
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
         }
         else if (m === 'chat-free') {
+            // 放課後おしゃべりタイム
             document.getElementById('chat-free-view').classList.remove('hidden');
+            // ★ フキダシの内容を確実に「何でも話していいにゃ！」に固定し、余計な内部指示を表示させない
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
         }
         else if (m === 'lunch') { 
             document.getElementById('lunch-view').classList.remove('hidden'); 
             window.updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); 
-            // ★修正: 給食モードに入ったらすぐに裏で反応を取得しておく
-            window.preloadLunchReaction();
         } 
         else if (m === 'review') { 
             if(typeof window.renderMistakeSelection === 'function') window.renderMistakeSelection(); 
@@ -165,6 +143,7 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
+    // 表示用に不必要なタグなどを除去
     let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     
     if (el) el.innerText = displayText;
@@ -390,39 +369,18 @@ window.updateTimerDisplay = function() {
 window.updateMiniKarikari = function() { if(currentUser) { const el = document.getElementById('mini-karikari-count'); if(el) el.innerText = currentUser.karikari; const el2 = document.getElementById('karikari-count'); if(el2) el2.innerText = currentUser.karikari; } };
 window.showKarikariEffect = function(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } };
 
-// ★修正: 給食レスポンスを先読みデータで即座に返す
 window.giveLunch = function() { 
     if (currentUser.karikari < 1) return window.updateNellMessage("カリカリがないにゃ……", "thinking", false); 
-    
-    // UI更新
     window.updateNellMessage("もぐもぐ……", "normal", false); 
     currentUser.karikari--; 
     if(typeof saveAndSync === 'function') saveAndSync(); 
     window.updateMiniKarikari(); 
     window.showKarikariEffect(-1); 
     window.lunchCount++; 
-
-    // リアクション処理
-    const handleReaction = (data) => {
-        // "もぐもぐ"を少し見せるために500msだけ待つ（即座すぎると"もぐもぐ"が見えない）
-        setTimeout(() => { 
-            window.updateNellMessage(data.reply || "おいしいにゃ！", data.isSpecial ? "excited" : "happy", true); 
-            // 次回分のプリロードを開始
-            window.preloadLunchReaction();
-        }, 500);
-    };
-
-    if (window.nextLunchReaction) {
-        // 先読みデータがある場合
-        handleReaction(window.nextLunchReaction);
-        window.nextLunchReaction = null; // 消費
-    } else {
-        // 先読みデータがない場合（連打時など）は通常fetch
-        fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
-            .then(r => r.json())
-            .then(handleReaction)
-            .catch(e => { setTimeout(() => { window.updateNellMessage("おいしいにゃ！", "happy", false); }, 500); }); 
-    }
+    fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
+        .then(r => r.json())
+        .then(d => { setTimeout(() => { window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 1500); })
+        .catch(e => { setTimeout(() => { window.updateNellMessage("おいしいにゃ！", "happy", false); }, 1500); }); 
 }; 
 
 // ※ ゲームロジックは js/game-engine.js に移動済み
@@ -575,6 +533,7 @@ window.checkOneProblem = function(id) {
 };
 window.updateMarkDisplay = function(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } };
 
+// ★修正箇所: 正解数カウントの初期値を0にし、満点判定を修正
 window.updateGradingMessage = function() { 
     let correctCount = 0; 
     window.transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); 
