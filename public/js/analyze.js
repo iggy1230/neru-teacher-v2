@@ -1,4 +1,4 @@
-// --- js/analyze.js (v295.2: フキダシ表示修正版) ---
+// --- js/analyze.js (v294.2: 採点ロジック修正完全版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -126,9 +126,6 @@ window.addToSessionHistory = function(role, text) {
 };
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    // リアルタイムモード（chat-free）かつWebSocket接続中は、音声はサーバーからのPCMで再生されるため
-    // speakNellによるTTSは無効化する（speak = false）。
-    // これにより、フキダシの更新処理だけが行われる。
     if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
         speak = false;
     }
@@ -138,31 +135,14 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // --- フキダシ表示用のテキストクリーニング ---
-    // ここでの変更は画面表示（innerText）にのみ影響し、
-    // リアルタイムモードの音声（PCMストリーム）には影響しません。
-    let displayText = t || "";
-    
-    // 1. [DISPLAY:...] や 【DISPLAY:...】 などの指示タグを除去
-    displayText = displayText.replace(/(?:\[|\【)?DISPLAY[:：].*?(?:\]|\】)?/gi, "");
-    
-    // 2. 英語の指示ヘッダー (Thinking Process: ... 等) を除去
-    displayText = displayText.replace(/^(?:System|User|Model|Assistant)[:：].*?$/gim, "");
-    
-    // 3. 文頭・文末のト書き（括弧書き）を除去
-    displayText = displayText.replace(/^\s*[\(（【\[].*?[\)）】\]]\s*/gm, ""); 
-    displayText = displayText.replace(/\s*[\(（【\[].*?[\)）】\]]\s*$/gm, "");
-    
-    displayText = displayText.trim();
+    let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     
     if (el) el.innerText = displayText;
     
     if (t && t.includes("もぐもぐ")) { if(window.safePlay) window.safePlay(window.sfxBori); }
     
-    if (saveToMemory) { window.saveToNellMemory('nell', displayText); }
+    if (saveToMemory) { window.saveToNellMemory('nell', t); }
     
-    // speakがtrueの場合（HTTPチャットなど）のみTTSを実行
-    // リアルタイムモードではここは実行されない
     if (speak && typeof speakNell === 'function') {
         let textForSpeech = displayText.replace(/【.*?】/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
