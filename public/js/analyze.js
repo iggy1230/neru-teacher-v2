@@ -1,4 +1,4 @@
-// --- js/analyze.js (v300.0: GPS先行取得・チャットフキダシ修正版) ---
+// --- js/analyze.js (v301.0: GPS先行取得呼び出し版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -81,7 +81,7 @@ window.selectMode = function(m) {
         else if (m === 'chat-free') {
             // 放課後おしゃべりタイム
             document.getElementById('chat-free-view').classList.remove('hidden');
-            // ★ フキダシの内容を確実に「何でも話していいにゃ！」に固定し、余計な内部指示を表示させない
+            // ★ フキダシの内容を確実に「何でも話していいにゃ！」に固定
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
         }
         else if (m === 'lunch') { 

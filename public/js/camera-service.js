@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v301.0: GPS取得強化・アラート対応版) ---
+// --- js/camera-service.js (v301.0: GPS取得強化・撮影時待機排除版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -140,6 +140,10 @@ window.prefetchLocation = async function() {
         window.currentLocation = await window._getLocationPromise(true);
         if (window.currentLocation) {
             console.log("GPS prefetched:", window.currentLocation);
+            // 成功時にフィードバック
+            if(typeof window.updateNellMessage === 'function') {
+                window.updateNellMessage("場所がわかったにゃ！", "happy", false, false);
+            }
         }
     } catch(e) {
         console.warn("GPS prefetch failed:", e);
@@ -153,12 +157,12 @@ window._getLocationPromise = (showAlert = false) => {
             return resolve(null);
         }
         
-        // 10秒でタイムアウト（GPS起動待ちを考慮して長めに）
+        // 7秒でタイムアウト（UX考慮し短縮）
         const timeoutId = setTimeout(() => {
             console.warn("GPS Timeout");
             if (showAlert) alert("場所を調べるのに時間がかかりすぎたにゃ…。\n電波のいいところで試してにゃ！");
             resolve(null);
-        }, 10000);
+        }, 7000);
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -169,7 +173,6 @@ window._getLocationPromise = (showAlert = false) => {
                 clearTimeout(timeoutId);
                 console.warn("GPS Error:", err);
                 
-                // エラー内容に応じたメッセージを表示
                 if (showAlert) {
                     let msg = "場所がわからなかったにゃ…。";
                     if (err.code === 1) { // PERMISSION_DENIED
@@ -183,7 +186,7 @@ window._getLocationPromise = (showAlert = false) => {
                 }
                 resolve(null); 
             },
-            { timeout: 10000, enableHighAccuracy: true } // 高精度モードON
+            { timeout: 7000, enableHighAccuracy: true } // 高精度モードON
         );
     });
 };
@@ -192,7 +195,7 @@ window._getLocationPromise = (showAlert = false) => {
 window.captureAndIdentifyItem = async function() {
     if (window.isLiveImageSending) return;
     
-    // 1. まずマイクを停止 (音声競合回避)
+    // 1. まずマイクを停止
     if (window.isAlwaysListening && window.continuousRecognition) {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
@@ -231,18 +234,11 @@ window.captureAndIdentifyItem = async function() {
         window.updateNellMessage("ん？どこで何を見つけたのかにゃ…？", "thinking", false, true);
     }
 
-    // 6. GPS取得 (先行取得済みならそれを使う、なければアラート無しで取得試行)
+    // 6. GPS取得（取得済みのみ使用）
+    // ★重要変更: ここで新たに await _getLocationPromise() を呼ばない。
+    // 先行取得が終わっていなければ、位置情報なし(null)で進む。
     let locationData = window.currentLocation;
     
-    if (!locationData) {
-         try {
-             // 撮影時はアラートを出さない(false)
-             locationData = await window._getLocationPromise(false);
-         } catch(e) {
-             console.warn("Location fetch skipped");
-         }
-    }
-
     // 7. API送信
     try {
         const res = await fetch('/identify-item', {
@@ -251,7 +247,7 @@ window.captureAndIdentifyItem = async function() {
             body: JSON.stringify({ 
                 image: base64Data,
                 name: currentUser ? currentUser.name : "生徒",
-                location: locationData // 位置情報も送信
+                location: locationData // 位置情報も送信（nullなら位置情報なしとして処理）
             })
         });
 
