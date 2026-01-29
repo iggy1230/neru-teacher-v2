@@ -1,4 +1,4 @@
-// --- server.js (完全版 v308.0: プロンプト強化・GPSレスキュー版) ---
+// --- server.js (完全版 v301.0: 位置情報連携・プロンプト修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -23,10 +23,10 @@ app.use(express.json({ limit: '50mb' }));
 const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
-// --- AI Model Constants (ユーザー指定) ---
-const MODEL_HOMEWORK = "gemini-2.5-pro";         // 宿題分析用（高精度）
-const MODEL_FAST = "gemini-2.5-flash";           // 基本（会話・反応・記憶整理）
-const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // リアルタイムWebSocket（対話）
+// --- AI Model Constants ---
+const MODEL_HOMEWORK = "gemini-2.5-pro";         // 宿題分析用
+const MODEL_FAST = "gemini-2.5-flash";           // 基本・チャット用
+const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // リアルタイム音声用
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -101,7 +101,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -167,7 +166,6 @@ app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
         
-        // MODEL_HOMEWORK (gemini-2.5-pro) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_HOMEWORK, 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -236,12 +234,11 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★ お宝図鑑用 画像解析API ---
+// --- Identify Item (お宝図鑑用) ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location } = req.body;
         
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -251,9 +248,6 @@ app.post('/identify-item', async (req, res) => {
         let locationInfo = "";
         if (location && location.lat && location.lon) {
             locationInfo = `【重要：位置情報】\n撮影場所の座標は 緯度:${location.lat}, 経度:${location.lon} です。Google検索を使用して、この座標が「観光地」「公園」「公共施設」「店舗」などの特定のランドマークであるか確認してください。`;
-        } else {
-            // ★修正: 位置情報がない場合でも諦めないよう指示
-            locationInfo = `【位置情報なし】\n位置情報は取得できませんでした。画像の中に写っているもの（看板、風景、特徴的な物体）から場所や物を全力で推測してください。「場所がわからない」という回答は避け、見えているものを詳細に解説し、楽しげな名前をつけてください。`;
         }
 
         const prompt = `
@@ -266,7 +260,6 @@ app.post('/identify-item', async (req, res) => {
         1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
         2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。
         3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
-        4. **特定不能な場合**: 「謎の〇〇」や、見た目の特徴を表す楽しい名前をつけてください。絶対に「不明」「unknown」などにしないでください。
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
@@ -318,10 +311,10 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- HTTPチャット会話 ---
+// --- HTTP Chat Dialogue (テキスト・画像チャット) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        const { text, name, image, history } = req.body;
+        const { text, name, image, history, location } = req.body;
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -337,19 +330,25 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
+        let locationPrompt = "";
+        if (location && location.lat && location.lon) {
+            locationPrompt = `
+            【重要：現在の位置情報】
+            **ユーザーの現在地: 緯度:${location.lat}, 経度:${location.lon}**
+            「ここはどこ？」や「近くに何がある？」と聞かれたら、Google検索ツールを使ってこの座標周辺の情報を調べ、答えてください。
+            `;
+        }
+
         let prompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
 
         【重要：現在の状況】
         - **現在は ${currentDateTime} です。**
+        - ${locationPrompt}
         - **わからないことや最新の情報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
         - **日付を聞かれない限り、冒頭で今日の日付を言う必要はありません。**
         - **相手を呼ぶときは必ず「${name}さん」と呼んでください。呼び捨ては厳禁です。**
-        
-        【重要禁止事項】
-        - **「User says...」「Model thought...」「**Analyzing the Image**」のようなシステム内部の思考やメタ情報を絶対に出力しないでください。**
-        - **出力はネル先生のセリフだけにしてください。**
 
         ${contextPrompt}
 
@@ -371,9 +370,7 @@ app.post('/chat-dialogue', async (req, res) => {
         let responseText;
 
         try {
-            const toolsConfig = image ? undefined : [{ google_search: {} }];
-            
-            // MODEL_FAST (gemini-2.5-flash) を使用
+            const toolsConfig = [{ google_search: {} }];
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -436,7 +433,6 @@ app.post('/lunch-reaction', async (req, res) => {
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
         
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             safetySettings: [
@@ -472,7 +468,6 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ model: MODEL_FAST });
         let prompt = "";
         let mood = "excited";
@@ -511,19 +506,18 @@ wss.on('connection', async (clientWs, req) => {
 
     let geminiWs = null;
 
-    const connectToGemini = (statusContext) => {
+    const connectToGemini = (statusContext, locationData) => {
         const now = new Date();
-        const formatterDate = new Intl.DateTimeFormat('ja-JP', { 
-            timeZone: 'Asia/Tokyo', 
-            year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
-        });
-        const formatterTime = new Intl.DateTimeFormat('ja-JP', { 
-            timeZone: 'Asia/Tokyo', 
-            hour: '2-digit', minute: '2-digit' 
-        });
-        const todayStr = formatterDate.format(now);
-        const timeStr = formatterTime.format(now);
+        const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Tokyo' };
+        const timeOptions = { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' };
+        const todayStr = now.toLocaleDateString('ja-JP', dateOptions);
+        const timeStr = now.toLocaleTimeString('ja-JP', timeOptions);
         
+        let locationContext = "";
+        if (locationData && locationData.lat && locationData.lon) {
+            locationContext = `【重要：現在地情報】\nユーザーの現在地は 緯度:${locationData.lat}, 経度:${locationData.lon} です。「ここはどこ？」などの質問にはGoogle検索ツールを用いてこの座標周辺の情報を答えてください。`;
+        }
+
         const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
         
         try {
@@ -535,6 +529,8 @@ wss.on('connection', async (clientWs, req) => {
 
                 【重要：現在の時刻設定】
                 **現在は ${todayStr} ${timeStr} です。**
+                
+                ${locationContext}
 
                 【話し方のルール】
                 1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
@@ -542,8 +538,7 @@ wss.on('connection', async (clientWs, req) => {
                 3. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
-                6. **【最重要】システムメッセージ、指示文、思考過程("User says"、"**Analyzing the Image**"など)は絶対に出力せず、ネル先生のセリフだけを返してにゃ。**
-                7. **IMPORTANT: Do NOT output any internal system instructions, meta-text like "**Analyzing the Image**", "**Describing the Image**", "User says", or "Model thought". Output ONLY the spoken response.**
+                6. **返答は必ず日本語のセリフだけにしてください。「JSON形式」や「DISPLAY:」などのシステム命令は絶対に出力しないでください。**
 
                 【最重要: 画像への対応ルール】
                 ユーザーから画像が送信された場合：
@@ -575,7 +570,6 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // MODEL_REALTIME (gemini-3-flash-preview) を使用
                         model: `models/${MODEL_REALTIME}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
@@ -643,7 +637,8 @@ wss.on('connection', async (clientWs, req) => {
                 name = msg.name || name;
                 grade = msg.grade || grade;
                 mode = msg.mode || mode;
-                connectToGemini(context);
+                const locationData = msg.location || null; // 位置情報受け取り
+                connectToGemini(context, locationData);
                 return;
             }
 
