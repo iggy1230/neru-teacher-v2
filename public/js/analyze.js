@@ -1,4 +1,4 @@
-// --- js/analyze.js (v296.0: フキダシ表示改善・音声維持版) ---
+// --- js/analyze.js (v296.1: システムログ除去・音声維持版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -125,8 +125,12 @@ window.addToSessionHistory = function(role, text) {
     }
 };
 
-// ★修正: フキダシの指示文除去処理を追加しつつ、音声出力制御は変更しない
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
+    // WebSocket接続中のリアルタイムモードならTTSを行わない（PCM再生のため）
+    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
+        speak = false;
+    }
+
     const gameScreen = document.getElementById('screen-game');
     const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
@@ -134,29 +138,43 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     
     // --- 表示用テキストのクリーニング ---
     let cleanText = t || "";
+
+    // 1. 英語のシステムメッセージと思われる行を除去
+    // (Acknowledging Audio Input, I confirm..., Iggy's presence など)
+    const systemKeywords = [
+        "Acknowledging", "Audio Input", "confirm", "registered", 
+        "instructions", "engage in", "Iggy", "System:", "Model:", 
+        "Assistant:", "User:", "Display:"
+    ];
     
-    // 1. [DISPLAY:...] や 【DISPLAY:...】 などの指示タグを除去
+    cleanText = cleanText.split('\n').filter(line => {
+        // 日本語が含まれている行は正当なセリフとみなして残す
+        if (/[ぁ-んァ-ン一-龠]/.test(line)) return true;
+        
+        // 日本語が含まれず、かつシステムキーワードを含む場合は除外
+        if (systemKeywords.some(k => line.includes(k))) return false;
+        
+        // **で囲まれた英語のみの行も除外
+        if (/^\s*\*\*.*\*\*\s*$/.test(line)) return false;
+
+        return true;
+    }).join('\n');
+
+    // 2. 指示タグ等の除去
     cleanText = cleanText.replace(/(?:\[|【)DISPLAY[:：].*?(?:\]|】)/gi, "");
-    
-    // 2. 役割ラベル System:, Model: 等の除去 (行頭にある場合)
-    cleanText = cleanText.replace(/^(?:System|User|Model|Assistant)[:：].*?$/gim, "");
-    
-    // 3. 文頭・文末のト書き（括弧書き）を除去
     cleanText = cleanText.replace(/^\s*[\(（【\[].*?[\)）】\]]/gm, ""); 
     cleanText = cleanText.replace(/[\(（【\[].*?[\)）】\]]\s*$/gm, "");
     
     cleanText = cleanText.trim();
     
-    // フキダシにはクリーニング後のテキストを表示
     if (el) el.innerText = cleanText;
     
     if (t && t.includes("もぐもぐ")) { if(window.safePlay) window.safePlay(window.sfxBori); }
     
     if (saveToMemory) { window.saveToNellMemory('nell', cleanText); }
     
-    // speakがtrueの場合のみTTSを実行（リアルタイムモードではfalseで呼ばれるため影響しない）
+    // TTS再生（HTTPモード時など）
     if (speak && typeof speakNell === 'function') {
-        // TTS用にもクリーニング済みのテキストを使用
         let textForSpeech = cleanText.replace(/【.*?】/g, "").replace(/\[.*?\]/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
         if (textForSpeech.length > 0) {
