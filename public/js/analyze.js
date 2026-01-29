@@ -1,4 +1,4 @@
-// --- js/analyze.js (v301.0: GPS送信対応版) ---
+// --- js/analyze.js (v294.2: 採点ロジック修正完全版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -61,16 +61,10 @@ window.selectMode = function(m) {
         
         // モードごとの初期化
         if (m === 'chat') { 
-            // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            
-            // ★ GPS先行取得
-            if (typeof window.prefetchLocation === 'function') {
-                window.prefetchLocation();
-            }
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
@@ -79,7 +73,6 @@ window.selectMode = function(m) {
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
         }
         else if (m === 'chat-free') {
-            // 放課後おしゃべりタイム
             document.getElementById('chat-free-view').classList.remove('hidden');
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
         }
@@ -142,7 +135,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // 表示用に不必要なタグなどを除去
     let displayText = t.replace(/(?:\[|\【)?DISPLAY[:：]\s*(.+?)(?:\]|\】)?/gi, "");
     
     if (el) el.innerText = displayText;
@@ -191,9 +183,7 @@ window.sendHttpText = async function(context) {
             body: JSON.stringify({ 
                 text: text, 
                 name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory,
-                // ★位置情報を送信
-                location: window.currentLocation 
+                history: window.chatSessionHistory
             })
         });
 
