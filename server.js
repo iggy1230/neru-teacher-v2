@@ -1,4 +1,4 @@
-// --- server.js (完全版 v301.0: Gemini切断時のクライアント通知追加) ---
+// --- server.js (完全版 v302.0: 個別指導での位置情報対応版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -317,7 +317,7 @@ app.post('/identify-item', async (req, res) => {
 // --- HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        const { text, name, image, history } = req.body;
+        const { text, name, image, history, location } = req.body;
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -333,15 +333,27 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
+        // ★追加: 位置情報のプロンプト
+        let locationPrompt = "";
+        if (location && location.lat && location.lon) {
+            locationPrompt = `
+            【重要：現在地情報】
+            ユーザーの現在地は 緯度:${location.lat}, 経度:${location.lon} です。
+            「天気」「周辺情報」「ここはどこ？」などの質問があった場合は、この座標を用いてGoogle検索を行い、正確に答えてください。
+            `;
+        }
+
         let prompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
 
         【重要：現在の状況】
         - **現在は ${currentDateTime} です。**
-        - **わからないことや最新の情報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
+        - **わからないことや最新の情報、天気予報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
         - **日付を聞かれない限り、冒頭で今日の日付を言う必要はありません。**
         - **相手を呼ぶときは必ず「${name}さん」と呼んでください。呼び捨ては厳禁です。**
+        
+        ${locationPrompt}
 
         ${contextPrompt}
 
