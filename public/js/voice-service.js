@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v308.1: 音声対話への位置情報連携追加版) ---
+// --- js/voice-service.js (v308.2: 接続切れ対策・音声初期化版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -61,7 +61,6 @@ window.startAlwaysOnListening = function() {
         if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('user', text);
 
         try {
-            // ★修正: 音声入力時も位置情報をサーバーに送信する
             const res = await fetch('/chat-dialogue', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -278,7 +277,6 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     try {
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
 
-        // ★修正: 画像送信時も位置情報を送る
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -338,6 +336,8 @@ window.stopLiveChat = function() {
     if (window.mediaStream) window.mediaStream.getTracks().forEach(t=>t.stop()); 
     if (window.workletNode) { window.workletNode.port.postMessage('stop'); window.workletNode.disconnect(); } 
     if (window.liveSocket) {
+        // ★修正: 意図的に切断する場合は onclose コールバックを無効化して再接続を防ぐ
+        window.liveSocket.onclose = null;
         window.liveSocket.close(); 
     }
     if (window.audioContext && window.audioContext.state !== 'closed') {
@@ -388,8 +388,10 @@ window.startLiveChat = async function(context = 'main') {
     const btnId = 'mic-btn-free';
     const btn = document.getElementById(btnId);
     
+    // ★修正: 既存の接続があれば安全に閉じる
     if (window.liveSocket) { 
-        if (window.liveSocket) window.liveSocket.close();
+        window.liveSocket.onclose = null;
+        window.liveSocket.close();
     } 
     
     try { 
@@ -407,19 +409,22 @@ window.startLiveChat = async function(context = 'main') {
         
         if (window.initAudioContext) await window.initAudioContext(); 
         
+        // AudioContextの再取得
         if (!window.audioContext && window.audioCtx) {
             window.audioContext = window.audioCtx;
         } else if (!window.audioContext) {
              window.audioContext = new (window.AudioContext || window.webkitAudioContext)(); 
         }
         
-        await window.audioContext.resume(); 
+        if (window.audioContext.state === 'suspended') {
+            await window.audioContext.resume(); 
+        }
+        
         window.nextStartTime = window.audioContext.currentTime; 
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; 
         let statusSummary = `${currentUser.name}さんは今、お話しにきたにゃ。カリカリは${currentUser.karikari}個持ってるにゃ。`; 
         
-        // ★修正: リアルタイムチャット開始時も現在地情報をコンテキストに含める
         if (window.currentLocation) {
             statusSummary += ` 現在地は緯度${window.currentLocation.lat}、経度${window.currentLocation.lon}だにゃ。`;
         }
@@ -594,6 +599,8 @@ window.startMicrophone = async function() {
 window.playLivePcmAudio = function(base64) { 
     if (!window.audioContext || window.ignoreIncomingAudio) return; 
     
+    // ★修正: window.audioCtx（AudioContext）と window.masterGainNode がある前提で動作する
+    // voice-service内では window.audioContext という変数も使われているので統一する
     if (!window.audioContext && window.audioCtx) window.audioContext = window.audioCtx;
 
     const binary = window.atob(base64); 
@@ -607,6 +614,7 @@ window.playLivePcmAudio = function(base64) {
     const source = window.audioContext.createBufferSource(); 
     source.buffer = buffer; 
     
+    // ★重要: Master Gain Node に接続して音量制御を効かせる
     if (window.masterGainNode) {
         source.connect(window.masterGainNode);
     } else {
