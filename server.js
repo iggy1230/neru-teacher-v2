@@ -1,4 +1,4 @@
-// --- server.js (完全版 v302.0: 個別指導での位置情報対応版) ---
+// --- server.js (完全版 v303.0: 位置情報プロンプト強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -333,13 +333,14 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
-        // ★追加: 位置情報のプロンプト
+        // ★修正: 位置情報を強く認識させるプロンプト
         let locationPrompt = "";
         if (location && location.lat && location.lon) {
             locationPrompt = `
             【重要：現在地情報】
             ユーザーの現在地は 緯度:${location.lat}, 経度:${location.lon} です。
-            「天気」「周辺情報」「ここはどこ？」などの質問があった場合は、この座標を用いてGoogle検索を行い、正確に答えてください。
+            ユーザーが「天気」「周辺情報」「ここはどこ？」など、**場所に関連する質問**をした場合は、必ずこの座標を検索キーワードに含めて（例：「${location.lat},${location.lon} 天気」）Google検索を実行してください。
+            単に「天気」とだけ検索すると現在地が反映されないため禁止します。
             `;
         }
 
