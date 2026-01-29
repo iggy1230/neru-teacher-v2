@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v305.0: 画像解析ログ遮断強化版) ---
+// --- js/voice-service.js (v306.0: テキストフィルタ分離・カメラ制御版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -314,31 +314,29 @@ window.startLiveChat = async function(context = 'main') {
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.text) { 
-                            // ★修正: フィルタリング強化 (ご指摘の部分)
+                            // ★修正: フィルタリング判定を先に行い、結果に応じてテキスト表示をスキップするが
+                            // 音声再生(inlineData)の処理はブロックしないようにする
                             const text = p.text;
+                            let isValid = true;
 
-                            // 1. メタヘッダー系の排除 (**Analyzing...**, **Describing...**, **Image Analysis** など)
-                            if (/^\*\*(Analyzing|Describing|Image|Analysis)/i.test(text)) return;
-
-                            // 2. 画像受領・描写の定型句を排除
-                            if (/^(I received an image|The image (shows|depicts|features)|It looks like|This is an image)/i.test(text)) return;
-
-                            // 3. 既存のメタパターン排除
-                            const ignorePatterns = [/^User.*:/i, /^Model.*:/i, /^System.*:/i, /^Instructions?:/i];
-                            if (ignorePatterns.some(regex => regex.test(text))) return;
-
-                            // 4. 括弧書きの排除
-                            if (/^(\(|\[|【|（).+?(\)|\]|】|）)$/.test(text.trim())) return;
+                            if (/^\*\*(Analyzing|Describing|Image|Analysis)/i.test(text)) isValid = false;
+                            if (/^(I received an image|The image (shows|depicts|features)|It looks like|This is an image)/i.test(text)) isValid = false;
                             
-                            // 5. 日本語を含まず、英語のみで一定の長さがあるものは弾く (ネル先生は日本語)
+                            const ignorePatterns = [/^User.*:/i, /^Model.*:/i, /^System.*:/i, /^Instructions?:/i];
+                            if (ignorePatterns.some(regex => regex.test(text))) isValid = false;
+
+                            if (/^(\(|\[|【|（).+?(\)|\]|】|）)$/.test(text.trim())) isValid = false;
+                            
                             const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(text);
                             const hasEnglishChars = /[a-zA-Z]/.test(text);
-                            if (!hasJapanese && hasEnglishChars && text.length > 15) return;
+                            if (!hasJapanese && hasEnglishChars && text.length > 15) isValid = false;
                             
-                            // フィルタ通過
-                            window.streamTextBuffer += text;
-                            if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false); 
+                            if (isValid) {
+                                window.streamTextBuffer += text;
+                                if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false); 
+                            }
                         } 
+                        // テキストが不適切でも音声は再生する
                         if (p.inlineData) window.playLivePcmAudio(p.inlineData.data); 
                     }); 
                 }
