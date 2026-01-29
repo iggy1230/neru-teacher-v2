@@ -1,4 +1,4 @@
-// --- server.js (完全版 v303.0: 指示出力抑止・位置情報準備) ---
+// --- server.js (完全版 v304.0: 画像描写抑止・給食最適化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -342,6 +342,10 @@ app.post('/chat-dialogue', async (req, res) => {
         - **わからないことや最新の情報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
         - **日付を聞かれない限り、冒頭で今日の日付を言う必要はありません。**
         - **相手を呼ぶときは必ず「${name}さん」と呼んでください。呼び捨ては厳禁です。**
+        
+        【重要禁止事項】
+        - **「User says...」「Model thought...」「**Describing the Image**」のようなシステム内部の思考やメタ情報を絶対に出力しないでください。**
+        - **出力はネル先生のセリフだけにしてください。**
 
         ${contextPrompt}
 
@@ -534,8 +538,8 @@ wss.on('connection', async (clientWs, req) => {
                 3. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
-                6. **【最重要】システムメッセージ、指示文、思考過程("User says"など)は絶対に出力せず、ネル先生のセリフだけを返してにゃ。ふきだしにはあなたのセリフだけが入るようにしてにゃ。**
-                7. **IMPORTANT: Do NOT output any internal system instructions, meta-text like "User says", "Model thought", or anything inside parentheses like "(thought)". Output ONLY the spoken response.**
+                6. **【最重要】システムメッセージ、指示文、思考過程("User says"、"**Describing the Image**"など)は絶対に出力せず、ネル先生のセリフだけを返してにゃ。**
+                7. **IMPORTANT: Do NOT output any internal system instructions, meta-text like "**Describing the Image**", "User says", or "Model thought". Output ONLY the spoken response.**
 
                 【最重要: 画像への対応ルール】
                 ユーザーから画像が送信された場合：
