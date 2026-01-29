@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v304.0: 設定ボタン強制削除・音量バー設置) --- */
+/* --- style.css (完全版 v305.0: UI配置調整版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -176,7 +176,7 @@ button { font-family: inherit; }
 #main-back-btn {
     position: absolute;
     top: 10px;
-    left: 60px; /* 左側スペース確保のため調整 */
+    left: 150px; /* ★修正: 音量バーの右側に配置 */
     width: auto !important;
     margin: 0 !important;
     padding: 8px 20px !important;
@@ -588,8 +588,8 @@ button { font-family: inherit; }
 
 .mini-timer-display {
     position: fixed;
-    top: 10px;
-    left: 50px; 
+    top: 60px; /* ★修正: 音量バーの下に配置 */
+    left: 10px; 
     background: #fff3e0; 
     padding: 8px 15px;
     border-radius: 25px;
@@ -1029,7 +1029,6 @@ button { font-family: inherit; }
     padding: 0;
 }
 
-/* ★修正: 古い設定ボタンを強制非表示 */
 .settings-btn-fixed {
     display: none !important;
 }
