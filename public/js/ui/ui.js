@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v303.0: 音量調整ロジック刷新) ---
+// --- js/ui/ui.js (完全版 v304.0: 初期表示同期強化版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -31,7 +31,6 @@ window.updateVolumeUI = function() {
     }
     if (slider) {
         slider.value = window.appVolume * 100;
-        // ミュート時はスライダーを少し薄くするなどの視覚効果があっても良い
         slider.style.opacity = window.isMuted ? "0.5" : "1.0";
     }
 };
@@ -447,6 +446,11 @@ function renderLogView(container) {
         container.appendChild(div);
     });
 }
+
+// ページ読み込み完了時にUI状態を初期化
+document.addEventListener('DOMContentLoaded', () => {
+    window.updateVolumeUI();
+});
 
 document.addEventListener('click', () => { 
     if (window.initAudioContext) window.initAudioContext().catch(e => console.log("Audio Init:", e)); 
