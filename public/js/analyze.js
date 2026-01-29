@@ -1,4 +1,4 @@
-// --- js/analyze.js (v301.0: GPS先行取得呼び出し版) ---
+// --- js/analyze.js (v301.0: GPS送信対応版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -67,7 +67,7 @@ window.selectMode = function(m) {
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
             
-            // ★ GPS先行取得: モードに入った瞬間に位置情報を取得開始しておく
+            // ★ GPS先行取得
             if (typeof window.prefetchLocation === 'function') {
                 window.prefetchLocation();
             }
@@ -81,7 +81,6 @@ window.selectMode = function(m) {
         else if (m === 'chat-free') {
             // 放課後おしゃべりタイム
             document.getElementById('chat-free-view').classList.remove('hidden');
-            // ★ フキダシの内容を確実に「何でも話していいにゃ！」に固定
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
         }
         else if (m === 'lunch') { 
@@ -192,7 +191,9 @@ window.sendHttpText = async function(context) {
             body: JSON.stringify({ 
                 text: text, 
                 name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory
+                history: window.chatSessionHistory,
+                // ★位置情報を送信
+                location: window.currentLocation 
             })
         });
 
