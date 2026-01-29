@@ -1,4 +1,4 @@
-// --- server.js (完全版 v306.0: 検索ツールエラー修正・ふりがな抑制版) ---
+// --- server.js (完全版 v303.0: 位置情報プロンプト強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -242,7 +242,6 @@ app.post('/identify-item', async (req, res) => {
         const { image, name, location } = req.body;
         
         // MODEL_FAST (gemini-2.5-flash) を使用
-        // ★修正: responseMimeTypeを削除 (ツールとの併用不可のため)
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -256,7 +255,7 @@ app.post('/identify-item', async (req, res) => {
 
         const prompt = `
         あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。
-        送られてきた画像を解析し、以下のJSON形式で応答してください。
+        送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
         
         ${locationInfo}
 
@@ -268,10 +267,8 @@ app.post('/identify-item', async (req, res) => {
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
         2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
-        3. **禁止事項**: 漢字にふりがな（読み仮名）を振らないでください。例：「天気(てんき)」は禁止。「天気」とだけ書いてください。
 
-        【出力フォーマット】
-        **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownのコードブロック(\`\`\`json\`)で囲んでください。
+        【出力フォーマット (JSON文字列のみ出力)】
         \`\`\`json
         {
             "itemName": "正式名称",
@@ -320,7 +317,7 @@ app.post('/identify-item', async (req, res) => {
 // --- HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        let { text, name, image, history, location } = req.body;
+        const { text, name, image, history, location } = req.body;
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -336,14 +333,15 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
+        // ★修正: 位置情報を強く認識させるプロンプト
         let locationPrompt = "";
         if (location && location.lat && location.lon) {
             locationPrompt = `
             【重要：現在地情報】
             ユーザーの現在地は 緯度:${location.lat}, 経度:${location.lon} です。
-            天気や場所に関する質問には、必ずこの座標を用いてGoogle検索してください。
+            ユーザーが「天気」「周辺情報」「ここはどこ？」など、**場所に関連する質問**をした場合は、必ずこの座標を検索キーワードに含めて（例：「${location.lat},${location.lon} 天気」）Google検索を実行してください。
+            単に「天気」とだけ検索すると現在地が反映されないため禁止します。
             `;
-            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。天気や場所の質問ならこの座標で検索してください）`;
         }
 
         let prompt = `
@@ -355,20 +353,17 @@ app.post('/chat-dialogue', async (req, res) => {
         - **わからないことや最新の情報、天気予報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
         - **日付を聞かれない限り、冒頭で今日の日付を言う必要はありません。**
         - **相手を呼ぶときは必ず「${name}さん」と呼んでください。呼び捨ては厳禁です。**
-        - **漢字にふりがな（読み仮名）を振らないでください。例：「天気(てんき)」は禁止。「天気」とだけ書いてください。**
         
         ${locationPrompt}
 
         ${contextPrompt}
 
         【出力フォーマット】
-        **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownのコードブロック(\`\`\`json\`)で囲んでください。
-        \`\`\`json
+        **必ず以下のJSON形式の文字列だけ**を出力してください。
         {
             "speech": "ネル先生のセリフ。語尾は必ず「にゃ」や「だにゃ」。親しみやすく。",
             "board": "黒板に書く内容。"
         }
-        \`\`\`
         
         ユーザー発言: ${text}
         `;
@@ -383,7 +378,7 @@ app.post('/chat-dialogue', async (req, res) => {
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
-            // ★修正: responseMimeTypeを削除 (ツールとの併用不可のため)
+            // MODEL_FAST (gemini-2.5-flash) を使用
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -401,7 +396,6 @@ app.post('/chat-dialogue', async (req, res) => {
 
         } catch (genError) {
             console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
-            // フォールバック（ツールなし）ではJSONモードを使ってもOKだが、統一のため外しておく
             const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
             try {
                 if (image) {
