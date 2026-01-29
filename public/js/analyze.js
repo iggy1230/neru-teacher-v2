@@ -1,4 +1,4 @@
-// --- js/analyze.js (v305.0: 位置情報高精度モード版) ---
+// --- js/analyze.js (v306.0: 位置情報速度優先・図鑑モード対応版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -9,7 +9,7 @@ window.currentLocation = null;
 // 位置情報取得ヘルパー
 window.fetchCurrentLocation = function() {
     if (!navigator.geolocation) return;
-    console.log("Fetching location (High Accuracy)...");
+    console.log("Fetching location (Speed Priority)...");
     navigator.geolocation.getCurrentPosition(
         (pos) => {
             window.currentLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
@@ -17,10 +17,11 @@ window.fetchCurrentLocation = function() {
         },
         (err) => {
             console.warn("Location fetch failed:", err);
+            // 失敗してもnullのままにしておく（古い情報を残さない）
             window.currentLocation = null;
         },
-        // ★修正: 高精度モードをONにし、タイムアウトを15秒に延長
-        { timeout: 15000, enableHighAccuracy: true } 
+        // ★修正: 速度優先に戻す (enableHighAccuracy: false)
+        { timeout: 10000, enableHighAccuracy: false } 
     );
 };
 
@@ -82,10 +83,14 @@ window.selectMode = function(m) {
         
         // モードごとの初期化
         if (m === 'chat') { 
+            // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+            
+            // ★追加: 図鑑モードでも位置情報を事前に取得しておく（観光地特定などのため）
+            window.fetchCurrentLocation();
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
@@ -93,7 +98,7 @@ window.selectMode = function(m) {
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
             
-            // 位置情報を確実に取得（キャッシュがあれば更新）
+            // 個別指導モードでも位置情報を取得
             window.fetchCurrentLocation();
         }
         else if (m === 'chat-free') {
@@ -218,7 +223,6 @@ window.sendHttpText = async function(context) {
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
         
-        // ★修正: 位置情報を送信
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -226,7 +230,7 @@ window.sendHttpText = async function(context) {
                 text: text, 
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
-                location: window.currentLocation // 位置情報
+                location: window.currentLocation 
             })
         });
 
@@ -281,9 +285,9 @@ window.startMouthAnimation = function() {
 };
 window.startMouthAnimation();
 
-// ★修正: ページロード時にも位置情報取得を試みる
+// ページロード時にも位置情報取得を試みる（速度優先）
 window.addEventListener('DOMContentLoaded', () => {
-    window.fetchCurrentLocation(); // 早期に取得開始
+    window.fetchCurrentLocation(); 
 
     // DOMContentLoaded でのイベント設定
     const camIn = document.getElementById('hw-input-camera'); 
