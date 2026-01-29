@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v293.0: 音声・チャット機能) ---
+// --- js/voice-service.js (v301.0: 自動再接続対応版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -306,11 +306,19 @@ window.stopLiveChat = function() {
         window.NellMemory.updateProfileFromChat(currentUser.id, window.chatTranscript);
     }
     window.isRecognitionActive = false; 
+    
+    // 意図的な停止であることをマーク
+    window.isLiveChatManuallyStopped = true;
+
     if (window.connectionTimeout) clearTimeout(window.connectionTimeout); 
     if (window.recognition) try{window.recognition.stop()}catch(e){} 
     if (window.mediaStream) window.mediaStream.getTracks().forEach(t=>t.stop()); 
     if (window.workletNode) { window.workletNode.port.postMessage('stop'); window.workletNode.disconnect(); } 
-    if (window.liveSocket) window.liveSocket.close(); 
+    if (window.liveSocket) {
+        // closeイベントが発火しないようにイベントリスナーを削除しておくことも可能だが、
+        // isLiveChatManuallyStoppedフラグで制御するためそのまま閉じる
+        window.liveSocket.close(); 
+    }
     if (window.audioContext && window.audioContext.state !== 'closed') window.audioContext.close(); 
     window.isNellSpeaking = false; 
     if(window.stopSpeakingTimer) clearTimeout(window.stopSpeakingTimer); 
@@ -349,10 +357,20 @@ window.startLiveChat = async function(context = 'main') {
     if (context === 'main' && window.currentMode === 'chat-free') context = 'free';
     if (context !== 'free') return;
 
+    // 手動停止フラグをリセット
+    window.isLiveChatManuallyStopped = false;
+
     window.activeChatContext = context;
     const btnId = 'mic-btn-free';
     const btn = document.getElementById(btnId);
-    if (window.liveSocket) { window.stopLiveChat(); return; } 
+    
+    // 既存の接続があれば閉じる（ただしstopLiveChatを呼ぶとマニュアルストップ扱いになるので注意）
+    // ここでは安全のため一度stopを呼ぶが、再帰的な呼び出しを防ぐためフラグは操作しない
+    if (window.liveSocket) { 
+        // 既存接続のクリーンアップのみ行う内部関数があればよいが、
+        // 簡易的にリソース解放だけ行う
+        if (window.liveSocket) window.liveSocket.close();
+    } 
     
     try { 
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ネル先生を呼んでるにゃ…", "thinking", false); 
@@ -380,7 +398,14 @@ window.startLiveChat = async function(context = 'main') {
         
         window.liveSocket = new WebSocket(url); 
         window.liveSocket.binaryType = "blob"; 
-        window.connectionTimeout = setTimeout(() => { if (window.liveSocket && window.liveSocket.readyState !== WebSocket.OPEN) { if(typeof window.updateNellMessage === 'function') window.updateNellMessage("なかなかつながらないにゃ…", "thinking", false); window.stopLiveChat(); } }, 10000); 
+        
+        // 接続タイムアウト
+        window.connectionTimeout = setTimeout(() => { 
+            if (window.liveSocket && window.liveSocket.readyState !== WebSocket.OPEN) { 
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage("なかなかつながらないにゃ…", "thinking", false); 
+                window.stopLiveChat(); 
+            } 
+        }, 10000); 
         
         window.lastSentCollectionImage = null;
         window.isLiveImageSending = false;
@@ -401,9 +426,22 @@ window.startLiveChat = async function(context = 'main') {
                 if (rawData instanceof Blob) rawData = await rawData.text();
                 const data = JSON.parse(rawData);
 
+                // サーバーから切断通知が来た場合
+                if (data.type === "gemini_closed") {
+                    console.log("Gemini WS closed by server.");
+                    // oncloseイベントで処理させるため、ここでは特に何もしないか、あるいは明示的にcloseする
+                    return; 
+                }
+
                 if (data.type === "server_ready") {
                     clearTimeout(window.connectionTimeout); 
-                    if(btn) { btn.innerText = "📞 つながった！(終了)"; btn.style.background = "#ff5252"; btn.disabled = false; } 
+                    if(btn) { 
+                        btn.innerText = "📞 つながった！(終了)"; 
+                        btn.style.background = "#ff5252"; 
+                        btn.disabled = false; 
+                        // ボタンクリック時の動作を「停止」に変更
+                        btn.onclick = () => window.stopLiveChat();
+                    } 
                     if(typeof window.updateNellMessage === 'function') window.updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
                     window.isRecognitionActive = true; 
                     window.startMicrophone(); 
@@ -426,9 +464,43 @@ window.startLiveChat = async function(context = 'main') {
                 }
             } catch (e) {} 
         }; 
-        window.liveSocket.onclose = () => window.stopLiveChat(); 
-        window.liveSocket.onerror = () => window.stopLiveChat(); 
-    } catch (e) { window.stopLiveChat(); } 
+        
+        // ★ 自動再接続ロジックを追加
+        window.liveSocket.onclose = () => {
+            console.log("WS Closed. Manual Stop:", window.isLiveChatManuallyStopped);
+            
+            // 意図しない切断（エラーやタイムアウト）の場合
+            if (!window.isLiveChatManuallyStopped) {
+                // UI上の表示を更新して再接続を試みる
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage("あれ？切れちゃったにゃ。つなぎ直すにゃ！", "thinking", false, false);
+                
+                // リソースのクリーンアップ（カメラやマイク）
+                if (window.mediaStream) window.mediaStream.getTracks().forEach(t=>t.stop());
+                if (window.recognition) try{window.recognition.stop()}catch(e){}
+                if (window.audioContext) window.audioContext.close();
+                
+                // 少し待って再接続
+                setTimeout(() => {
+                    // まだチャットモードにいる場合のみ再接続
+                    if (window.currentMode === 'chat-free') {
+                        window.startLiveChat('free');
+                    }
+                }, 1500);
+            } else {
+                // 手動停止の場合は通常の終了処理
+                window.stopLiveChat();
+            }
+        }; 
+        
+        window.liveSocket.onerror = (e) => {
+            console.error("WS Error:", e);
+            // エラーの場合もoncloseが呼ばれるので、そこでの再接続に任せる
+        }; 
+        
+    } catch (e) { 
+        console.error("Start Live Chat Error:", e);
+        window.stopLiveChat(); 
+    } 
 };
 
 window.startMicrophone = async function() { 
