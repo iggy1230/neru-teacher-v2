@@ -1,7 +1,26 @@
-// --- js/analyze.js (v302.0: 給食反応高速化版) ---
+// --- js/analyze.js (v303.0: 位置情報・給食反応高速化・思考プロセス除去版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
+
+// グローバル変数: 現在位置情報
+window.currentLocation = null;
+
+// 位置情報取得ヘルパー
+window.fetchCurrentLocation = function() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+        (pos) => {
+            window.currentLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            console.log("Location fetched:", window.currentLocation);
+        },
+        (err) => {
+            console.warn("Location fetch failed:", err);
+            window.currentLocation = null;
+        },
+        { timeout: 5000, enableHighAccuracy: false }
+    );
+};
 
 // ==========================================
 // 1. UI操作・モード選択関数
@@ -71,6 +90,8 @@ window.selectMode = function(m) {
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+            // ★追加: 個別指導モードでも位置情報を取得
+            window.fetchCurrentLocation();
         }
         else if (m === 'chat-free') {
             document.getElementById('chat-free-view').classList.remove('hidden');
@@ -194,13 +215,15 @@ window.sendHttpText = async function(context) {
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
         
+        // ★修正: 位置情報を送信
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 text: text, 
                 name: currentUser ? currentUser.name : "生徒",
-                history: window.chatSessionHistory
+                history: window.chatSessionHistory,
+                location: window.currentLocation // 位置情報
             })
         });
 
@@ -389,7 +412,6 @@ window.giveLunch = function() {
     window.showKarikariEffect(-1); 
     window.lunchCount++; 
     
-    // 裏でAPI通信を開始し、返答があり次第すぐにしゃべらせる（setTimeout削除）
     fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
         .then(r => r.json())
         .then(d => { 
