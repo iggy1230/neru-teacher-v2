@@ -1,4 +1,4 @@
-// --- js/analyze.js (v303.0: 位置情報・給食反応高速化・思考プロセス除去版) ---
+// --- js/analyze.js (v304.0: 位置情報取得タイミング強化版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -9,6 +9,7 @@ window.currentLocation = null;
 // 位置情報取得ヘルパー
 window.fetchCurrentLocation = function() {
     if (!navigator.geolocation) return;
+    console.log("Fetching location...");
     navigator.geolocation.getCurrentPosition(
         (pos) => {
             window.currentLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
@@ -18,7 +19,7 @@ window.fetchCurrentLocation = function() {
             console.warn("Location fetch failed:", err);
             window.currentLocation = null;
         },
-        { timeout: 5000, enableHighAccuracy: false }
+        { timeout: 10000, enableHighAccuracy: false } // タイムアウトを10秒に延長
     );
 };
 
@@ -90,7 +91,8 @@ window.selectMode = function(m) {
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            // ★追加: 個別指導モードでも位置情報を取得
+            
+            // 位置情報を確実に取得（キャッシュがあれば更新）
             window.fetchCurrentLocation();
         }
         else if (m === 'chat-free') {
@@ -278,7 +280,10 @@ window.startMouthAnimation = function() {
 };
 window.startMouthAnimation();
 
+// ★修正: ページロード時にも位置情報取得を試みる
 window.addEventListener('DOMContentLoaded', () => {
+    window.fetchCurrentLocation(); // 早期に取得開始
+
     // DOMContentLoaded でのイベント設定
     const camIn = document.getElementById('hw-input-camera'); 
     const albIn = document.getElementById('hw-input-album'); 
