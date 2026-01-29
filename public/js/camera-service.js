@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v306.0: 位置情報取得強化版) ---
+// --- js/camera-service.js (v307.0: 位置情報エラー通知強化版) ---
 
 // ==========================================
 // 位置情報管理
@@ -7,16 +7,44 @@ window.currentLocation = null;
 window.locationWatchId = null;
 
 window.startLocationWatch = function() {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+        console.warn("Geolocation not supported");
+        if (typeof window.updateNellMessage === 'function') {
+            window.updateNellMessage("この端末では位置情報が使えないみたいだにゃ…", "sad", false);
+        }
+        return;
+    }
     if (window.locationWatchId !== null) return; 
 
     console.log("📍 Location Watch Started");
     window.locationWatchId = navigator.geolocation.watchPosition(
         (pos) => {
             window.currentLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            console.log("📍 Location Updated");
         },
         (err) => {
             console.warn("📍 Location Watch Error:", err);
+            let msg = "位置情報がわからないにゃ…";
+            
+            // エラーコード別のメッセージ
+            switch(err.code) {
+                case 1: // PERMISSION_DENIED
+                    msg = "位置情報の許可がないにゃ。ブラウザの設定で許可してほしいにゃ！";
+                    break;
+                case 2: // POSITION_UNAVAILABLE
+                    msg = "電波が悪くて場所がわからないにゃ…";
+                    break;
+                case 3: // TIMEOUT
+                    msg = "場所を調べるのに時間がかかりすぎたにゃ…";
+                    break;
+            }
+
+            // ネル先生に報告させる（ユーザー操作後のタイミングなので関数は存在するはず）
+            if (typeof window.updateNellMessage === 'function') {
+                window.updateNellMessage(msg, "sad", false);
+            } else {
+                alert(msg);
+            }
         },
         { enableHighAccuracy: true, maximumAge: 30000, timeout: 20000 }
     );
@@ -34,10 +62,12 @@ window.stopLocationWatch = function() {
 const getOneShotLocation = () => {
     return new Promise((resolve) => {
         if (!navigator.geolocation) return resolve(null);
+        
+        // 3秒で諦める
         const timeoutId = setTimeout(() => {
             console.warn("📍 Location One-shot Timeout");
             resolve(null);
-        }, 3000); // 3秒待つ
+        }, 3000); 
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -52,7 +82,7 @@ const getOneShotLocation = () => {
                 console.warn("📍 Location One-shot Error:", err);
                 resolve(null);
             },
-            { enableHighAccuracy: false, timeout: 3000 } // 素早さ優先
+            { enableHighAccuracy: false, timeout: 3000 } 
         );
     });
 };
@@ -208,7 +238,7 @@ window.captureAndIdentifyItem = async function() {
         btn.disabled = true;
     }
 
-    // 3. 画像キャプチャ（先に撮影してフリーズ感をなくす）
+    // 3. 画像キャプチャ
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
@@ -223,16 +253,13 @@ window.captureAndIdentifyItem = async function() {
     document.body.appendChild(flash);
     setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
 
-    // ★修正: 位置情報の確保
-    // 常時監視の値(window.currentLocation)があればそれを使うが、
-    // なければ今この瞬間に取得を試みる(getOneShotLocation)
+    // 5. 位置情報の確保 (Watchで取れていなければ、ここでワンショット試行)
     let loc = window.currentLocation;
     if (!loc) {
-        // console.log("📍 Fetching location on-demand...");
         loc = await getOneShotLocation();
     }
 
-    // 5. API送信
+    // 6. API送信
     try {
         const res = await fetch('/identify-item', {
             method: 'POST',
