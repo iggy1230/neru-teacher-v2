@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v302.0: おしゃべりタイム吹き出し固定版) ---
+// --- js/voice-service.js (v303.0: 割り込み誤作動防止・音声復元版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -11,7 +11,7 @@ window.stopAudioPlayback = function() {
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 };
 
-// 常時聞き取り開始
+// 常時聞き取り開始（通常モード用）
 window.startAlwaysOnListening = function() {
     if (!('webkitSpeechRecognition' in window)) {
         console.warn("Speech Recognition not supported.");
@@ -32,17 +32,18 @@ window.startAlwaysOnListening = function() {
         const text = event.results[0][0].transcript;
         if (!text || text.trim() === "") return;
 
-        // 割り込み判定
+        // 割り込み判定 (通常モード)
         const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
         const isStopCommand = stopKeywords.some(w => text.includes(w));
-        const isLongEnough = text.length >= 10;
-
+        
+        // ★修正: 誤作動防止のため、キーワードが含まれる場合のみ停止する
         if (window.isNellSpeaking) {
-            if (isLongEnough || isStopCommand) {
-                console.log("[Interruption] Stopping audio.");
+            if (isStopCommand) {
+                console.log("[Interruption] Stopping audio by command.");
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-                if (isStopCommand) return; 
+                return; 
             } else {
+                // キーワード以外は無視して喋り続ける
                 return;
             }
         }
@@ -426,7 +427,7 @@ window.startLiveChat = async function(context = 'main') {
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.text) { 
                             window.streamTextBuffer += p.text;
-                            // ★修正: chat-freeモードでは吹き出しテキストを更新しない（指示漏れ対策）
+                            // ★chat-freeモードでは吹き出しテキストを更新しない（指示漏れ対策）
                             if (window.currentMode !== 'chat-free') {
                                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false); 
                             }
@@ -470,11 +471,17 @@ window.startMicrophone = async function() {
                 }
                 const cleanText = currentText.trim();
                 const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
+                
+                // ★修正: 割り込み判定を厳格化（エコーでの誤停止防止）
                 if (window.isNellSpeaking && cleanText.length > 0) {
-                    const isLongEnough = cleanText.length >= 10;
                     const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
-                    if (isLongEnough || isStopCommand) window.stopAudioPlayback();
+                    if (isStopCommand) {
+                        console.log("[Interruption] Stopping audio by command.");
+                        window.stopAudioPlayback();
+                    }
+                    // キーワード以外は無視
                 }
+
                 for (let i = event.resultIndex; i < event.results.length; ++i) { 
                     if (event.results[i].isFinal) { 
                         const userText = event.results[i][0].transcript;
