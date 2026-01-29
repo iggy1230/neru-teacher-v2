@@ -1,4 +1,4 @@
-// --- js/analyze.js (v294.2: 採点ロジック修正完全版) ---
+// --- js/analyze.js (v300.1: 給食レスポンス改善版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -362,16 +362,30 @@ window.showKarikariEffect = function(amount) { const container = document.queryS
 
 window.giveLunch = function() { 
     if (currentUser.karikari < 1) return window.updateNellMessage("カリカリがないにゃ……", "thinking", false); 
+    
+    // ★修正箇所: 先に「もぐもぐ」と言わせる
     window.updateNellMessage("もぐもぐ……", "normal", false); 
+    
     currentUser.karikari--; 
     if(typeof saveAndSync === 'function') saveAndSync(); 
     window.updateMiniKarikari(); 
     window.showKarikariEffect(-1); 
     window.lunchCount++; 
-    fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
-        .then(r => r.json())
-        .then(d => { setTimeout(() => { window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 1500); })
-        .catch(e => { setTimeout(() => { window.updateNellMessage("おいしいにゃ！", "happy", false); }, 1500); }); 
+    
+    // 非同期でリアクション取得 (setTimeoutによる待機を削除し即座に更新)
+    fetch('/lunch-reaction', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) 
+    })
+    .then(r => r.json())
+    .then(d => { 
+        // サーバーから返答が来たら即座に反映
+        window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); 
+    })
+    .catch(e => { 
+        window.updateNellMessage("おいしいにゃ！", "happy", false); 
+    }); 
 }; 
 
 // ※ ゲームロジックは js/game-engine.js に移動済み
