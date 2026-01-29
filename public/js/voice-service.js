@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v307.0: カメラ自動起動無効化・送信後クローズ版) ---
+// --- js/voice-service.js (v308.0: AudioContextクリーンアップ強化版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -224,7 +224,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
         window.isLiveImageSending = false;
         window.isMicMuted = false;
         
-        // ★修正: 送信完了後は必ずカメラ画面を閉じる
+        // 送信完了後は必ずカメラ画面を閉じる
         if (typeof window.stopPreviewCamera === 'function') {
             window.stopPreviewCamera();
         }
@@ -336,7 +336,13 @@ window.stopLiveChat = function() {
     if (window.liveSocket) {
         window.liveSocket.close(); 
     }
-    if (window.audioContext && window.audioContext.state !== 'closed') window.audioContext.close(); 
+    // ★修正: ここで変数をnullリセットして、再作成を強制する
+    if (window.audioContext && window.audioContext.state !== 'closed') {
+        window.audioContext.close(); 
+    }
+    window.audioContext = null;
+    window.audioCtx = null; // audio.jsの変数もクリア
+
     window.isNellSpeaking = false; 
     if(window.stopSpeakingTimer) clearTimeout(window.stopSpeakingTimer); 
     if(window.speakingStartTimer) clearTimeout(window.speakingStartTimer); 
@@ -540,7 +546,7 @@ window.startMicrophone = async function() {
             window.recognition.start(); 
         } 
         
-        // ★修正: chat-freeモードでは初期ビデオOFF (音声のみ)
+        // ★修正: chat-freeモード（放課後おしゃべりタイム）では初期ビデオOFF (音声のみ)
         const useVideo = (window.currentMode !== 'chat-free');
 
         window.mediaStream = await navigator.mediaDevices.getUserMedia({ 
