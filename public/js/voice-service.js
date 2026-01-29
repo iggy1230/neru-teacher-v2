@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v303.0: ログフィルタリング強化・カメラ制御版) ---
+// --- js/voice-service.js (v304.0: ログフィルタリング強化・カメラ制御版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -314,18 +314,23 @@ window.startLiveChat = async function(context = 'main') {
                 if (data.serverContent?.modelTurn?.parts) { 
                     data.serverContent.modelTurn.parts.forEach(p => { 
                         if (p.text) { 
-                            // ★修正: 強力なフィルタリング
-                            // メタ指示パターン、括弧書き、日本語を含まない短い英文を排除
+                            // ★修正: フィルタリング強化 (ご指摘の部分)
+                            // 1. **Describing... などのメタヘッダーを排除
+                            if (/^\*\*Describing/i.test(p.text)) return;
+                            if (/^I've got an image/i.test(p.text)) return;
+
+                            // 2. 既存のメタパターン排除
                             const ignorePatterns = [/^User.*:/i, /^Model.*:/i, /^System.*:/i, /^Instructions?:/i];
                             const isMeta = ignorePatterns.some(regex => regex.test(p.text));
                             const isBracketed = /^(\(|\[|【|（).+?(\)|\]|】|）)$/.test(p.text.trim());
+                            
+                            // 3. 日本語を含まず、英語のみで特定のキーワードを含むか短い文
                             const hasJapanese = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(p.text);
                             const hasEnglish = /[a-zA-Z]/.test(p.text);
-                            // 日本語を含まず、英語のみで、かつ「指示」等のキーワードが含まれるか短い文
-                            const isEnglishInstruction = !hasJapanese && hasEnglish && (p.text.length < 50 || /instruction|guideline|response/i.test(p.text));
-                            const isExplicitInstruction = /指示|思考|出力|ユーザー|システム/g.test(p.text) && p.text.length < 20;
-
-                            if (!isMeta && !isBracketed && !isEnglishInstruction && !isExplicitInstruction) {
+                            // "Describing the Image" のようなフレーズが含まれていたらアウト
+                            const isEnglishInstruction = !hasJapanese && hasEnglish && (/instruction|guideline|response|describing/i.test(p.text));
+                            
+                            if (!isMeta && !isBracketed && !isEnglishInstruction) {
                                 window.streamTextBuffer += p.text;
                                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(window.streamTextBuffer, "normal", false, false); 
                             }

@@ -1,4 +1,4 @@
-// --- js/analyze.js (v303.0: モード別位置監視・給食高速化版) ---
+// --- js/analyze.js (v304.0: 給食プリロード・位置情報監視制御版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -6,6 +6,29 @@
 // ==========================================
 // 1. UI操作・モード選択関数
 // ==========================================
+
+// ★ 給食プリロード用変数
+window.nextLunchReaction = null;
+
+// ★ 給食反応を裏で取得しておく関数
+window.preloadLunchReaction = function() {
+    if (!currentUser) return;
+    // 次の回数（現在 + 1）で予測
+    const nextCount = (window.lunchCount || 0) + 1;
+    
+    console.log(`🍱 Preloading lunch reaction for #${nextCount}...`);
+    fetch('/lunch-reaction', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ count: nextCount, name: currentUser.name }) 
+    })
+    .then(r => r.json())
+    .then(data => {
+        window.nextLunchReaction = data;
+        console.log("🍱 Lunch reaction preloaded!");
+    })
+    .catch(e => console.error("Lunch Preload Error:", e));
+};
 
 // ★ selectMode
 window.selectMode = function(m) {
@@ -84,6 +107,8 @@ window.selectMode = function(m) {
         else if (m === 'lunch') { 
             document.getElementById('lunch-view').classList.remove('hidden'); 
             window.updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); 
+            // ★修正: 給食モードに入ったらすぐに裏で反応を取得しておく
+            window.preloadLunchReaction();
         } 
         else if (m === 'review') { 
             if(typeof window.renderMistakeSelection === 'function') window.renderMistakeSelection(); 
@@ -365,19 +390,39 @@ window.updateTimerDisplay = function() {
 window.updateMiniKarikari = function() { if(currentUser) { const el = document.getElementById('mini-karikari-count'); if(el) el.innerText = currentUser.karikari; const el2 = document.getElementById('karikari-count'); if(el2) el2.innerText = currentUser.karikari; } };
 window.showKarikariEffect = function(amount) { const container = document.querySelector('.nell-avatar-wrap'); if(container) { const floatText = document.createElement('div'); floatText.className = 'floating-text'; floatText.innerText = amount > 0 ? `+${amount}` : `${amount}`; floatText.style.color = amount > 0 ? '#ff9100' : '#ff5252'; floatText.style.right = '0px'; floatText.style.top = '0px'; container.appendChild(floatText); setTimeout(() => floatText.remove(), 1500); } };
 
-// ★修正: 給食レスポンスのウェイト短縮
+// ★修正: 給食レスポンスを先読みデータで即座に返す
 window.giveLunch = function() { 
     if (currentUser.karikari < 1) return window.updateNellMessage("カリカリがないにゃ……", "thinking", false); 
+    
+    // UI更新
     window.updateNellMessage("もぐもぐ……", "normal", false); 
     currentUser.karikari--; 
     if(typeof saveAndSync === 'function') saveAndSync(); 
     window.updateMiniKarikari(); 
     window.showKarikariEffect(-1); 
     window.lunchCount++; 
-    fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
-        .then(r => r.json())
-        .then(d => { setTimeout(() => { window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); }, 100); }) // 1500 -> 100
-        .catch(e => { setTimeout(() => { window.updateNellMessage("おいしいにゃ！", "happy", false); }, 100); }); 
+
+    // リアクション処理
+    const handleReaction = (data) => {
+        // "もぐもぐ"を少し見せるために500msだけ待つ（即座すぎると"もぐもぐ"が見えない）
+        setTimeout(() => { 
+            window.updateNellMessage(data.reply || "おいしいにゃ！", data.isSpecial ? "excited" : "happy", true); 
+            // 次回分のプリロードを開始
+            window.preloadLunchReaction();
+        }, 500);
+    };
+
+    if (window.nextLunchReaction) {
+        // 先読みデータがある場合
+        handleReaction(window.nextLunchReaction);
+        window.nextLunchReaction = null; // 消費
+    } else {
+        // 先読みデータがない場合（連打時など）は通常fetch
+        fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
+            .then(r => r.json())
+            .then(handleReaction)
+            .catch(e => { setTimeout(() => { window.updateNellMessage("おいしいにゃ！", "happy", false); }, 500); }); 
+    }
 }; 
 
 // ※ ゲームロジックは js/game-engine.js に移動済み
