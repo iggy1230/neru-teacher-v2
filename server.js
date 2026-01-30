@@ -1,4 +1,4 @@
-// --- server.js (完全版 v309.0: ツール併用エラー修正版) ---
+// --- server.js (完全版 v307.0: JSON抽出強化・位置情報検索対応版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -241,8 +241,7 @@ app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location } = req.body;
         
-        // MODEL_FAST (gemini-2.5-flash) を使用
-        // ★修正: responseMimeTypeを削除 (ツールとの併用不可のため)
+        // Google検索ツールを使用（JSON強制モードはOFF）
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -271,7 +270,8 @@ app.post('/identify-item', async (req, res) => {
         3. **禁止事項**: 漢字にふりがな（読み仮名）を振らないでください。
 
         【出力フォーマット】
-        **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownのコードブロック(\`\`\`json\`)で囲んでください。
+        **思考プロセスや前置きは不要です。以下のJSON形式の文字列のみ**を出力してください。
+        Markdownのコードブロック(\`\`\`json\`)で囲んでください。
         \`\`\`json
         {
             "itemName": "正式名称",
@@ -291,16 +291,20 @@ app.post('/identify-item', async (req, res) => {
         
         let json;
         try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                json = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
+            // ★修正: JSON抽出ロジック強化
+            // 1. Markdownのコードブロックを除去
+            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            // 2. 正規表現でJSONオブジェクト部分({ ... })を抽出
+            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+            
+            if (jsonMatch) {
+                json = JSON.parse(jsonMatch[0]);
             } else {
-                throw new Error("JSON parse failed");
+                throw new Error("JSON not found in response");
             }
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
+            // フォールバック
             json = {
                 itemName: "なぞの物体",
                 description: "ちょっとよくわからなかったにゃ。もう一回見せてにゃ？",
@@ -343,10 +347,9 @@ app.post('/chat-dialogue', async (req, res) => {
             ユーザーの現在地は 緯度:${location.lat}, 経度:${location.lon} です。
             ユーザーが「天気」「周辺情報」「ここはどこ？」など、場所に関連する質問をした場合は、
             **必ずこの座標を検索キーワードに含めて（例：「${location.lat}, ${location.lon} 住所」「${location.lat}, ${location.lon} 天気」）Google検索を実行してください。**
-            単に「天気」とだけ検索すると場所が特定できず、誤った情報を回答してしまいます。「座標だけではわからない」という回答は禁止です。検索ツールを使えば必ずわかります。
             `;
             
-            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。天気や場所の質問なら、必ずこの座標を使ってGoogle検索を行い、具体的な地名を特定した上で答えてください。「場所がわからない」と答えることは禁止です。）`;
+            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。天気や場所の質問なら、必ずこの座標を使ってGoogle検索を行い、具体的な地名を特定した上で答えてください。）`;
         }
 
         let prompt = `
@@ -365,7 +368,7 @@ app.post('/chat-dialogue', async (req, res) => {
         ${contextPrompt}
 
         【出力フォーマット】
-        **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownのコードブロック(\`\`\`json\`)で囲んでください。
+        **思考プロセスや前置きは不要です。以下のJSON形式の文字列のみ**を出力してください。Markdownのコードブロック(\`\`\`json\`)で囲んでください。
         \`\`\`json
         {
             "speech": "ネル先生のセリフ。語尾は必ず「にゃ」や「だにゃ」。親しみやすく。",
@@ -386,7 +389,7 @@ app.post('/chat-dialogue', async (req, res) => {
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
-            // ★修正: responseMimeTypeを削除 (ツールとの併用不可のため)
+            // Google検索ツールを使用
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -404,7 +407,7 @@ app.post('/chat-dialogue', async (req, res) => {
 
         } catch (genError) {
             console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
-            // フォールバック（ツールなし）
+            // フォールバック
             const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
             try {
                 if (image) {
@@ -423,16 +426,25 @@ app.post('/chat-dialogue', async (req, res) => {
         
         let jsonResponse;
         try {
+            // ★修正: JSON抽出ロジック強化
+            // 1. Markdownのコードブロックを除去
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+            // 2. 正規表現でJSONオブジェクト部分({ ... })を抽出
+            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+
+            if (jsonMatch) {
+                jsonResponse = JSON.parse(jsonMatch[0]);
+            } else {
+                // JSONが見つからない場合、平文の回答とみなしてそのままspeechにする
+                // ただし、AIが「検索しました」等のメタ発言をしている可能性もあるので注意
+                // 今回はそのまま表示することにする（エラー表示よりはマシ）
+                console.warn("Valid JSON not found, using raw text.");
+                jsonResponse = { speech: responseText, board: "" };
             }
-            jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            jsonResponse = { speech: responseText, board: "" };
+            // 完全に壊れている場合
+            jsonResponse = { speech: "ごめんにゃ、ちょっと調子が悪いみたいだにゃ…。", board: "（エラー）" };
         }
         
         res.json(jsonResponse);
