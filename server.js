@@ -1,4 +1,4 @@
-// --- server.js (完全版 v307.0: JSON抽出強化・位置情報検索対応版) ---
+// --- server.js (完全版 v310.0: APIレート制限対策・リトライ機能追加版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -241,7 +241,7 @@ app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location } = req.body;
         
-        // Google検索ツールを使用（JSON強制モードはOFF）
+        // MODEL_FAST (gemini-2.5-flash) を使用
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -260,7 +260,7 @@ app.post('/identify-item', async (req, res) => {
         ${locationInfo}
 
         【特定と命名のルール】
-        1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
+        1. **位置情報がある場合**: Google検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
         2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。
         3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
@@ -270,8 +270,7 @@ app.post('/identify-item', async (req, res) => {
         3. **禁止事項**: 漢字にふりがな（読み仮名）を振らないでください。
 
         【出力フォーマット】
-        **思考プロセスや前置きは不要です。以下のJSON形式の文字列のみ**を出力してください。
-        Markdownのコードブロック(\`\`\`json\`)で囲んでください。
+        **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownのコードブロック(\`\`\`json\`)で囲んでください。
         \`\`\`json
         {
             "itemName": "正式名称",
@@ -291,20 +290,16 @@ app.post('/identify-item', async (req, res) => {
         
         let json;
         try {
-            // ★修正: JSON抽出ロジック強化
-            // 1. Markdownのコードブロックを除去
-            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            // 2. 正規表現でJSONオブジェクト部分({ ... })を抽出
-            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-            
-            if (jsonMatch) {
-                json = JSON.parse(jsonMatch[0]);
+            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            const firstBrace = cleanText.indexOf('{');
+            const lastBrace = cleanText.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                json = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
             } else {
-                throw new Error("JSON not found in response");
+                throw new Error("JSON parse failed");
             }
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // フォールバック
             json = {
                 itemName: "なぞの物体",
                 description: "ちょっとよくわからなかったにゃ。もう一回見せてにゃ？",
@@ -347,9 +342,10 @@ app.post('/chat-dialogue', async (req, res) => {
             ユーザーの現在地は 緯度:${location.lat}, 経度:${location.lon} です。
             ユーザーが「天気」「周辺情報」「ここはどこ？」など、場所に関連する質問をした場合は、
             **必ずこの座標を検索キーワードに含めて（例：「${location.lat}, ${location.lon} 住所」「${location.lat}, ${location.lon} 天気」）Google検索を実行してください。**
+            単に「天気」とだけ検索すると場所が特定できず、誤った情報を回答してしまいます。「座標だけではわからない」という回答は禁止です。検索ツールを使えば必ずわかります。
             `;
             
-            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。天気や場所の質問なら、必ずこの座標を使ってGoogle検索を行い、具体的な地名を特定した上で答えてください。）`;
+            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。天気や場所の質問なら、必ずこの座標を使ってGoogle検索を行い、具体的な地名を特定した上で答えてください。「場所がわからない」と答えることは禁止です。）`;
         }
 
         let prompt = `
@@ -387,14 +383,11 @@ app.post('/chat-dialogue', async (req, res) => {
         let responseText;
 
         try {
+            // ★修正: リトライロジックを追加
             const toolsConfig = image ? undefined : [{ google_search: {} }];
-            
-            // Google検索ツールを使用
-            const model = genAI.getGenerativeModel({ 
-                model: MODEL_FAST,
-                tools: toolsConfig
-            });
+            const model = genAI.getGenerativeModel({ model: MODEL_FAST, tools: toolsConfig });
 
+            // 1回目の試行
             if (image) {
                 result = await model.generateContent([
                     prompt,
@@ -406,10 +399,37 @@ app.post('/chat-dialogue', async (req, res) => {
             responseText = result.response.text().trim();
 
         } catch (genError) {
-            console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
-            // フォールバック
-            const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
-            try {
+            // エラー内容を確認
+            const isRateLimit = genError.message && (genError.message.includes('429') || genError.message.includes('Quota') || genError.message.includes('RESOURCE_EXHAUSTED'));
+            
+            if (isRateLimit) {
+                console.warn("API Rate Limit Hit. Retrying after 2s...");
+                // 2秒待機
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                try {
+                    // 再試行（ツールなしで試すのも手だが、位置情報検索にはツールが必要なので、同じ構成で再試行）
+                    // 場合によってはモデルを変えるなどの戦略も有効だが、ここではシンプルに再試行
+                    const modelRetry = genAI.getGenerativeModel({ model: MODEL_FAST, tools: image ? undefined : [{ google_search: {} }] });
+                    
+                    if (image) {
+                        result = await modelRetry.generateContent([
+                            prompt,
+                            { inlineData: { mime_type: "image/jpeg", data: image } }
+                        ]);
+                    } else {
+                        result = await modelRetry.generateContent(prompt);
+                    }
+                    responseText = result.response.text().trim();
+                    
+                } catch (retryError) {
+                    console.error("Retry failed:", retryError);
+                    throw retryError; // クライアントにエラーを返す
+                }
+            } else {
+                // その他のエラー（ツールエラーなど）は、ツールなしでフォールバック
+                console.warn("Generation failed with tools. Retrying without tools...", genError.message);
+                const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
                 if (image) {
                     result = await modelFallback.generateContent([
                         prompt,
@@ -419,39 +439,30 @@ app.post('/chat-dialogue', async (req, res) => {
                     result = await modelFallback.generateContent(prompt);
                 }
                 responseText = result.response.text().trim();
-            } catch (retryError) {
-                throw retryError;
             }
         }
         
         let jsonResponse;
         try {
-            // ★修正: JSON抽出ロジック強化
-            // 1. Markdownのコードブロックを除去
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            // 2. 正規表現でJSONオブジェクト部分({ ... })を抽出
-            const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-
-            if (jsonMatch) {
-                jsonResponse = JSON.parse(jsonMatch[0]);
-            } else {
-                // JSONが見つからない場合、平文の回答とみなしてそのままspeechにする
-                // ただし、AIが「検索しました」等のメタ発言をしている可能性もあるので注意
-                // 今回はそのまま表示することにする（エラー表示よりはマシ）
-                console.warn("Valid JSON not found, using raw text.");
-                jsonResponse = { speech: responseText, board: "" };
+            const firstBrace = cleanText.indexOf('{');
+            const lastBrace = cleanText.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                cleanText = cleanText.substring(firstBrace, lastBrace + 1);
             }
+            jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // 完全に壊れている場合
-            jsonResponse = { speech: "ごめんにゃ、ちょっと調子が悪いみたいだにゃ…。", board: "（エラー）" };
+            jsonResponse = { speech: responseText, board: "" };
         }
         
         res.json(jsonResponse);
 
     } catch (error) {
         console.error("Chat API Fatal Error:", error);
-        res.status(200).json({ speech: "ごめんにゃ、今ちょっと混み合ってて頭が回らないにゃ…。少し待ってから話しかけてにゃ。", board: "（通信混雑中）" });
+        // エラー時はユーザーに優しく伝える
+        const errorMsg = error.message.includes('429') ? "ごめんにゃ、今ちょっと考えすぎて頭がパンクしそうだにゃ…少し休ませてにゃ。" : "ごめんにゃ、調子が悪いみたいだにゃ。";
+        res.status(200).json({ speech: errorMsg, board: "（混雑中）" });
     }
 });
 
