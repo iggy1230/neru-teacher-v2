@@ -236,12 +236,12 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★ お宝図鑑用 画像解析API ---
+// --- ★ お宝図鑑用 画像解析API (修正版) ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location } = req.body;
         
-        // MODEL_FAST (gemini-2.5-flash) を使用
+        // JSON強制モードを削除（ツール使用のため）
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -250,7 +250,15 @@ app.post('/identify-item', async (req, res) => {
 
         let locationInfo = "";
         if (location && location.lat && location.lon) {
-            locationInfo = `【重要：位置情報】\n撮影場所の座標は 緯度:${location.lat}, 経度:${location.lon} です。Google検索を使用して、この座標が「観光地」「公園」「公共施設」「店舗」などの特定のランドマークであるか確認してください。`;
+            locationInfo = `
+            【現在地情報あり】
+            座標: ${location.lat}, ${location.lon}
+            
+            指示:
+            1. 提供されたGoogle検索ツールを使い、必ず「${location.lat},${location.lon} 観光地」や「${location.lat},${location.lon} 施設名」というキーワードで検索を行ってください。
+            2. 検索結果と画像を照らし合わせ、ここが特定の観光地、公園、施設であれば、その「正式名称」を itemName にしてください。
+            3. 場所が特定できない、または一般的な商品（お菓子や文房具など）の場合は、画像の商品名を itemName にしてください。
+            `;
         }
 
         const prompt = `
@@ -258,11 +266,6 @@ app.post('/identify-item', async (req, res) => {
         送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
         
         ${locationInfo}
-
-        【特定と命名のルール】
-        1. **位置情報がある場合**: Google検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
-        2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。
-        3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
@@ -316,7 +319,7 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- HTTPチャット会話 ---
+// --- HTTPチャット会話 (修正版: リトライロジック追加) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
         let { text, name, image, history, location } = req.body;
@@ -383,9 +386,13 @@ app.post('/chat-dialogue', async (req, res) => {
         let responseText;
 
         try {
-            // ★修正: リトライロジックを追加
+            // ★修正: リトライロジック追加
+            // Google検索ツールを使用（JSON強制モードはOFF）
             const toolsConfig = image ? undefined : [{ google_search: {} }];
-            const model = genAI.getGenerativeModel({ model: MODEL_FAST, tools: toolsConfig });
+            const model = genAI.getGenerativeModel({ 
+                model: MODEL_FAST,
+                tools: toolsConfig
+            });
 
             // 1回目の試行
             if (image) {
@@ -399,7 +406,7 @@ app.post('/chat-dialogue', async (req, res) => {
             responseText = result.response.text().trim();
 
         } catch (genError) {
-            // エラー内容を確認
+            // 429エラーやQuotaエラーの場合のみリトライ
             const isRateLimit = genError.message && (genError.message.includes('429') || genError.message.includes('Quota') || genError.message.includes('RESOURCE_EXHAUSTED'));
             
             if (isRateLimit) {
@@ -408,9 +415,10 @@ app.post('/chat-dialogue', async (req, res) => {
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
                 try {
-                    // 再試行（ツールなしで試すのも手だが、位置情報検索にはツールが必要なので、同じ構成で再試行）
-                    // 場合によってはモデルを変えるなどの戦略も有効だが、ここではシンプルに再試行
-                    const modelRetry = genAI.getGenerativeModel({ model: MODEL_FAST, tools: image ? undefined : [{ google_search: {} }] });
+                    // 再試行（同じ構成で）
+                    // ※本来は指数バックオフやモデル変更が理想だが、ここでは単純リトライ
+                    const toolsConfig = image ? undefined : [{ google_search: {} }];
+                    const modelRetry = genAI.getGenerativeModel({ model: MODEL_FAST, tools: toolsConfig });
                     
                     if (image) {
                         result = await modelRetry.generateContent([
@@ -424,21 +432,26 @@ app.post('/chat-dialogue', async (req, res) => {
                     
                 } catch (retryError) {
                     console.error("Retry failed:", retryError);
-                    throw retryError; // クライアントにエラーを返す
+                    // さらに失敗した場合はエラーとしてスロー
+                    throw retryError;
                 }
             } else {
                 // その他のエラー（ツールエラーなど）は、ツールなしでフォールバック
                 console.warn("Generation failed with tools. Retrying without tools...", genError.message);
                 const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
-                if (image) {
-                    result = await modelFallback.generateContent([
-                        prompt,
-                        { inlineData: { mime_type: "image/jpeg", data: image } }
-                    ]);
-                } else {
-                    result = await modelFallback.generateContent(prompt);
+                try {
+                    if (image) {
+                        result = await modelFallback.generateContent([
+                            prompt,
+                            { inlineData: { mime_type: "image/jpeg", data: image } }
+                        ]);
+                    } else {
+                        result = await modelFallback.generateContent(prompt);
+                    }
+                    responseText = result.response.text().trim();
+                } catch (fbError) {
+                    throw fbError;
                 }
-                responseText = result.response.text().trim();
             }
         }
         
@@ -449,19 +462,26 @@ app.post('/chat-dialogue', async (req, res) => {
             const lastBrace = cleanText.lastIndexOf('}');
             if (firstBrace !== -1 && lastBrace !== -1) {
                 cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+                jsonResponse = JSON.parse(cleanText);
+            } else {
+                // JSONが見つからない場合、平文の回答とみなしてそのままspeechにする
+                // メタ発言が含まれる可能性があるが、何も返さないよりはマシ
+                console.warn("Valid JSON not found, using raw text.");
+                jsonResponse = { speech: responseText, board: "" };
             }
-            jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            jsonResponse = { speech: responseText, board: "" };
+            jsonResponse = { speech: "ごめんにゃ、ちょっと調子が悪いみたいだにゃ…。", board: "（エラー）" };
         }
         
         res.json(jsonResponse);
 
     } catch (error) {
         console.error("Chat API Fatal Error:", error);
-        // エラー時はユーザーに優しく伝える
-        const errorMsg = error.message.includes('429') ? "ごめんにゃ、今ちょっと考えすぎて頭がパンクしそうだにゃ…少し休ませてにゃ。" : "ごめんにゃ、調子が悪いみたいだにゃ。";
+        // エラーメッセージをユーザーに分かりやすく
+        const errorMsg = error.message.includes('429') 
+            ? "ごめんにゃ、今みんなとお話しすぎて頭がパンクしそうだにゃ…少し休ませてにゃ。" 
+            : "ごめんにゃ、調子が悪いみたいだにゃ。";
         res.status(200).json({ speech: errorMsg, board: "（混雑中）" });
     }
 });
