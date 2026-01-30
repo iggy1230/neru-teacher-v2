@@ -237,7 +237,8 @@ window.captureAndIdentifyItem = async function() {
             body: JSON.stringify({ 
                 image: base64Data,
                 name: currentUser ? currentUser.name : "生徒",
-                location: locationData // 位置情報
+                location: locationData, // 位置情報
+                address: window.currentAddress // 追加: 詳細住所
             })
         });
 
