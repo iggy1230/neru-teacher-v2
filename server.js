@@ -1,4 +1,4 @@
-// --- server.js (完全版 v311.0: 位置情報特定プロセス厳格化版) ---
+// --- server.js (完全版 v308.0: 住所特定強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -241,6 +241,7 @@ app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location } = req.body;
         
+        // MODEL_FAST (gemini-2.5-flash) を使用
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -250,10 +251,14 @@ app.post('/identify-item', async (req, res) => {
         let locationInfo = "";
         if (location && location.lat && location.lon) {
             locationInfo = `
-            【重要：位置情報】
-            撮影場所の座標: 緯度${location.lat}, 経度${location.lon}
-            指示: 必ずこの座標を使って「${location.lat},${location.lon} 住所」でGoogle検索し、**具体的な都道府県と市町村名**を特定してください。
-            その場所の近くにある観光地、公園、公共施設、店舗などのランドマークである可能性を考慮して、画像の解析を行ってください。
+            【重要：現在地情報】
+            座標: ${location.lat}, ${location.lon}
+            精度: 誤差 ${location.accuracy || '?'}メートル
+            
+            指示:
+            1. まず、Google検索ツールで「${location.lat},${location.lon} 住所」を検索し、正確な住所（市町村名）を特定してください。
+            2. その後、その「正確な住所」の周辺にある施設や観光地を考慮して回答してください。
+            3. 画像のみで場所が特定できない場合は、無理に場所を断定せず、画像に写っているもの（商品や植物など）について解説してください。
             `;
         }
 
@@ -264,7 +269,7 @@ app.post('/identify-item', async (req, res) => {
         ${locationInfo}
 
         【特定と命名のルール】
-        1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
+        1. **位置情報がある場合**: Google検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
         2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。
         3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
@@ -272,6 +277,7 @@ app.post('/identify-item', async (req, res) => {
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
         2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
         3. **禁止事項**: 漢字にふりがな（読み仮名）を振らないでください。
+        4. **禁止事項**: 座標の数値をそのままユーザーへの返答に入れないでください。
 
         【出力フォーマット】
         **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownのコードブロック(\`\`\`json\`)で囲んでください。
@@ -304,6 +310,7 @@ app.post('/identify-item', async (req, res) => {
             }
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
+            // エラー時は安全な固定メッセージ
             json = {
                 itemName: "なぞの物体",
                 description: "ちょっとよくわからなかったにゃ。もう一回見せてにゃ？",
@@ -344,13 +351,15 @@ app.post('/chat-dialogue', async (req, res) => {
             locationPrompt = `
             【重要：現在地情報】
             ユーザーの現在地は 緯度:${location.lat}, 経度:${location.lon} です。
-            ユーザーが「天気」「周辺情報」「ここはどこ？」など、場所に関連する質問をした場合は、
-            **まずツールを使って「${location.lat},${location.lon} 住所」でGoogle検索を行い、具体的な【都道府県と市町村名】を特定してください。**
-            その後、特定した地名を使って天気などを検索してください。
-            「座標だけではわからない」と答えることは禁止です。必ず検索を行って地名を特定してください。
+            ユーザーが「天気」「周辺情報」「ここはどこ？」など、**場所に関連する質問**をした場合は、
+            まずGoogle検索で「${location.lat}, ${location.lon} 住所」を調べて**正しい市町村名を特定**してから回答を作成してください。
+            単に「天気」とだけ検索すると場所が特定できず、誤った情報を回答してしまいます。「座標だけではわからない」という回答は禁止です。
+            
+            【禁止事項】
+            - **座標の数値をそのままセリフの中で言わないでください。** 
             `;
             
-            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。天気や場所の質問なら、まずこの座標でGoogle検索して具体的な住所（市町村）を特定し、その地名の情報を答えてください。）`;
+            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。天気や場所の質問なら、まずこの座標を使ってGoogle検索を行い、具体的な地名を特定した上で答えてください。）`;
         }
 
         let prompt = `
@@ -369,7 +378,7 @@ app.post('/chat-dialogue', async (req, res) => {
         ${contextPrompt}
 
         【出力フォーマット】
-        **思考プロセスや前置きは不要です。以下のJSON形式の文字列のみ**を出力してください。Markdownのコードブロック(\`\`\`json\`)で囲んでください。
+        **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownのコードブロック(\`\`\`json\`)で囲んでください。
         \`\`\`json
         {
             "speech": "ネル先生のセリフ。語尾は必ず「にゃ」や「だにゃ」。親しみやすく。",
@@ -390,6 +399,7 @@ app.post('/chat-dialogue', async (req, res) => {
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
+            // 検索ツール使用のため JSON強制は行わない
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -406,46 +416,20 @@ app.post('/chat-dialogue', async (req, res) => {
             responseText = result.response.text().trim();
 
         } catch (genError) {
-            const isRateLimit = genError.message && (genError.message.includes('429') || genError.message.includes('Quota') || genError.message.includes('RESOURCE_EXHAUSTED'));
-            
-            if (isRateLimit) {
-                console.warn("API Rate Limit Hit. Retrying after 2s...");
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                
-                try {
-                    const toolsConfig = image ? undefined : [{ google_search: {} }];
-                    const modelRetry = genAI.getGenerativeModel({ model: MODEL_FAST, tools: toolsConfig });
-                    
-                    if (image) {
-                        result = await modelRetry.generateContent([
-                            prompt,
-                            { inlineData: { mime_type: "image/jpeg", data: image } }
-                        ]);
-                    } else {
-                        result = await modelRetry.generateContent(prompt);
-                    }
-                    responseText = result.response.text().trim();
-                    
-                } catch (retryError) {
-                    console.error("Retry failed:", retryError);
-                    throw retryError;
+            console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
+            const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
+            try {
+                if (image) {
+                    result = await modelFallback.generateContent([
+                        prompt,
+                        { inlineData: { mime_type: "image/jpeg", data: image } }
+                    ]);
+                } else {
+                    result = await modelFallback.generateContent(prompt);
                 }
-            } else {
-                console.warn("Generation failed with tools. Retrying without tools...", genError.message);
-                const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
-                try {
-                    if (image) {
-                        result = await modelFallback.generateContent([
-                            prompt,
-                            { inlineData: { mime_type: "image/jpeg", data: image } }
-                        ]);
-                    } else {
-                        result = await modelFallback.generateContent(prompt);
-                    }
-                    responseText = result.response.text().trim();
-                } catch (fbError) {
-                    throw fbError;
-                }
+                responseText = result.response.text().trim();
+            } catch (retryError) {
+                throw retryError;
             }
         }
         
@@ -456,29 +440,19 @@ app.post('/chat-dialogue', async (req, res) => {
             const lastBrace = cleanText.lastIndexOf('}');
             if (firstBrace !== -1 && lastBrace !== -1) {
                 cleanText = cleanText.substring(firstBrace, lastBrace + 1);
-                jsonResponse = JSON.parse(cleanText);
-            } else {
-                const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    jsonResponse = JSON.parse(jsonMatch[0]);
-                } else {
-                    console.warn("Valid JSON not found, using raw text.");
-                    jsonResponse = { speech: responseText, board: "" };
-                }
             }
+            jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            jsonResponse = { speech: "ごめんにゃ、ちょっと調子が悪いみたいだにゃ…。", board: "（エラー）" };
+            // エラー時は安全なメッセージを返す
+            jsonResponse = { speech: "ごめんにゃ、ちょっとうまく聞き取れなかったにゃ。もう一回言ってほしいにゃ。", board: "（解析エラー）" };
         }
         
         res.json(jsonResponse);
 
     } catch (error) {
         console.error("Chat API Fatal Error:", error);
-        const errorMsg = error.message.includes('429') 
-            ? "ごめんにゃ、今みんなとお話しすぎて頭がパンクしそうだにゃ…少し休ませてにゃ。" 
-            : "ごめんにゃ、調子が悪いみたいだにゃ。";
-        res.status(200).json({ speech: errorMsg, board: "（混雑中）" });
+        res.status(200).json({ speech: "ごめんにゃ、今ちょっと混み合ってて頭が回らないにゃ…。少し待ってから話しかけてにゃ。", board: "（通信混雑中）" });
     }
 });
 
