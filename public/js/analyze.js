@@ -1,28 +1,55 @@
-// --- js/analyze.js (v308.0: 位置情報高精度化版) ---
+// --- js/analyze.js (v309.0: GPS常時監視・精度向上版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
 
-// グローバル変数: 現在位置情報
+// グローバル変数: 現在位置情報と監視ID
 window.currentLocation = null;
+window.locationWatchId = null;
 
-// 位置情報取得ヘルパー
-window.fetchCurrentLocation = function() {
+// ★修正: 位置情報の「監視」を開始する関数（GPSウォーミングアップ）
+window.startLocationWatch = function() {
     if (!navigator.geolocation) return;
-    console.log("Fetching location (High Accuracy)...");
-    navigator.geolocation.getCurrentPosition(
+    
+    // すでに監視中なら何もしない（二重起動防止）
+    if (window.locationWatchId !== null) return;
+
+    console.log("Starting GPS warm-up (watchPosition)...");
+
+    // watchPosition: 移動していなくても、精度が上がるたびに更新情報を送ってくれる
+    window.locationWatchId = navigator.geolocation.watchPosition(
         (pos) => {
-            window.currentLocation = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            console.log("Location fetched:", window.currentLocation);
+            // 常に最新の座標で上書きする
+            window.currentLocation = { 
+                lat: pos.coords.latitude, 
+                lon: pos.coords.longitude,
+                accuracy: pos.coords.accuracy // 精度(メートル)
+            };
+            console.log(`Location updated: Lat ${pos.coords.latitude}, Lon ${pos.coords.longitude}, Acc ${Math.round(pos.coords.accuracy)}m`);
         },
         (err) => {
-            console.warn("Location fetch failed:", err);
-            // 失敗してもnullのままにしておく
-            window.currentLocation = null;
+            console.warn("Location watch error:", err);
         },
-        // ★修正: 高精度モードをON (enableHighAccuracy: true)
-        { timeout: 15000, enableHighAccuracy: true } 
+        {
+            enableHighAccuracy: true, // ★必須: GPSを使用
+            timeout: 20000,           // タイムアウト
+            maximumAge: 0             // ★必須: 過去のキャッシュを使わせない
+        }
     );
+};
+
+// ★追加: 監視を終了する関数（カメラ終了時やモード脱出時に呼ぶ）
+window.stopLocationWatch = function() {
+    if (window.locationWatchId !== null) {
+        navigator.geolocation.clearWatch(window.locationWatchId);
+        window.locationWatchId = null;
+        console.log("GPS warm-up stopped.");
+    }
+};
+
+// 互換性のため（selectModeから呼ばれる）
+window.fetchCurrentLocation = function() {
+    window.startLocationWatch();
 };
 
 // ==========================================
@@ -32,6 +59,12 @@ window.fetchCurrentLocation = function() {
 // ★ selectMode
 window.selectMode = function(m) {
     try {
+        // モード切り替え時に一旦GPS監視を止める（不要なバッテリー消費を防ぐ）
+        // ※ただし、続けて同じモードに入る場合などは下記のロジックで再開される
+        if (typeof window.stopLocationWatch === 'function') {
+            window.stopLocationWatch();
+        }
+
         window.currentMode = m; 
         window.chatSessionHistory = [];
 
@@ -89,7 +122,7 @@ window.selectMode = function(m) {
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
             
-            // 図鑑モードでも位置情報を事前に取得しておく
+            // ★図鑑モードに入った時点でGPS監視開始（カメラ起動前からのウォーミングアップ）
             window.fetchCurrentLocation();
         } 
         else if (m === 'simple-chat') {
@@ -230,7 +263,7 @@ window.sendHttpText = async function(context) {
                 text: text, 
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
-                location: window.currentLocation 
+                location: window.currentLocation // 位置情報を送信
             })
         });
 
@@ -285,7 +318,7 @@ window.startMouthAnimation = function() {
 };
 window.startMouthAnimation();
 
-// ページロード時にも位置情報取得を試みる
+// ページロード時にも位置情報取得を試みる（高精度）
 window.addEventListener('DOMContentLoaded', () => {
     window.fetchCurrentLocation(); 
 

@@ -1,10 +1,15 @@
-// --- js/camera-service.js (v308.0: 座標調整追加版) ---
+// --- js/camera-service.js (v309.0: GPS常時監視Hook対応版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
 // ==========================================
 
 window.startPreviewCamera = async function(videoId = 'live-chat-video', containerId = 'live-chat-video-container') {
+    // ★追加: カメラ起動と同時にGPSウォーミングアップ開始
+    if (typeof window.startLocationWatch === 'function') {
+        window.startLocationWatch();
+    }
+
     const video = document.getElementById(videoId);
     const container = document.getElementById(containerId);
     if (!video || !container) return;
@@ -32,6 +37,11 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
 };
 
 window.stopPreviewCamera = function() {
+    // ★追加: カメラ停止時にGPSも止める
+    if (typeof window.stopLocationWatch === 'function') {
+        window.stopLocationWatch();
+    }
+
     if (window.previewStream) {
         window.previewStream.getTracks().forEach(t => t.stop());
         window.previewStream = null;
@@ -129,7 +139,7 @@ window.createTreasureImage = function(sourceCanvas) {
     return canvas.toDataURL('image/jpeg', 0.8);
 };
 
-// GPS取得ヘルパー (フォールバック用: 速度優先)
+// GPS取得ヘルパー (フォールバック用)
 const getLocation = () => {
     return new Promise((resolve) => {
         if (!navigator.geolocation) return resolve(null);
@@ -137,8 +147,9 @@ const getLocation = () => {
         const timeoutId = setTimeout(() => {
             console.warn("GPS Timeout (Fallback)");
             resolve(null);
-        }, 5000); // 5秒でタイムアウト
+        }, 5000); 
 
+        // フォールバック時も一応高精度を試みる
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 clearTimeout(timeoutId);
@@ -149,7 +160,7 @@ const getLocation = () => {
                 console.warn("GPS Error (Fallback):", err); 
                 resolve(null); 
             },
-            { timeout: 5000, enableHighAccuracy: false } // 速度優先
+            { timeout: 5000, enableHighAccuracy: true } 
         );
     });
 };
@@ -191,7 +202,8 @@ window.captureAndIdentifyItem = async function() {
         window.updateNellMessage("ん？どこで何を見つけたのかにゃ…？", "thinking", false, true);
     }
 
-    // ★修正: 位置情報の取得と調整
+    // ★修正: 位置情報の取得ロジック
+    // startLocationWatchで更新された window.currentLocation があればそれを使う
     let locationData = window.currentLocation;
     
     // キャッシュがない場合はその場で取得を試みる
@@ -203,10 +215,10 @@ window.captureAndIdentifyItem = async function() {
             console.warn("Fallback GPS failed");
         }
     } else {
-        console.log("Using cached GPS:", locationData);
+        console.log("Using cached GPS (from watcher):", locationData);
     }
 
-    // ★修正: 座標が取得できた場合、小数点を丸めてAIに渡す
+    // 座標が取得できた場合、AIが読みやすいように桁数を調整しても良い（任意）
     if (locationData) {
         locationData.lat = parseFloat(locationData.lat).toFixed(6);
         locationData.lon = parseFloat(locationData.lon).toFixed(6);
