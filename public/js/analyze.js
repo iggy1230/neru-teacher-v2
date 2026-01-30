@@ -1,4 +1,4 @@
-// --- js/analyze.js (v314.0: 詳細住所取得強化版) ---
+// --- js/analyze.js (v315.0: 住所取得精度zoom=18指定版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -11,13 +11,14 @@ window.locationWatchId = null;
 // 住所特定ヘルパー (OpenStreetMap Nominatim API使用)
 window.fetchAddressFromCoords = async function(lat, lon) {
     try {
-        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept_language=ja`;
+        // ★修正: zoom=18 (建物レベル) を指定して詳細な住所を要求する
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept_language=ja&zoom=18&addressdetails=1`;
+        
         const res = await fetch(url);
         if (res.ok) {
             const data = await res.json();
             const addr = data.address;
             
-            // ★修正: より詳細な住所を構築する
             const components = [];
             
             // 都道府県
@@ -36,16 +37,16 @@ window.fetchAddressFromCoords = async function(lat, lon) {
             if (addr.city_district) components.push(addr.city_district);
             if (addr.neighbourhood) components.push(addr.neighbourhood);
             if (addr.quarter) components.push(addr.quarter);
+            if (addr.hamlet) components.push(addr.hamlet); // 集落名なども追加
             
             // 道路・番地・建物
             if (addr.road) components.push(addr.road);
             if (addr.house_number) components.push(addr.house_number);
-            if (addr.amenity || addr.building || addr.public_building) {
-                components.push(addr.amenity || addr.building || addr.public_building);
+            if (addr.amenity || addr.building || addr.public_building || addr.tourism || addr.shop) {
+                components.push(addr.amenity || addr.building || addr.public_building || addr.tourism || addr.shop);
             }
             
-            // 重複を除去して連結 (例: "福岡県筑後市大字山ノ井")
-            // Setを使って重複削除しつつ、undefined/nullを除外
+            // 重複を除去して連結 (例: "福岡県筑後市大字山ノ井123-4")
             const uniqueComponents = [...new Set(components)].filter(Boolean);
             let fullAddress = uniqueComponents.join('');
             
@@ -77,7 +78,7 @@ window.startLocationWatch = function() {
                 window.currentLocation = { lat: lat, lon: lon, accuracy: newAccuracy };
                 console.log(`★位置更新: 精度${Math.round(newAccuracy)}m`);
                 
-                // 住所も更新（負荷軽減のため、精度が良くなった時だけ呼ぶ）
+                // 住所も更新
                 window.fetchAddressFromCoords(lat, lon);
             }
         },
@@ -155,19 +156,19 @@ window.selectMode = function(m) {
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            window.startLocationWatch(); // 位置・住所監視開始
+            window.startLocationWatch(); 
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            window.startLocationWatch(); // 位置・住所監視開始
+            window.startLocationWatch(); 
         }
         else if (m === 'chat-free') {
             document.getElementById('chat-free-view').classList.remove('hidden');
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
-            window.startLocationWatch(); // 位置・住所監視開始
+            window.startLocationWatch(); 
         }
         else if (m === 'lunch') { 
             document.getElementById('lunch-view').classList.remove('hidden'); 
@@ -228,7 +229,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // --- 表示用テキストのクリーニング ---
     let cleanText = t || "";
 
     cleanText = cleanText.split('\n').filter(line => {
@@ -287,7 +287,6 @@ window.sendHttpText = async function(context) {
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
         
-        // ★修正: 住所情報(address)も送信
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -296,7 +295,7 @@ window.sendHttpText = async function(context) {
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
-                address: window.currentAddress // 確定した詳細住所
+                address: window.currentAddress
             })
         });
 
@@ -351,9 +350,7 @@ window.startMouthAnimation = function() {
 };
 window.startMouthAnimation();
 
-// ページロード時
 window.addEventListener('DOMContentLoaded', () => {
-    // 位置情報監視開始
     if(typeof window.startLocationWatch === 'function') {
         window.startLocationWatch();
     }
