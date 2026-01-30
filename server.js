@@ -1,4 +1,4 @@
-// --- server.js (完全版 v313.0: 近隣検索精度向上版) ---
+// --- server.js (完全版 v314.0: 詳細住所活用・JSONパース強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -101,7 +101,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -167,7 +166,6 @@ app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
         
-        // MODEL_HOMEWORK (gemini-2.5-pro) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_HOMEWORK, 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -244,7 +242,6 @@ app.post('/identify-item', async (req, res) => {
         if (address) console.log(`[図鑑住所] ${address}`);
         else if (location) console.log(`[図鑑GPS] ${location.lat}, ${location.lon}`);
 
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -268,7 +265,7 @@ app.post('/identify-item', async (req, res) => {
             GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
             
             指示:
-            1. **Step 1 (広域特定)**: まずGoogle検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**（例：筑後市）を確定してください。
+            1. **Step 1 (広域特定)**: まずGoogle検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**（例：筑後市）を確定してください。近隣の有名な市（玉名市など）と間違えないでください。
             2. **Step 2 (詳細特定)**: 確定した市町村の中で、この座標にある「公園」「施設」「銅像」「建物」を検索して特定してください。
             3. 画像の解析結果と、特定した詳細スポットを照合してください。
             4. 解説の冒頭で「ここは〇〇市（Step1の結果）の△△（Step2の結果）だにゃ！」と明言してください。
@@ -323,6 +320,7 @@ app.post('/identify-item', async (req, res) => {
             }
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
+            // エラー時は安全な固定メッセージ
             json = {
                 itemName: "なぞの物体",
                 description: "ちょっとよくわからなかったにゃ。もう一回見せてにゃ？",
@@ -363,31 +361,43 @@ app.post('/chat-dialogue', async (req, res) => {
 
         // ★修正: 質問内容に応じて検索戦略を変える
         let locationPrompt = "";
-        if (location && location.lat && location.lon) {
-            const gpsInfo = `GPS座標: ${location.lat}, ${location.lon}`;
-            const addressInfo = address ? `確定住所: ${address}` : "住所未確定";
-            
+        if (address) {
+            // 詳細な住所が渡された場合
             locationPrompt = `
-            【最優先情報：現在地と検索戦略】
-            ${gpsInfo}
-            ${addressInfo}
+            【最優先情報：現在地】
+            クライアント特定住所: **${address}**
             
             回答作成時の検索ルール:
             1. **「一番近い〇〇」「近くの〇〇」と聞かれた場合**:
-               - **重要**: 住所（${address}）で検索しないでください。範囲が広すぎます。
-               - 必ず **座標** を使って、「${location.lat},${location.lon} 近くの〇〇」または「${location.lat},${location.lon} 最寄りの〇〇」でGoogle検索してください。
-               - 検索結果の距離や地図情報を確認し、本当に最も近い場所を案内してください。
+               - 住所検索よりも **座標検索** が精度が高いです。
+               - Google検索で「${location.lat},${location.lon} 最寄りの〇〇」や「${address} 近くの〇〇」を検索し、**実際に距離が近いもの**を選んでください。
+               - 単に「${address} 〇〇」で検索すると、市内の代表的な施設（遠い場合がある）が出てしまうので注意してください。
             
             2. **「ここはどこ？」「天気を教えて」と聞かれた場合**:
-               - ${address ? `**${address}** という住所情報を正解として扱ってください。` : `まずGoogle検索で「${location.lat},${location.lon} 住所」を調べ、市町村を特定してください。`}
-               - 天気は「${address || '特定した市町村'} 天気」で検索してください。
+               - **${address}** という住所情報を正解として扱ってください。
+               - 天気は「${address} 天気」で検索してください。
+               - 回答の冒頭で「今は${address}にいるんだにゃ！」と宣言してください。
             
             3. **禁止事項**:
                - 座標の数値（${location.lat}など）はセリフに入れないでください。
                - 検索せずに推測で地名を答えることは厳禁です。
             `;
             
-            text += `\n（システム強制指示：現在地情報[${gpsInfo}]あり。「近い・最寄り」の質問には必ず座標を使って検索してください。「どこ・天気」の質問には住所(${address||'検索して特定'})を使ってください。）`;
+            text += `\n（システム強制指示：現在地は「${address}」です。「近い」質問には座標検索も併用して、本当に近い場所を探してください。）`;
+        } else if (location && location.lat && location.lon) {
+            // 座標のみの場合
+            locationPrompt = `
+            【最優先：2段階位置特定プロトコル】
+            GPS座標: ${location.lat}, ${location.lon}
+            
+            回答ルール:
+            1. **Step 1**: Google検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村**を特定してください。
+            2. **Step 2**: ユーザーの質問が「近い〇〇」であれば、「${location.lat},${location.lon} 最寄りの〇〇」で検索してください。
+            3. 天気の質問ならStep 1の市町村の天気を答えてください。
+            4. 座標の数値は言わないでください。
+            `;
+            
+            text += `\n（システム強制指示：現在の座標は ${location.lat}, ${location.lon} です。まずGoogle検索で住所と詳細スポットを特定してから回答してください。）`;
         }
 
         let prompt = `
@@ -406,13 +416,12 @@ app.post('/chat-dialogue', async (req, res) => {
         ${contextPrompt}
 
         【出力フォーマット】
-        **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownのコードブロック(\`\`\`json\`)で囲んでください。
-        \`\`\`json
+        **必ず以下のJSON形式の文字列だけ**を出力してください。
+        **Markdownのコードブロック(\`\`\`json\`)は使わないでください。純粋なJSON文字列のみを出力してください。**
         {
             "speech": "ネル先生のセリフ。語尾は必ず「にゃ」や「だにゃ」。親しみやすく。",
             "board": "黒板に書く内容。"
         }
-        \`\`\`
         
         ユーザー発言: ${text}
         `;
@@ -471,8 +480,19 @@ app.post('/chat-dialogue', async (req, res) => {
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // エラー時は安全なメッセージを返す
-            jsonResponse = { speech: "ごめんにゃ、ちょっとうまく聞き取れなかったにゃ。もう一回言ってほしいにゃ。", board: "（解析エラー）" };
+            // ★修正: パースエラー時は、生のテキストをクリーニングして無理やり表示する
+            // AIが思考ログを出力している場合があるので、単純に返すのは危険だが
+            // ユーザー体験のために「speech」として扱うトライをする
+            let fallbackSpeech = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            // 思考プロセスっぽい英語行を削除
+            fallbackSpeech = fallbackSpeech.split('\n').filter(line => {
+                return !/^(?:System|User|Model|Assistant|Thinking)[:：]/i.test(line);
+            }).join(' ');
+
+            jsonResponse = { 
+                speech: fallbackSpeech || "ごめんにゃ、ちょっとうまく言葉にできなかったにゃ。", 
+                board: "" 
+            };
         }
         
         res.json(jsonResponse);
