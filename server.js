@@ -1,4 +1,4 @@
-// --- server.js (完全版 v309.0: 位置情報・住所特定厳格化版) ---
+// --- server.js (完全版 v310.0: 座標絶対遵守プロンプト版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -241,7 +241,7 @@ app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location } = req.body;
         
-        // ★追加: サーバーのログに座標を表示
+        // ログ出力（デバッグ用）
         if (location) {
             console.log(`[GPS受信] 緯度:${location.lat}, 経度:${location.lon}, 精度:${location.accuracy || '?'}m`);
         }
@@ -253,17 +253,18 @@ app.post('/identify-item', async (req, res) => {
             tools: tools
         });
 
+        // ★修正: AIに「画像の見た目」より「GPS」を優先させる強力な指示
         let locationInfo = "";
         if (location && location.lat && location.lon) {
-            // ★修正: AIに「画像の見た目」より「GPS」を優先させる強力な指示
             locationInfo = `
-            【絶対遵守：位置情報】
-            端末のGPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
+            【最優先指示：位置の固定】
+            現在の座標は 緯度:${location.lat}, 経度:${location.lon} です。
             
-            指示:
-            1. **最優先**: 提供されたGoogle検索ツールで必ず「${location.lat},${location.lon} 住所」を検索し、現在の「県・市町村名」を特定してください。
-            2. **重要**: 画像に写っている風景や物が他の地域のものに見えたとしても、**検索で特定したGPSの住所を「正」として扱ってください。**
-            3. 解説の冒頭で「ここは〇〇（検索した市町村名）だにゃ！」と場所を明言してください。
+            手順：
+            1. Google検索ツールで「緯度 ${location.lat}, 経度 ${location.lon} 住所」を検索してください。
+            2. 検索結果から「〇〇県〇〇市」を特定してください。
+            3. **絶対に守ること**: 検索結果が示す住所を絶対的な「正」として扱ってください。たとえ写真の風景が他の場所（玉名市など）に見えたとしても、検索結果の市町村名（例：筑後市）で回答してください。
+            4. 座標を無視して勝手な推測で地名を答えることは厳禁です。
             `;
         }
 
@@ -274,7 +275,7 @@ app.post('/identify-item', async (req, res) => {
         ${locationInfo}
 
         【特定と命名のルール】
-        1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
+        1. **位置情報がある場合**: Google検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
         2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。
         3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
@@ -315,6 +316,7 @@ app.post('/identify-item', async (req, res) => {
             }
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
+            // エラー時は安全な固定メッセージ
             json = {
                 itemName: "なぞの物体",
                 description: "ちょっとよくわからなかったにゃ。もう一回見せてにゃ？",
@@ -335,8 +337,8 @@ app.post('/identify-item', async (req, res) => {
 app.post('/chat-dialogue', async (req, res) => {
     try {
         let { text, name, image, history, location } = req.body;
-
-        // ★追加: 会話時も座標をログに出す
+        
+        // ログ出力
         if (location) {
             console.log(`[Chat GPS] 緯度:${location.lat}, 経度:${location.lon}`);
         }
@@ -359,16 +361,16 @@ app.post('/chat-dialogue', async (req, res) => {
         if (location && location.lat && location.lon) {
             // ★修正: こちらもGPS絶対優先にする
             locationPrompt = `
-            【重要：ユーザーの現在地】
-            GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
+            【位置情報の強制】
+            ユーザーの現在地座標: ${location.lat}, ${location.lon}
             
-            指示:
-            ユーザーが場所や天気について質問した場合、必ずGoogle検索で「${location.lat},${location.lon} 住所」を調べて、正確な市町村名を特定してから回答してください。
-            **「座標などの数値」や「付近の有名な観光地」ではなく、ピンポイントな「現在の市町村名」を基準に答えること。**
+            回答のルール:
+            - 必ずGoogle検索でこの座標の正確な住所（市町村）を確認してください。
+            - **推測で地名を出すのは禁止です。** 検索で得た事実（市町村名）のみを場所の根拠にしてください。
+            - 座標の数値（${location.lat}, ${location.lon}）はセリフに入れないでください。
             `;
             
-            // システム付加情報も更新
-            text += `\n（システム情報：現在地の座標は ${location.lat}, ${location.lon} です。まずこの座標で住所を検索し、その市町村の情報を答えてください。）`;
+            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。まずこの座標で住所を検索し、その市町村の情報を答えてください。「場所がわからない」と答えることは禁止です。）`;
         }
 
         let prompt = `
@@ -426,6 +428,7 @@ app.post('/chat-dialogue', async (req, res) => {
 
         } catch (genError) {
             console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
+            // フォールバック（ツールなし）
             const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
             try {
                 if (image) {
@@ -453,7 +456,7 @@ app.post('/chat-dialogue', async (req, res) => {
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // エラー時は安全な固定メッセージ
+            // エラー時は安全なメッセージを返す
             jsonResponse = { speech: "ごめんにゃ、ちょっとうまく聞き取れなかったにゃ。もう一回言ってほしいにゃ。", board: "（解析エラー）" };
         }
         
