@@ -1,4 +1,4 @@
-// --- server.js (完全版 v317.0: JSON制限撤廃・AI能力全開放版) ---
+// --- server.js (完全版 v317.0: 会話モードJSON撤廃・ロバスト性向上版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -258,8 +258,8 @@ app.post('/identify-item', async (req, res) => {
             クライアント特定住所: **${address}**
             
             指示:
-            1. **広域の確定**: まず、ユーザーが「${address}」にいることを前提としてください。他の市町村（玉名市など）にいるという推測は禁止です。
-            2. **詳細スポットの特定**: この住所（${address}）の中にある、画像に写っているような「公園」「施設」「銅像」「店舗」などをGoogle検索で特定してください。
+            1. **広域の確定**: ユーザーは「${address}」にいます。
+            2. **詳細スポットの特定**: この住所（${address}）の中にある、画像に写っているようなものをGoogle検索で特定してください。
             3. 解説の冒頭で「ここは${address}の〇〇（詳細スポット名）だにゃ！」と明言してください。
             `;
         } else if (location && location.lat && location.lon) {
@@ -268,14 +268,14 @@ app.post('/identify-item', async (req, res) => {
             GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
             
             指示:
-            1. まずGoogle検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**（例：筑後市）を確定してください。
-            2. 確定した市町村の中で、画像に写っている「公園」「施設」「銅像」「建物」を検索して特定してください。
+            1. Google検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**を確定してください。
+            2. その市町村の中で、画像に写っているものを検索して特定してください。
             `;
         }
 
         const prompt = `
         あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。
-        送られてきた画像を解析し、以下のJSON形式で応答してください。
+        送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
         
         ${locationInfo}
 
@@ -290,13 +290,15 @@ app.post('/identify-item', async (req, res) => {
         3. **禁止事項**: 漢字にふりがな（読み仮名）を振らないでください。
         4. **禁止事項**: 座標の数値をそのままユーザーへの返答に入れないでください。
 
-        【出力フォーマット (JSON形式)】
+        【出力フォーマット (JSON)】
+        \`\`\`json
         {
             "itemName": "正式名称",
             "description": "ネル先生の面白い解説＋問いかけ",
             "realDescription": "本当の解説",
             "speechText": "『これは（itemName）だにゃ！（description）』"
         }
+        \`\`\`
         `;
 
         const result = await model.generateContent([
@@ -317,8 +319,8 @@ app.post('/identify-item', async (req, res) => {
                 throw new Error("JSON parse failed");
             }
         } catch (e) {
-            console.warn("JSON Parse Fallback:", responseText);
-            // エラー時はAIの回答をそのまま使う
+            console.warn("JSON Parse Fallback (Item):", responseText);
+            // フォールバック: AIの応答をそのままspeechTextとして利用
             let fallbackText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             json = {
                 itemName: "なぞの物体",
@@ -358,7 +360,6 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
-        // ★修正: JSON強制をやめ、検索に集中させる
         let locationPrompt = "";
         if (address) {
             locationPrompt = `
@@ -366,16 +367,20 @@ app.post('/chat-dialogue', async (req, res) => {
             クライアント特定住所: **${address}**
             
             回答作成時の検索ルール:
-            1. **「一番近い〇〇」「近くの〇〇」と聞かれた場合**:
+            1. **「一番近い〇〇」「近くの〇〇」「最寄りの〇〇」と聞かれた場合**:
                - **★重要**: 住所名ではなく **座標** を使って、「${location.lat},${location.lon} 最寄りの〇〇」でGoogle検索を実行してください。
-               - 検索結果の中から、現在地から数百メートル以内にある本当に近い施設を選んで案内してください。
+               - 単に「${address} 〇〇」で検索すると、市内の代表的な施設（遠い場合がある）が出てしまうので注意してください。
             
             2. **「ここはどこ？」「天気を教えて」と聞かれた場合**:
                - **${address}** という住所情報を正解として扱ってください。
                - 天気は「${address} 天気」で検索してください。
+            
+            3. **禁止事項**:
+               - 座標の数値（${location.lat}など）はセリフに入れないでください。
+               - 検索せずに推測で地名を答えることは厳禁です。
             `;
             
-            text += `\n（システム情報：現在地は「${address}」です。近隣検索には座標「${location.lat},${location.lon}」を使用してください。）`;
+            text += `\n（システム情報：現在地は「${address}」です。）`;
 
         } else if (location && location.lat && location.lon) {
             locationPrompt = `
@@ -404,8 +409,8 @@ app.post('/chat-dialogue', async (req, res) => {
 
         ${contextPrompt}
 
-        【出力フォーマット】
-        **形式は問いません。普通に会話文（テキスト）で答えてください。JSON形式にする必要はありません。**
+        【出力について】
+        **形式は自由なテキストで構いません。JSONにする必要はありません。**
         ネル先生として、親しみやすく「にゃ」をつけて話してください。
         
         ユーザー発言: ${text}
@@ -421,7 +426,7 @@ app.post('/chat-dialogue', async (req, res) => {
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
-            // ★修正: JSON強制(responseMimeType)を削除
+            // ★修正: JSON強制は完全に削除
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -438,7 +443,7 @@ app.post('/chat-dialogue', async (req, res) => {
             responseText = result.response.text().trim();
 
         } catch (genError) {
-            console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
+            console.warn("Generation failed. Retrying without tools...", genError.message);
             const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
             try {
                 if (image) {
@@ -455,9 +460,11 @@ app.post('/chat-dialogue', async (req, res) => {
             }
         }
         
-        // ★修正: サーバー側でJSON形式に包んで返す
+        // ★修正: サーバー側で受け取ったテキストをJSONに包む
+        // これでクライアント側はパースエラーを起こさない
         let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        // 思考ログなどのノイズ除去（念のため）
+        
+        // 念のためシステムログのような行があれば削除
         cleanText = cleanText.split('\n').filter(line => {
             return !/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(line);
         }).join(' ');
