@@ -1,4 +1,4 @@
-// --- server.js (完全版 v312.0: 詳細位置特定・2段階検索版) ---
+// --- server.js (完全版 v313.0: 近隣検索精度向上版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -251,10 +251,8 @@ app.post('/identify-item', async (req, res) => {
             tools: tools
         });
 
-        // ★修正: 2段階特定プロトコルを実装
         let locationInfo = "";
         if (address) {
-            // クライアント側で住所文字列が取れている場合
             locationInfo = `
             【最優先情報：現在地】
             クライアント特定住所: **${address}**
@@ -265,13 +263,12 @@ app.post('/identify-item', async (req, res) => {
             3. 解説の冒頭で「ここは${address}の〇〇（詳細スポット名）だにゃ！」と明言してください。
             `;
         } else if (location && location.lat && location.lon) {
-            // 座標のみの場合
             locationInfo = `
             【最優先：2段階位置特定プロトコル】
             GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
             
             指示:
-            1. **Step 1 (広域特定)**: まずGoogle検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**（例：筑後市）を確定してください。近隣の有名な市（玉名市など）と間違えないでください。
+            1. **Step 1 (広域特定)**: まずGoogle検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**（例：筑後市）を確定してください。
             2. **Step 2 (詳細特定)**: 確定した市町村の中で、この座標にある「公園」「施設」「銅像」「建物」を検索して特定してください。
             3. 画像の解析結果と、特定した詳細スポットを照合してください。
             4. 解説の冒頭で「ここは〇〇市（Step1の結果）の△△（Step2の結果）だにゃ！」と明言してください。
@@ -348,7 +345,7 @@ app.post('/chat-dialogue', async (req, res) => {
         let { text, name, image, history, location, address } = req.body;
         
         if (address) console.log(`[Chat住所] ${address}`);
-        else if (location) console.log(`[ChatGPS] ${location.lat}, ${location.lon}`);
+        if (location) console.log(`[ChatGPS] ${location.lat}, ${location.lon}`);
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -364,34 +361,33 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
-        // ★修正: 会話でも2段階特定を適用
+        // ★修正: 質問内容に応じて検索戦略を変える
         let locationPrompt = "";
-        if (address) {
-            locationPrompt = `
-            【最優先情報：現在地】
-            クライアント特定住所: **${address}**
+        if (location && location.lat && location.lon) {
+            const gpsInfo = `GPS座標: ${location.lat}, ${location.lon}`;
+            const addressInfo = address ? `確定住所: ${address}` : "住所未確定";
             
-            回答ルール:
-            - **${address}にいる**という事実を絶対としてください。
-            - 天気を聞かれたら「${address}の天気」を検索してください。
-            - 「ここはどこ？」と聞かれたら、Google検索で「${address} 観光」「${address} 施設」などを調べ、さらに詳細なスポット（公園名など）を特定して答えてください。
-            - 回答の冒頭で「今は${address}にいるんだにゃ！」と宣言してください。
+            locationPrompt = `
+            【最優先情報：現在地と検索戦略】
+            ${gpsInfo}
+            ${addressInfo}
+            
+            回答作成時の検索ルール:
+            1. **「一番近い〇〇」「近くの〇〇」と聞かれた場合**:
+               - **重要**: 住所（${address}）で検索しないでください。範囲が広すぎます。
+               - 必ず **座標** を使って、「${location.lat},${location.lon} 近くの〇〇」または「${location.lat},${location.lon} 最寄りの〇〇」でGoogle検索してください。
+               - 検索結果の距離や地図情報を確認し、本当に最も近い場所を案内してください。
+            
+            2. **「ここはどこ？」「天気を教えて」と聞かれた場合**:
+               - ${address ? `**${address}** という住所情報を正解として扱ってください。` : `まずGoogle検索で「${location.lat},${location.lon} 住所」を調べ、市町村を特定してください。`}
+               - 天気は「${address || '特定した市町村'} 天気」で検索してください。
+            
+            3. **禁止事項**:
+               - 座標の数値（${location.lat}など）はセリフに入れないでください。
+               - 検索せずに推測で地名を答えることは厳禁です。
             `;
             
-            text += `\n（システム強制指示：現在地は「${address}」です。他の場所の情報は答えないでください。）`;
-        } else if (location && location.lat && location.lon) {
-            locationPrompt = `
-            【最優先：2段階位置特定プロトコル】
-            GPS座標: ${location.lat}, ${location.lon}
-            
-            回答ルール:
-            1. **Step 1**: Google検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村**を特定してください。
-            2. **Step 2**: ユーザーの質問が詳細な場所（「ここはどこ？」「近くに何がある？」）に関するものであれば、その座標にある具体的な**「公園」「施設」「店」**を特定してください。
-            3. 天気の質問ならStep 1の市町村の天気を答えてください。
-            4. 座標の数値は言わないでください。
-            `;
-            
-            text += `\n（システム強制指示：現在の座標は ${location.lat}, ${location.lon} です。まずGoogle検索で住所と詳細スポットを特定してから回答してください。）`;
+            text += `\n（システム強制指示：現在地情報[${gpsInfo}]あり。「近い・最寄り」の質問には必ず座標を使って検索してください。「どこ・天気」の質問には住所(${address||'検索して特定'})を使ってください。）`;
         }
 
         let prompt = `
@@ -594,15 +590,6 @@ wss.on('connection', async (clientWs, req) => {
                 3. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
-
-                【最重要：位置情報の取り扱い】
-                ユーザーから「現在地」や「座標」が提供された場合：
-                1. **絶対に**その数値だけを見て場所を推測してはいけません。
-                2. 提供されたツール（Google検索）を使い、必ず「緯度 経度 住所」というキーワードで検索を行ってください。
-                3. 検索結果に表示された「県・市町村名」を唯一の正解として扱ってください。
-                4. 近隣に有名な観光地があっても、検索結果の住所と異なる場合は絶対に言及しないでください。
-                5. 「場所がわからない」と答えることは禁止です。座標があれば必ず検索で特定できます。
-                6. **2段階特定**: まず「市町村」を特定し、次にその中の「詳細スポット（公園、店など）」を特定してください。
 
                 【最重要: 画像への対応ルール】
                 ユーザーから画像が送信された場合：
