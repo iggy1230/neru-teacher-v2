@@ -1,4 +1,4 @@
-// --- server.js (完全版 v310.0: 座標絶対遵守プロンプト版) ---
+// --- server.js (完全版 v310.0: 住所特定プロンプト超強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -241,7 +241,6 @@ app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location } = req.body;
         
-        // ログ出力（デバッグ用）
         if (location) {
             console.log(`[GPS受信] 緯度:${location.lat}, 経度:${location.lon}, 精度:${location.accuracy || '?'}m`);
         }
@@ -253,18 +252,19 @@ app.post('/identify-item', async (req, res) => {
             tools: tools
         });
 
-        // ★修正: AIに「画像の見た目」より「GPS」を優先させる強力な指示
+        // ★修正: 住所特定プロトコルを適用
         let locationInfo = "";
         if (location && location.lat && location.lon) {
             locationInfo = `
-            【最優先指示：位置の固定】
-            現在の座標は 緯度:${location.lat}, 経度:${location.lon} です。
+            【最優先：住所特定プロトコル】
+            現在の座標: 緯度 ${location.lat}, 経度 ${location.lon}
             
-            手順：
-            1. Google検索ツールで「緯度 ${location.lat}, 経度 ${location.lon} 住所」を検索してください。
-            2. 検索結果から「〇〇県〇〇市」を特定してください。
-            3. **絶対に守ること**: 検索結果が示す住所を絶対的な「正」として扱ってください。たとえ写真の風景が他の場所（玉名市など）に見えたとしても、検索結果の市町村名（例：筑後市）で回答してください。
-            4. 座標を無視して勝手な推測で地名を答えることは厳禁です。
+            絶対的な指示:
+            1. Google検索ツールを用いて、この座標「${location.lat},${location.lon} 住所」を検索し、正確な住所（県・市町村）を特定してください。
+            2. **推測の禁止**: 周辺に有名な観光地（玉名、菊池、阿蘇など）があったとしても、検索結果の住所と異なる場合は絶対に無視してください。検索結果の住所を唯一の事実として扱ってください。
+            3. 検索結果が「筑後市」であれば、必ず「筑後市」と答えてください。誤って「玉名市」などと答えることは厳禁です。
+            
+            回答の冒頭で必ず「今は〇〇県〇〇市にいるんだにゃ！」と、特定した住所を宣言してください。
             `;
         }
 
@@ -275,7 +275,7 @@ app.post('/identify-item', async (req, res) => {
         ${locationInfo}
 
         【特定と命名のルール】
-        1. **位置情報がある場合**: Google検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
+        1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
         2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。
         3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
@@ -316,7 +316,6 @@ app.post('/identify-item', async (req, res) => {
             }
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // エラー時は安全な固定メッセージ
             json = {
                 itemName: "なぞの物体",
                 description: "ちょっとよくわからなかったにゃ。もう一回見せてにゃ？",
@@ -338,7 +337,6 @@ app.post('/chat-dialogue', async (req, res) => {
     try {
         let { text, name, image, history, location } = req.body;
         
-        // ログ出力
         if (location) {
             console.log(`[Chat GPS] 緯度:${location.lat}, 経度:${location.lon}`);
         }
@@ -357,20 +355,23 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
+        // ★修正: こちらも住所特定プロトコルを適用
         let locationPrompt = "";
         if (location && location.lat && location.lon) {
-            // ★修正: こちらもGPS絶対優先にする
             locationPrompt = `
-            【位置情報の強制】
-            ユーザーの現在地座標: ${location.lat}, ${location.lon}
+            【最優先：住所特定プロトコル】
+            現在の座標: 緯度 ${location.lat}, 経度 ${location.lon}
             
-            回答のルール:
-            - 必ずGoogle検索でこの座標の正確な住所（市町村）を確認してください。
-            - **推測で地名を出すのは禁止です。** 検索で得た事実（市町村名）のみを場所の根拠にしてください。
-            - 座標の数値（${location.lat}, ${location.lon}）はセリフに入れないでください。
+            絶対的な指示:
+            1. Google検索ツールを用いて、この座標「${location.lat},${location.lon} 住所」を検索し、正確な住所（県・市町村）を特定してください。
+            2. **推測の禁止**: 検索結果に表示された住所を唯一の事実として扱ってください。周辺の観光地（例：玉名市など）に引きずられて、住所を書き換えることは厳禁です。
+            3. 検索結果が「筑後市」であれば、必ず「筑後市」と答えてください。
+            4. 座標の数値をそのままセリフに入れないでください。
+            
+            回答の冒頭で「今は〇〇県〇〇市にいるんだにゃ！」と、特定した住所を宣言してください。
             `;
             
-            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。まずこの座標で住所を検索し、その市町村の情報を答えてください。「場所がわからない」と答えることは禁止です。）`;
+            text += `\n（システム強制指示：現在の座標は ${location.lat}, ${location.lon} です。まずGoogle検索で住所を特定し、その市町村名を回答の冒頭で宣言してください。）`;
         }
 
         let prompt = `
@@ -410,7 +411,6 @@ app.post('/chat-dialogue', async (req, res) => {
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
-            // 検索ツール使用のため JSON強制は行わない
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -428,7 +428,6 @@ app.post('/chat-dialogue', async (req, res) => {
 
         } catch (genError) {
             console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
-            // フォールバック（ツールなし）
             const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
             try {
                 if (image) {
@@ -456,7 +455,7 @@ app.post('/chat-dialogue', async (req, res) => {
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // エラー時は安全なメッセージを返す
+            // エラー時は安全な固定メッセージ
             jsonResponse = { speech: "ごめんにゃ、ちょっとうまく聞き取れなかったにゃ。もう一回言ってほしいにゃ。", board: "（解析エラー）" };
         }
         
