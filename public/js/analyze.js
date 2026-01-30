@@ -1,56 +1,69 @@
-// --- js/analyze.js (v308.0: 位置情報精度フィルタリング版) ---
+// --- js/analyze.js (v311.0: クライアント側住所特定版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
 
-// グローバル変数: 現在位置情報
+// グローバル変数
 window.currentLocation = null;
+window.currentAddress = null; // ★追加: 住所文字列（例: 福岡県筑後市）
 window.locationWatchId = null;
 
-// ★修正: 位置情報の継続監視と精度フィルタリング
+// 住所特定ヘルパー (OpenStreetMap Nominatim API使用)
+window.fetchAddressFromCoords = async function(lat, lon) {
+    try {
+        // 1秒以上の間隔を空けるなどマナーを守る必要がありますが、頻度は低いので簡易実装
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept_language=ja`;
+        const res = await fetch(url);
+        if (res.ok) {
+            const data = await res.json();
+            const addr = data.address;
+            // 都道府県 + 市町村 を抽出
+            let fullAddress = "";
+            if (addr.province) fullAddress += addr.province;
+            else if (addr.prefecture) fullAddress += addr.prefecture;
+            
+            if (addr.city) fullAddress += addr.city;
+            else if (addr.town) fullAddress += addr.town;
+            else if (addr.village) fullAddress += addr.village;
+            else if (addr.county) fullAddress += addr.county;
+            
+            if (fullAddress) {
+                window.currentAddress = fullAddress;
+                console.log("★住所特定:", window.currentAddress);
+            }
+        }
+    } catch (e) {
+        console.warn("Address fetch failed:", e);
+    }
+};
+
+// 位置情報の継続監視と住所特定
 window.startLocationWatch = function() {
     if (!navigator.geolocation) return;
-    
-    // 既に監視中なら二重起動しない
     if (window.locationWatchId !== null) return;
 
-    console.log("Starting GPS warm-up (High Accuracy)...");
+    console.log("Starting GPS & Address fetch...");
 
     window.locationWatchId = navigator.geolocation.watchPosition(
         (pos) => {
-            const newAccuracy = pos.coords.accuracy; // 誤差(メートル)
+            const newAccuracy = pos.coords.accuracy;
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
 
-            console.log(`GPS受信: 精度 ${Math.round(newAccuracy)}m / 緯度:${lat} 経度:${lon}`);
-
-            // ★精度フィルタリングロジック
-            // 1. まだ位置情報がないなら、とりあえず保存
-            // 2. 新しい情報のほうが精度が良い（数値が小さい）なら更新
-            // 3. 既存の情報があり、かつ新しい情報の精度が著しく悪い（誤差2km以上など）なら無視する
-            
+            // 精度が良い場合、または初回の場合に更新
             if (!window.currentLocation || newAccuracy < window.currentLocation.accuracy) {
-                window.currentLocation = { 
-                    lat: lat, 
-                    lon: lon,
-                    accuracy: newAccuracy
-                };
-                console.log(`★位置情報更新: 精度 ${Math.round(newAccuracy)}m`);
+                window.currentLocation = { lat: lat, lon: lon, accuracy: newAccuracy };
+                console.log(`★位置更新: 精度${Math.round(newAccuracy)}m`);
+                
+                // 住所も更新（負荷軽減のため、精度が良くなった時だけ呼ぶ）
+                window.fetchAddressFromCoords(lat, lon);
             }
         },
-        (err) => {
-            console.warn("Location watch error:", err);
-            // エラーが出ても、既存の currentLocation は消さない（以前のデータを使うため）
-        },
-        {
-            enableHighAccuracy: true, // 高精度モード必須
-            timeout: 20000,           // タイムアウト20秒
-            maximumAge: 0             // キャッシュを使わず最新を取りに行く
-        }
+        (err) => { console.warn("Location watch error:", err); },
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
     );
 };
 
-// 監視停止用（必要に応じて呼ぶ）
 window.stopLocationWatch = function() {
     if (window.locationWatchId !== null) {
         navigator.geolocation.clearWatch(window.locationWatchId);
@@ -116,29 +129,23 @@ window.selectMode = function(m) {
         
         // モードごとの初期化
         if (m === 'chat') { 
-            // お宝図鑑モード
             document.getElementById('chat-view').classList.remove('hidden'); 
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            
-            // ★位置情報の監視開始
-            window.startLocationWatch();
+            window.startLocationWatch(); // 位置・住所監視開始
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            
-            // ★位置情報の監視開始
-            window.startLocationWatch();
+            window.startLocationWatch(); // 位置・住所監視開始
         }
         else if (m === 'chat-free') {
             document.getElementById('chat-free-view').classList.remove('hidden');
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
-            // ★位置情報の監視開始
-            window.startLocationWatch();
+            window.startLocationWatch(); // 位置・住所監視開始
         }
         else if (m === 'lunch') { 
             document.getElementById('lunch-view').classList.remove('hidden'); 
@@ -258,6 +265,7 @@ window.sendHttpText = async function(context) {
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
         
+        // ★修正: 住所情報(address)も送信
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -265,7 +273,8 @@ window.sendHttpText = async function(context) {
                 text: text, 
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
-                location: window.currentLocation // 監視中の最新位置情報を送る
+                location: window.currentLocation,
+                address: window.currentAddress // 確定した住所
             })
         });
 
@@ -320,14 +329,13 @@ window.startMouthAnimation = function() {
 };
 window.startMouthAnimation();
 
-// ページロード時に位置情報監視を開始（すぐに精度を上げるため）
+// ページロード時
 window.addEventListener('DOMContentLoaded', () => {
-    // 位置情報監視の開始
+    // 位置情報監視開始
     if(typeof window.startLocationWatch === 'function') {
         window.startLocationWatch();
     }
 
-    // DOMContentLoaded でのイベント設定
     const camIn = document.getElementById('hw-input-camera'); 
     const albIn = document.getElementById('hw-input-album'); 
     if(camIn) camIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
