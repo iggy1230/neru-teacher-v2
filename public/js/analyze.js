@@ -1,35 +1,57 @@
-// --- js/analyze.js (v311.0: クライアント側住所特定版) ---
+// --- js/analyze.js (v314.0: 詳細住所取得強化版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
 
 // グローバル変数
 window.currentLocation = null;
-window.currentAddress = null; // ★追加: 住所文字列（例: 福岡県筑後市）
+window.currentAddress = null; // 住所文字列
 window.locationWatchId = null;
 
 // 住所特定ヘルパー (OpenStreetMap Nominatim API使用)
 window.fetchAddressFromCoords = async function(lat, lon) {
     try {
-        // 1秒以上の間隔を空けるなどマナーを守る必要がありますが、頻度は低いので簡易実装
         const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept_language=ja`;
         const res = await fetch(url);
         if (res.ok) {
             const data = await res.json();
             const addr = data.address;
-            // 都道府県 + 市町村 を抽出
-            let fullAddress = "";
-            if (addr.province) fullAddress += addr.province;
-            else if (addr.prefecture) fullAddress += addr.prefecture;
             
-            if (addr.city) fullAddress += addr.city;
-            else if (addr.town) fullAddress += addr.town;
-            else if (addr.village) fullAddress += addr.village;
-            else if (addr.county) fullAddress += addr.county;
+            // ★修正: より詳細な住所を構築する
+            const components = [];
+            
+            // 都道府県
+            if (addr.province) components.push(addr.province);
+            else if (addr.prefecture) components.push(addr.prefecture);
+            
+            // 市区町村・郡
+            if (addr.city) components.push(addr.city);
+            if (addr.county) components.push(addr.county);
+            if (addr.town) components.push(addr.town);
+            if (addr.village) components.push(addr.village);
+            
+            // 町名・字・区
+            if (addr.suburb) components.push(addr.suburb);
+            if (addr.ward) components.push(addr.ward);
+            if (addr.city_district) components.push(addr.city_district);
+            if (addr.neighbourhood) components.push(addr.neighbourhood);
+            if (addr.quarter) components.push(addr.quarter);
+            
+            // 道路・番地・建物
+            if (addr.road) components.push(addr.road);
+            if (addr.house_number) components.push(addr.house_number);
+            if (addr.amenity || addr.building || addr.public_building) {
+                components.push(addr.amenity || addr.building || addr.public_building);
+            }
+            
+            // 重複を除去して連結 (例: "福岡県筑後市大字山ノ井")
+            // Setを使って重複削除しつつ、undefined/nullを除外
+            const uniqueComponents = [...new Set(components)].filter(Boolean);
+            let fullAddress = uniqueComponents.join('');
             
             if (fullAddress) {
                 window.currentAddress = fullAddress;
-                console.log("★住所特定:", window.currentAddress);
+                console.log("★詳細住所特定:", window.currentAddress);
             }
         }
     } catch (e) {
@@ -274,7 +296,7 @@ window.sendHttpText = async function(context) {
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
-                address: window.currentAddress // 確定した住所
+                address: window.currentAddress // 確定した詳細住所
             })
         });
 
