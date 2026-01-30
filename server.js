@@ -1,4 +1,4 @@
-// --- server.js (完全版 v311.0: WebSocket・HTTP両対応 位置情報厳格化版) ---
+// --- server.js (完全版 v311.0: 住所情報最優先プロンプト版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -239,12 +239,12 @@ app.post('/analyze', async (req, res) => {
 // --- ★ お宝図鑑用 画像解析API ---
 app.post('/identify-item', async (req, res) => {
     try {
-        const { image, name, location } = req.body;
+        const { image, name, location, address } = req.body;
         
-        if (location) {
-            console.log(`[GPS受信] 緯度:${location.lat}, 経度:${location.lon}, 精度:${location.accuracy || '?'}m`);
-        }
-        
+        // ログ出力
+        if (address) console.log(`[図鑑住所] ${address}`);
+        else if (location) console.log(`[図鑑GPS] ${location.lat}, ${location.lon}`);
+
         // MODEL_FAST (gemini-2.5-flash) を使用
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
@@ -252,18 +252,27 @@ app.post('/identify-item', async (req, res) => {
             tools: tools
         });
 
-        // ★修正: 住所特定プロトコルをさらに強化
+        // ★修正: 住所情報がある場合は「正解」として渡す
         let locationInfo = "";
-        if (location && location.lat && location.lon) {
+        if (address) {
             locationInfo = `
-            【最重要：住所特定プロトコル】
-            端末のGPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
+            【最優先情報：現在地】
+            クライアントにより特定された住所: **${address}**
+            
+            絶対的な指示:
+            1. **この住所(${address})を唯一の正解として扱ってください。**
+            2. 座標検索を行う必要はありません。
+            3. 画像の風景が他の場所に見えても無視し、必ず「${address}」にいることを前提に回答してください。
+            4. 解説の冒頭で「ここは${address}だにゃ！」と明言してください。
+            `;
+        } else if (location && location.lat && location.lon) {
+            // 住所文字列がない場合のフォールバック（座標検索）
+            locationInfo = `
+            【位置情報】
+            座標: 緯度 ${location.lat}, 経度 ${location.lon}
             
             指示:
-            1. **検索義務**: まずGoogle検索で「${location.lat}, ${location.lon} 住所」を検索し、正確な住所（県・市町村）を特定してください。
-            2. **座標直読の禁止**: 座標の数値だけを見て場所を推測することを固く禁じます。必ず検索結果の文字情報を正解としてください。
-            3. **近隣誤認の防止**: 検索結果が「筑後市」であれば、近くに「玉名市」や「菊池市」があっても、それらは無視して「筑後市」と答えてください。
-            4. 解説の冒頭で「ここは〇〇（検索で特定した市町村名）だにゃ！」と場所を明言してください。
+            Google検索で「${location.lat},${location.lon} 住所」を検索し、特定された市町村名を正解として扱ってください。
             `;
         }
 
@@ -274,7 +283,7 @@ app.post('/identify-item', async (req, res) => {
         ${locationInfo}
 
         【特定と命名のルール】
-        1. **位置情報がある場合**: Google検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
+        1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
         2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。
         3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
@@ -334,11 +343,10 @@ app.post('/identify-item', async (req, res) => {
 // --- HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        let { text, name, image, history, location } = req.body;
+        let { text, name, image, history, location, address } = req.body;
         
-        if (location) {
-            console.log(`[Chat GPS] 緯度:${location.lat}, 経度:${location.lon}`);
-        }
+        if (address) console.log(`[Chat住所] ${address}`);
+        else if (location) console.log(`[ChatGPS] ${location.lat}, ${location.lon}`);
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -354,23 +362,27 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
-        // ★修正: 住所特定プロトコルをさらに強化
+        // ★修正: 住所情報がある場合はそれを絶対視する
         let locationPrompt = "";
-        if (location && location.lat && location.lon) {
+        if (address) {
             locationPrompt = `
-            【最重要：住所特定プロトコル】
-            ユーザーの現在地座標: ${location.lat}, ${location.lon}
+            【最優先情報：現在地】
+            クライアントにより特定された住所: **${address}**
             
-            回答作成手順:
-            1. **検索義務**: 必ずGoogle検索で「${location.lat}, ${location.lon} 住所」を検索し、正確な住所（市町村）を特定してください。
-            2. **推測禁止**: 座標の数値だけを見て場所を判断することは禁止です。必ず検索結果の文字情報を正解としてください。
-            3. **誤認防止**: 検索結果が「筑後市」であれば、近隣の「玉名市」や「久留米市」と答えることは厳禁です。
-            4. 座標の数値（${location.lat}, ${location.lon}）はセリフに入れないでください。
-            
-            回答の冒頭で「今は〇〇県〇〇市にいるんだにゃ！」と、特定した住所を宣言してください。
+            回答のルール:
+            - **この住所(${address})を絶対的な事実として扱ってください。**
+            - たとえ他の場所（玉名市など）のように感じても、必ず「${address}」にいるという前提で回答を作成してください。
+            - 天気や周辺情報の質問には、この住所を使ってGoogle検索を行ってください。
+            - 回答の冒頭で「今は${address}にいるんだにゃ！」と宣言してください。
             `;
             
-            text += `\n（システム強制指示：現在の座標は ${location.lat}, ${location.lon} です。まずGoogle検索で住所を特定し、その市町村名を回答の冒頭で宣言してください。推測で別の地名を言うことは禁止です。）`;
+            text += `\n（システム強制指示：現在地は「${address}」です。他の場所と間違えずに、この場所の情報だけを答えてください。）`;
+        } else if (location && location.lat && location.lon) {
+            locationPrompt = `
+            【位置情報】
+            座標: ${location.lat}, ${location.lon}
+            Google検索でこの座標の住所を特定してから回答してください。
+            `;
         }
 
         let prompt = `
@@ -454,6 +466,7 @@ app.post('/chat-dialogue', async (req, res) => {
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
+            // エラー時は安全なメッセージを返す
             jsonResponse = { speech: "ごめんにゃ、ちょっとうまく聞き取れなかったにゃ。もう一回言ってほしいにゃ。", board: "（解析エラー）" };
         }
         
@@ -560,7 +573,6 @@ wss.on('connection', async (clientWs, req) => {
             geminiWs = new WebSocket(GEMINI_URL);
             
             geminiWs.on('open', () => {
-                // ★修正: WebSocket側にも強力な位置情報プロトコルを追加
                 let systemInstructionText = `
                 あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
 
@@ -573,14 +585,6 @@ wss.on('connection', async (clientWs, req) => {
                 3. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
-
-                【最重要：位置情報の取り扱い】
-                ユーザーから「現在地」や「座標」が提供された場合：
-                1. **絶対に**その数値だけを見て場所を推測してはいけません。
-                2. 提供されたツール（Google検索）を使い、必ず「緯度 経度 住所」というキーワードで検索を行ってください。
-                3. 検索結果に表示された「県・市町村名」を唯一の正解として扱ってください。
-                4. 近隣に有名な観光地があっても、検索結果の住所と異なる場合は絶対に言及しないでください。
-                5. 「場所がわからない」と答えることは禁止です。座標があれば必ず検索で特定できます。
 
                 【最重要: 画像への対応ルール】
                 ユーザーから画像が送信された場合：
