@@ -1,4 +1,4 @@
-// --- server.js (完全版 v308.0: 住所特定強化版) ---
+// --- server.js (完全版 v309.0: 位置情報・住所特定厳格化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -241,6 +241,11 @@ app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location } = req.body;
         
+        // ★追加: サーバーのログに座標を表示
+        if (location) {
+            console.log(`[GPS受信] 緯度:${location.lat}, 経度:${location.lon}, 精度:${location.accuracy || '?'}m`);
+        }
+        
         // MODEL_FAST (gemini-2.5-flash) を使用
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
@@ -250,15 +255,15 @@ app.post('/identify-item', async (req, res) => {
 
         let locationInfo = "";
         if (location && location.lat && location.lon) {
+            // ★修正: AIに「画像の見た目」より「GPS」を優先させる強力な指示
             locationInfo = `
-            【重要：現在地情報】
-            座標: ${location.lat}, ${location.lon}
-            精度: 誤差 ${location.accuracy || '?'}メートル
+            【絶対遵守：位置情報】
+            端末のGPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
             
             指示:
-            1. まず、Google検索ツールで「${location.lat},${location.lon} 住所」を検索し、正確な住所（市町村名）を特定してください。
-            2. その後、その「正確な住所」の周辺にある施設や観光地を考慮して回答してください。
-            3. 画像のみで場所が特定できない場合は、無理に場所を断定せず、画像に写っているもの（商品や植物など）について解説してください。
+            1. **最優先**: 提供されたGoogle検索ツールで必ず「${location.lat},${location.lon} 住所」を検索し、現在の「県・市町村名」を特定してください。
+            2. **重要**: 画像に写っている風景や物が他の地域のものに見えたとしても、**検索で特定したGPSの住所を「正」として扱ってください。**
+            3. 解説の冒頭で「ここは〇〇（検索した市町村名）だにゃ！」と場所を明言してください。
             `;
         }
 
@@ -269,7 +274,7 @@ app.post('/identify-item', async (req, res) => {
         ${locationInfo}
 
         【特定と命名のルール】
-        1. **位置情報がある場合**: Google検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
+        1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
         2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。
         3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
@@ -310,7 +315,6 @@ app.post('/identify-item', async (req, res) => {
             }
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // エラー時は安全な固定メッセージ
             json = {
                 itemName: "なぞの物体",
                 description: "ちょっとよくわからなかったにゃ。もう一回見せてにゃ？",
@@ -331,6 +335,11 @@ app.post('/identify-item', async (req, res) => {
 app.post('/chat-dialogue', async (req, res) => {
     try {
         let { text, name, image, history, location } = req.body;
+
+        // ★追加: 会話時も座標をログに出す
+        if (location) {
+            console.log(`[Chat GPS] 緯度:${location.lat}, 経度:${location.lon}`);
+        }
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -348,18 +357,18 @@ app.post('/chat-dialogue', async (req, res) => {
 
         let locationPrompt = "";
         if (location && location.lat && location.lon) {
+            // ★修正: こちらもGPS絶対優先にする
             locationPrompt = `
-            【重要：現在地情報】
-            ユーザーの現在地は 緯度:${location.lat}, 経度:${location.lon} です。
-            ユーザーが「天気」「周辺情報」「ここはどこ？」など、**場所に関連する質問**をした場合は、
-            まずGoogle検索で「${location.lat}, ${location.lon} 住所」を調べて**正しい市町村名を特定**してから回答を作成してください。
-            単に「天気」とだけ検索すると場所が特定できず、誤った情報を回答してしまいます。「座標だけではわからない」という回答は禁止です。
+            【重要：ユーザーの現在地】
+            GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
             
-            【禁止事項】
-            - **座標の数値をそのままセリフの中で言わないでください。** 
+            指示:
+            ユーザーが場所や天気について質問した場合、必ずGoogle検索で「${location.lat},${location.lon} 住所」を調べて、正確な市町村名を特定してから回答してください。
+            **「座標などの数値」や「付近の有名な観光地」ではなく、ピンポイントな「現在の市町村名」を基準に答えること。**
             `;
             
-            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。天気や場所の質問なら、まずこの座標を使ってGoogle検索を行い、具体的な地名を特定した上で答えてください。）`;
+            // システム付加情報も更新
+            text += `\n（システム情報：現在地の座標は ${location.lat}, ${location.lon} です。まずこの座標で住所を検索し、その市町村の情報を答えてください。）`;
         }
 
         let prompt = `
@@ -444,7 +453,7 @@ app.post('/chat-dialogue', async (req, res) => {
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // エラー時は安全なメッセージを返す
+            // エラー時は安全な固定メッセージ
             jsonResponse = { speech: "ごめんにゃ、ちょっとうまく聞き取れなかったにゃ。もう一回言ってほしいにゃ。", board: "（解析エラー）" };
         }
         
