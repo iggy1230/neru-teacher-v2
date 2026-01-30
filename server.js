@@ -1,4 +1,4 @@
-// --- server.js (完全版 v314.0: 詳細住所活用・JSONパース強化版) ---
+// --- server.js (完全版 v315.0: 近隣検索ロジック強化・パースエラー対策版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -101,6 +101,7 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
+        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -166,6 +167,7 @@ app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
         
+        // MODEL_HOMEWORK (gemini-2.5-pro) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_HOMEWORK, 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -242,6 +244,7 @@ app.post('/identify-item', async (req, res) => {
         if (address) console.log(`[図鑑住所] ${address}`);
         else if (location) console.log(`[図鑑GPS] ${location.lat}, ${location.lon}`);
 
+        // MODEL_FAST (gemini-2.5-flash) を使用
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -250,22 +253,24 @@ app.post('/identify-item', async (req, res) => {
 
         let locationInfo = "";
         if (address) {
+            // 詳細な住所がある場合
             locationInfo = `
             【最優先情報：現在地】
             クライアント特定住所: **${address}**
             
             指示:
-            1. **広域の確定**: まず、ユーザーが「${address}」にいることを前提としてください。他の市町村（玉名市など）にいるという推測は禁止です。
-            2. **詳細スポットの特定**: この住所（${address}）の中にある、画像に写っているような「公園」「施設」「銅像」「店舗」などをGoogle検索で特定してください。
+            1. **${address}にいる**ことを前提にしてください。
+            2. 画像に写っているものが、この住所（${address}）の近くにある「公園」「施設」「銅像」「店舗」かどうかをGoogle検索で確認してください。
             3. 解説の冒頭で「ここは${address}の〇〇（詳細スポット名）だにゃ！」と明言してください。
             `;
         } else if (location && location.lat && location.lon) {
+            // 座標のみの場合
             locationInfo = `
             【最優先：2段階位置特定プロトコル】
             GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
             
             指示:
-            1. **Step 1 (広域特定)**: まずGoogle検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**（例：筑後市）を確定してください。近隣の有名な市（玉名市など）と間違えないでください。
+            1. **Step 1 (広域特定)**: まずGoogle検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**を確定してください。
             2. **Step 2 (詳細特定)**: 確定した市町村の中で、この座標にある「公園」「施設」「銅像」「建物」を検索して特定してください。
             3. 画像の解析結果と、特定した詳細スポットを照合してください。
             4. 解説の冒頭で「ここは〇〇市（Step1の結果）の△△（Step2の結果）だにゃ！」と明言してください。
@@ -320,7 +325,6 @@ app.post('/identify-item', async (req, res) => {
             }
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
-            // エラー時は安全な固定メッセージ
             json = {
                 itemName: "なぞの物体",
                 description: "ちょっとよくわからなかったにゃ。もう一回見せてにゃ？",
@@ -359,19 +363,17 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
-        // ★修正: 質問内容に応じて検索戦略を変える
         let locationPrompt = "";
         if (address) {
-            // 詳細な住所が渡された場合
             locationPrompt = `
             【最優先情報：現在地】
             クライアント特定住所: **${address}**
             
             回答作成時の検索ルール:
             1. **「一番近い〇〇」「近くの〇〇」と聞かれた場合**:
-               - 住所検索よりも **座標検索** が精度が高いです。
-               - Google検索で「${location.lat},${location.lon} 最寄りの〇〇」や「${address} 近くの〇〇」を検索し、**実際に距離が近いもの**を選んでください。
-               - 単に「${address} 〇〇」で検索すると、市内の代表的な施設（遠い場合がある）が出てしまうので注意してください。
+               - **★重要: 住所名ではなく座標検索を優先してください。**
+               - 住所「${address}」で検索すると広域の代表点がヒットしてしまい、近隣が出ない可能性があります。
+               - Google検索ツールで「${location.lat},${location.lon} 最寄りの〇〇」や「${location.lat},${location.lon} 近くの〇〇」を検索し、**実際に距離が近いもの**を選んでください。
             
             2. **「ここはどこ？」「天気を教えて」と聞かれた場合**:
                - **${address}** という住所情報を正解として扱ってください。
@@ -383,21 +385,20 @@ app.post('/chat-dialogue', async (req, res) => {
                - 検索せずに推測で地名を答えることは厳禁です。
             `;
             
-            text += `\n（システム強制指示：現在地は「${address}」です。「近い」質問には座標検索も併用して、本当に近い場所を探してください。）`;
+            text += `\n（システム強制指示：現在地は「${address}」ですが、近隣検索の際は座標「${location.lat},${location.lon}」を使用してください。）`;
+
         } else if (location && location.lat && location.lon) {
-            // 座標のみの場合
             locationPrompt = `
             【最優先：2段階位置特定プロトコル】
             GPS座標: ${location.lat}, ${location.lon}
             
             回答ルール:
-            1. **Step 1**: Google検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村**を特定してください。
-            2. **Step 2**: ユーザーの質問が「近い〇〇」であれば、「${location.lat},${location.lon} 最寄りの〇〇」で検索してください。
-            3. 天気の質問ならStep 1の市町村の天気を答えてください。
-            4. 座標の数値は言わないでください。
+            1. **「近い〇〇」の質問**: 「${location.lat},${location.lon} 最寄りの〇〇」で検索してください。住所名での検索は禁止です。
+            2. **「ここはどこ？」の質問**: Google検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村**を特定してください。
+            3. 座標の数値は言わないでください。
             `;
             
-            text += `\n（システム強制指示：現在の座標は ${location.lat}, ${location.lon} です。まずGoogle検索で住所と詳細スポットを特定してから回答してください。）`;
+            text += `\n（システム強制指示：現在の座標は ${location.lat}, ${location.lon} です。近隣検索には必ずこの座標を使ってください。）`;
         }
 
         let prompt = `
@@ -416,12 +417,13 @@ app.post('/chat-dialogue', async (req, res) => {
         ${contextPrompt}
 
         【出力フォーマット】
-        **必ず以下のJSON形式の文字列だけ**を出力してください。
-        **Markdownのコードブロック(\`\`\`json\`)は使わないでください。純粋なJSON文字列のみを出力してください。**
+        **必ず以下のJSON形式の文字列だけ**を出力してください。Markdownのコードブロック(\`\`\`json\`)で囲んでください。
+        \`\`\`json
         {
             "speech": "ネル先生のセリフ。語尾は必ず「にゃ」や「だにゃ」。親しみやすく。",
             "board": "黒板に書く内容。"
         }
+        \`\`\`
         
         ユーザー発言: ${text}
         `;
@@ -481,12 +483,10 @@ app.post('/chat-dialogue', async (req, res) => {
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
             // ★修正: パースエラー時は、生のテキストをクリーニングして無理やり表示する
-            // AIが思考ログを出力している場合があるので、単純に返すのは危険だが
-            // ユーザー体験のために「speech」として扱うトライをする
             let fallbackSpeech = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            // 思考プロセスっぽい英語行を削除
+            // 思考プロセスっぽい英語行やシステムタグを削除
             fallbackSpeech = fallbackSpeech.split('\n').filter(line => {
-                return !/^(?:System|User|Model|Assistant|Thinking)[:：]/i.test(line);
+                return !/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(line) && !/^\*\*.*\*\*$/.test(line);
             }).join(' ');
 
             jsonResponse = { 
@@ -610,6 +610,15 @@ wss.on('connection', async (clientWs, req) => {
                 3. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
+
+                【最重要：位置情報の取り扱い】
+                ユーザーから「現在地」や「座標」が提供された場合：
+                1. **絶対に**その数値だけを見て場所を推測してはいけません。
+                2. 提供されたツール（Google検索）を使い、必ず「緯度 経度 住所」というキーワードで検索を行ってください。
+                3. 検索結果に表示された「県・市町村名」を唯一の正解として扱ってください。
+                4. 近隣に有名な観光地があっても、検索結果の住所と異なる場合は絶対に言及しないでください。
+                5. 「場所がわからない」と答えることは禁止です。座標があれば必ず検索で特定できます。
+                6. **2段階特定**: まず「市町村」を特定し、次にその中の「詳細スポット（公園、店など）」を特定してください。
 
                 【最重要: 画像への対応ルール】
                 ユーザーから画像が送信された場合：
