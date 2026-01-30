@@ -240,7 +240,8 @@ window.showCollection = async function() {
         img.style.cssText = "width:100%; height:auto; max-height:75%; object-fit:contain; margin-bottom:5px; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));";
         
         const name = document.createElement('div');
-        name.innerText = item.name;
+        // ★修正: 図鑑リスト表示でもふりがなを隠す
+        name.innerText = item.name.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
         name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;";
 
         div.appendChild(img);
@@ -254,8 +255,11 @@ window.showCollectionDetail = function(item, index) {
     if (!modal) return;
 
     const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
-    const description = item.description || "（ネル先生の解説はまだないみたいだにゃ…）";
-    const realDescription = item.realDescription || "（まだ情報がないみたいだにゃ…）";
+    
+    // ★修正: 詳細表示でもふりがなを隠す
+    const displayItemName = item.name.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+    const description = (item.description || "（ネル先生の解説はまだないみたいだにゃ…）").replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+    const realDescription = (item.realDescription || "（まだ情報がないみたいだにゃ…）").replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
 
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
@@ -271,7 +275,7 @@ window.showCollectionDetail = function(item, index) {
                 </div>
                 
                 <div style="font-size:1.6rem; font-weight:900; color:#e65100; text-align:center; margin-bottom:15px; border-bottom:2px dashed #ffcc80; padding-bottom:10px;">
-                    ${item.name}
+                    ${displayItemName}
                 </div>
                 
                 <div style="background:#fff3e0; padding:15px; border-radius:10px; position:relative; border:2px solid #ffe0b2; margin-bottom: 20px;">
@@ -463,3 +467,146 @@ document.addEventListener('click', (e) => {
         } 
     } 
 });
+
+// ==========================================
+// ★ ログ管理・セッション履歴・UI更新
+// ==========================================
+
+// ★修正: サーバーから送られた「筑後市(ちくごし)」などのふりがな付きテキストを、
+// 表示用は「筑後市」、音声用は「筑後市(ちくごし)」（サーバー側で読み上げ時にふりがなのみ化）に分ける処理を追加
+window.addLogItem = function(role, text) {
+    const container = document.getElementById('log-content');
+    if (!container) return;
+    const div = document.createElement('div');
+    div.className = `log-item log-${role}`;
+    const name = role === 'user' ? (currentUser ? currentUser.name : 'あなた') : 'ネル先生';
+    
+    // 表示用に「漢字(ふりがな)」のふりがな部分を削除
+    const displayText = text.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+
+    div.innerHTML = `<span class="log-role">${name}:</span><span>${displayText}</span>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+};
+
+window.addToSessionHistory = function(role, text) {
+    if (!window.chatSessionHistory) window.chatSessionHistory = [];
+    window.chatSessionHistory.push({ role: role, text: text });
+    if (window.chatSessionHistory.length > 10) {
+        window.chatSessionHistory.shift();
+    }
+};
+
+window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
+    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
+        speak = false;
+    }
+
+    const gameScreen = document.getElementById('screen-game');
+    const isGameHidden = gameScreen ? gameScreen.classList.contains('hidden') : true;
+    const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
+    const el = document.getElementById(targetId);
+    
+    // --- 表示用テキストのクリーニング ---
+    let cleanText = t || "";
+
+    cleanText = cleanText.split('\n').filter(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return true;
+        if (/^(?:System|User|Model|Assistant|Display|Thinking)[:：]/i.test(trimmed)) return false;
+        if (/^\*\*.*\*\*$/.test(trimmed)) return false;
+        if (/^\[.*\]$/.test(trimmed)) return false;
+        const hasJapanese = /[ぁ-んァ-ン一-龠]/.test(line);
+        if (!hasJapanese && /[a-zA-Z]/.test(line)) return false;
+        return true;
+    }).join('\n');
+
+    cleanText = cleanText.replace(/(?:\[|【)DISPLAY[:：].*?(?:\]|】)/gi, "");
+    cleanText = cleanText.replace(/^\s*[\(（【\[].*?[\)）】\]]/gm, ""); 
+    cleanText = cleanText.replace(/[\(（【\[].*?[\)）】\]]\s*$/gm, "");
+    cleanText = cleanText.trim();
+    
+    // ★修正: 画面表示用テキスト（ふりがな削除）
+    const displayText = cleanText.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+    
+    if (el) el.innerText = displayText;
+    
+    if (t && t.includes("もぐもぐ")) { if(window.safePlay) window.safePlay(window.sfxBori); }
+    
+    if (saveToMemory) { window.saveToNellMemory('nell', cleanText); }
+    
+    // ★修正: 音声合成には元のテキスト（ふりがな付き）を渡す
+    // サーバー側で「漢字(ふりがな)」を「ふりがな」に置換して発音するため
+    if (speak && typeof speakNell === 'function') {
+        let textForSpeech = cleanText.replace(/【.*?】/g, "").replace(/\[.*?\]/g, "").trim();
+        textForSpeech = textForSpeech.replace(/🐾/g, "");
+        if (textForSpeech.length > 0) {
+            await speakNell(textForSpeech, mood);
+        }
+    }
+};
+
+window.sendHttpText = async function(context) {
+    let inputId;
+    if (context === 'embedded') { inputId = 'embedded-text-input'; }
+    else if (context === 'simple') { inputId = 'simple-text-input'; }
+    else return;
+
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+
+    if (window.isAlwaysListening && window.continuousRecognition) {
+        try { window.continuousRecognition.stop(); } catch(e){}
+    }
+    
+    // ★修正: ログ表示もふりがな削除対応
+    window.addLogItem('user', text);
+    window.addToSessionHistory('user', text);
+
+    try {
+        window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
+        
+        const res = await fetch('/chat-dialogue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                text: text, 
+                name: currentUser ? currentUser.name : "生徒",
+                history: window.chatSessionHistory,
+                location: window.currentLocation,
+                address: window.currentAddress
+            })
+        });
+
+        if(res.ok) {
+            const data = await res.json();
+            const speechText = data.speech || data.reply || "教えてあげるにゃ！";
+            
+            // ★修正: ログ表示もふりがな削除対応
+            window.addLogItem('nell', speechText);
+            window.addToSessionHistory('nell', speechText);
+            
+            await window.updateNellMessage(speechText, "happy", true, true);
+            
+            let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
+            const embedBoard = document.getElementById(boardId);
+            if (embedBoard && data.board && data.board.trim() !== "") {
+                embedBoard.innerText = data.board;
+                embedBoard.classList.remove('hidden');
+            }
+            input.value = ""; 
+        }
+    } catch(e) {
+        console.error("Text Chat Error:", e);
+        window.updateNellMessage("ごめん、ちょっとわからなかったにゃ。", "thinking", false, true);
+    } finally {
+        if (window.isAlwaysListening) {
+             try { window.continuousRecognition.start(); } catch(e){}
+        }
+    }
+};
+
+window.sendEmbeddedText = function() { window.sendHttpText('embedded'); };
+window.sendSimpleText = function() { window.sendHttpText('simple'); };
