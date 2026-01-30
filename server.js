@@ -1,4 +1,4 @@
-// --- server.js (完全版 v303.0: 位置情報プロンプト強化版) ---
+// --- server.js (完全版 v306.0: JSON強制出力 & プロンプト強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -236,47 +236,50 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★ お宝図鑑用 画像解析API ---
+// --- ★ お宝図鑑用 画像解析API (修正版) ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location } = req.body;
         
-        // MODEL_FAST (gemini-2.5-flash) を使用
+        // ★修正: JSONモードを強制する
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
-            tools: tools
+            tools: tools,
+            generationConfig: { responseMimeType: "application/json" } // 追加
         });
 
+        // ★修正: 位置情報プロンプトを具体的かつ検索しやすくする
         let locationInfo = "";
         if (location && location.lat && location.lon) {
-            locationInfo = `【重要：位置情報】\n撮影場所の座標は 緯度:${location.lat}, 経度:${location.lon} です。Google検索を使用して、この座標が「観光地」「公園」「公共施設」「店舗」などの特定のランドマークであるか確認してください。`;
+            locationInfo = `
+            【現在地情報あり】
+            座標: ${location.lat}, ${location.lon}
+            
+            指示:
+            1. 提供されたGoogle検索ツールを使い、必ず「${location.lat},${location.lon} 観光地」や「${location.lat},${location.lon} 施設名」というキーワードで検索を行ってください。
+            2. 検索結果と画像を照らし合わせ、ここが特定の観光地、公園、施設であれば、その「正式名称」を itemName にしてください。
+            3. 場所が特定できない、または一般的な商品（お菓子や文房具など）の場合は、画像の商品名を itemName にしてください。
+            `;
         }
 
         const prompt = `
         あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。
-        送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
+        送られてきた画像を解析し、以下のJSON形式で応答してください。
         
         ${locationInfo}
-
-        【特定と命名のルール】
-        1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
-        2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。
-        3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
         2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
 
-        【出力フォーマット (JSON文字列のみ出力)】
-        \`\`\`json
+        【出力フォーマット (JSON)】
         {
             "itemName": "正式名称",
             "description": "ネル先生の面白い解説＋問いかけ",
             "realDescription": "本当の解説",
             "speechText": "『これは（itemName）だにゃ！（description）』"
         }
-        \`\`\`
         `;
 
         const result = await model.generateContent([
@@ -288,22 +291,29 @@ app.post('/identify-item', async (req, res) => {
         
         let json;
         try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                json = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
-            } else {
-                throw new Error("JSON parse failed");
-            }
+            // responseMimeType を指定しているので、基本的にはそのままパース可能
+            json = JSON.parse(responseText);
         } catch (e) {
-            console.warn("JSON Parse Fallback:", responseText);
-            json = {
-                itemName: "なぞの物体",
-                description: "ちょっとよくわからなかったにゃ。もう一回見せてにゃ？",
-                realDescription: "AIが解析できませんでした。",
-                speechText: "よくわからなかったにゃ。"
-            };
+            console.warn("JSON Parse Error (First Attempt):", responseText);
+            // マークダウン記法が含まれている場合の保険
+            try {
+                const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+                const firstBrace = cleanText.indexOf('{');
+                const lastBrace = cleanText.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace !== -1) {
+                    json = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
+                } else {
+                    throw new Error("JSON parse failed");
+                }
+            } catch (e2) {
+                console.warn("JSON Parse Fallback:", responseText);
+                json = {
+                    itemName: "なぞの物体",
+                    description: "ちょっとよくわからなかったにゃ。もう一回見せてにゃ？",
+                    realDescription: "AIが解析できませんでした。",
+                    speechText: "よくわからなかったにゃ。"
+                };
+            }
         }
         
         res.json(json);
@@ -314,10 +324,10 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- HTTPチャット会話 ---
+// --- HTTPチャット会話 (修正版) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        const { text, name, image, history, location } = req.body;
+        let { text, name, image, history, location } = req.body;
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -333,14 +343,17 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
-        // ★修正: 位置情報を強く認識させるプロンプト
+        // ★修正: 会話用にも位置情報を強力に適用
         let locationPrompt = "";
         if (location && location.lat && location.lon) {
             locationPrompt = `
-            【重要：現在地情報】
-            ユーザーの現在地は 緯度:${location.lat}, 経度:${location.lon} です。
-            ユーザーが「天気」「周辺情報」「ここはどこ？」など、**場所に関連する質問**をした場合は、必ずこの座標を検索キーワードに含めて（例：「${location.lat},${location.lon} 天気」）Google検索を実行してください。
-            単に「天気」とだけ検索すると現在地が反映されないため禁止します。
+            【重要：ユーザーの現在地】
+            座標: ${location.lat}, ${location.lon}
+            
+            指示:
+            ユーザーが「天気」「ここどこ？」「近くのお店」など場所に関連する質問をした場合は、
+            必ずツールを使って「${location.lat},${location.lon} 天気」や「${location.lat},${location.lon} 周辺」などを検索し、
+            その結果に基づいて答えてください。
             `;
         }
 
@@ -348,7 +361,7 @@ app.post('/chat-dialogue', async (req, res) => {
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
 
-        【重要：現在の状況】
+        【重要】
         - **現在は ${currentDateTime} です。**
         - **わからないことや最新の情報、天気予報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
         - **日付を聞かれない限り、冒頭で今日の日付を言う必要はありません。**
@@ -358,11 +371,10 @@ app.post('/chat-dialogue', async (req, res) => {
 
         ${contextPrompt}
 
-        【出力フォーマット】
-        **必ず以下のJSON形式の文字列だけ**を出力してください。
+        【出力フォーマット (JSON)】
         {
             "speech": "ネル先生のセリフ。語尾は必ず「にゃ」や「だにゃ」。親しみやすく。",
-            "board": "黒板に書く内容。"
+            "board": "黒板に書く内容（補足説明や漢字など）。なければ空文字。"
         }
         
         ユーザー発言: ${text}
@@ -376,12 +388,12 @@ app.post('/chat-dialogue', async (req, res) => {
         let responseText;
 
         try {
+            // ★修正: JSONモードを強制
             const toolsConfig = image ? undefined : [{ google_search: {} }];
-            
-            // MODEL_FAST (gemini-2.5-flash) を使用
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
-                tools: toolsConfig
+                tools: toolsConfig,
+                generationConfig: { responseMimeType: "application/json" } // 追加
             });
 
             if (image) {
@@ -396,7 +408,11 @@ app.post('/chat-dialogue', async (req, res) => {
 
         } catch (genError) {
             console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
-            const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
+            // フォールバック（ツールなし）でもJSONモードは維持
+            const modelFallback = genAI.getGenerativeModel({ 
+                model: MODEL_FAST,
+                generationConfig: { responseMimeType: "application/json" }
+            });
             try {
                 if (image) {
                     result = await modelFallback.generateContent([
@@ -414,16 +430,22 @@ app.post('/chat-dialogue', async (req, res) => {
         
         let jsonResponse;
         try {
-            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                cleanText = cleanText.substring(firstBrace, lastBrace + 1);
-            }
-            jsonResponse = JSON.parse(cleanText);
+            // JSONモードなのでそのままパース試行
+            jsonResponse = JSON.parse(responseText);
         } catch (e) {
-            console.warn("JSON Parse Fallback:", responseText);
-            jsonResponse = { speech: responseText, board: "" };
+            console.warn("JSON Parse Error (First Attempt):", responseText);
+            try {
+                let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+                const firstBrace = cleanText.indexOf('{');
+                const lastBrace = cleanText.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace !== -1) {
+                    cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+                }
+                jsonResponse = JSON.parse(cleanText);
+            } catch (e2) {
+                console.warn("JSON Parse Fallback:", responseText);
+                jsonResponse = { speech: responseText, board: "" };
+            }
         }
         
         res.json(jsonResponse);
