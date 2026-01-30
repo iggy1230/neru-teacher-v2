@@ -1,4 +1,4 @@
-// --- js/analyze.js (v318.0: マップURL生成・住所重複修正版) ---
+// --- js/analyze.js (v317.0: 住所重複排除・クライアント側住所特定版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -7,11 +7,6 @@
 window.currentLocation = null;
 window.currentAddress = null; // 住所文字列
 window.locationWatchId = null;
-
-// ★追加: 正確なマップURLを生成する関数 (AIではなくクライアントが計算)
-window.getExactMapUrl = function(lat, lon, zoom = 18) {
-    return `https://www.google.com/maps?q=${lat},${lon}&z=${zoom}`;
-};
 
 // 住所特定ヘルパー (OpenStreetMap Nominatim API使用)
 window.fetchAddressFromCoords = async function(lat, lon) {
@@ -26,6 +21,7 @@ window.fetchAddressFromCoords = async function(lat, lon) {
             let fullAddress = "";
 
             const appendIfNew = (str) => {
+                // すでに含まれているかチェック (例: "筑後市"の後に"筑後市"を足さない)
                 if (str && !fullAddress.includes(str)) {
                     fullAddress += str;
                 }
@@ -59,23 +55,6 @@ window.fetchAddressFromCoords = async function(lat, lon) {
             if (fullAddress) {
                 window.currentAddress = fullAddress;
                 console.log("★詳細住所特定:", window.currentAddress);
-                
-                // ★追加: 住所が確定したらマップリンクボタンを表示
-                const mapLinkContainerEmbed = document.getElementById('map-link-container-embedded');
-                const mapLinkEmbed = document.getElementById('map-link-embedded');
-                const mapLinkContainerSimple = document.getElementById('map-link-container-simple');
-                const mapLinkSimple = document.getElementById('map-link-simple');
-                
-                if (window.currentLocation && window.currentLocation.mapUrl) {
-                    if (mapLinkEmbed && mapLinkContainerEmbed) {
-                        mapLinkEmbed.href = window.currentLocation.mapUrl;
-                        mapLinkContainerEmbed.classList.remove('hidden');
-                    }
-                    if (mapLinkSimple && mapLinkContainerSimple) {
-                        mapLinkSimple.href = window.currentLocation.mapUrl;
-                        mapLinkContainerSimple.classList.remove('hidden');
-                    }
-                }
             }
         }
     } catch (e) {
@@ -98,13 +77,7 @@ window.startLocationWatch = function() {
 
             // 精度が良い場合、または初回の場合に更新
             if (!window.currentLocation || newAccuracy < window.currentLocation.accuracy) {
-                // ★修正: mapUrlを含める
-                window.currentLocation = { 
-                    lat: lat, 
-                    lon: lon, 
-                    accuracy: newAccuracy,
-                    mapUrl: window.getExactMapUrl(lat, lon) 
-                };
+                window.currentLocation = { lat: lat, lon: lon, accuracy: newAccuracy };
                 console.log(`★位置更新: 精度${Math.round(newAccuracy)}m`);
                 
                 // 住所も更新（負荷軽減のため、精度が良くなった時だけ呼ぶ）
@@ -162,12 +135,6 @@ window.selectMode = function(m) {
             const embedInput = document.getElementById(iid);
             if(embedInput) embedInput.value = "";
         });
-        
-        // マップリンクもリセット
-        ['map-link-container-embedded', 'map-link-container-simple'].forEach(mid => {
-             const el = document.getElementById(mid);
-             if(el) el.classList.add('hidden');
-        });
 
         const backBtn = document.getElementById('main-back-btn');
         if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
@@ -191,19 +158,19 @@ window.selectMode = function(m) {
             window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            window.startLocationWatch(); 
+            window.startLocationWatch(); // 位置・住所監視開始
         } 
         else if (m === 'simple-chat') {
             document.getElementById('simple-chat-view').classList.remove('hidden');
             window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
             document.getElementById('conversation-log').classList.remove('hidden');
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            window.startLocationWatch(); 
+            window.startLocationWatch(); // 位置・住所監視開始
         }
         else if (m === 'chat-free') {
             document.getElementById('chat-free-view').classList.remove('hidden');
             window.updateNellMessage("何でも話していいにゃ！", "happy", false);
-            window.startLocationWatch(); 
+            window.startLocationWatch(); // 位置・住所監視開始
         }
         else if (m === 'lunch') { 
             document.getElementById('lunch-view').classList.remove('hidden'); 
@@ -323,7 +290,7 @@ window.sendHttpText = async function(context) {
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
         
-        // ★修正: mapUrlも送信
+        // ★修正: 住所情報(address)も送信
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -332,7 +299,7 @@ window.sendHttpText = async function(context) {
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
-                address: window.currentAddress 
+                address: window.currentAddress // 確定した詳細住所
             })
         });
 

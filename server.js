@@ -1,4 +1,4 @@
-// --- server.js (完全版 v318.0: 会話モードJSON完全撤廃・サーバー側整形版) ---
+// --- server.js (完全版 v317.0: 会話モードJSON撤廃・ロバスト性向上版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -268,7 +268,7 @@ app.post('/identify-item', async (req, res) => {
             GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
             
             指示:
-            1. まずGoogle検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**（例：筑後市）を確定してください。
+            1. Google検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**を確定してください。
             2. その市町村の中で、画像に写っているものを検索して特定してください。
             `;
         }
@@ -380,7 +380,7 @@ app.post('/chat-dialogue', async (req, res) => {
                - 検索せずに推測で地名を答えることは厳禁です。
             `;
             
-            text += `\n（システム情報：現在地は「${address}」です。近隣検索には座標「${location.lat},${location.lon}」を使用してください。）`;
+            text += `\n（システム情報：現在地は「${address}」です。）`;
 
         } else if (location && location.lat && location.lon) {
             locationPrompt = `
@@ -426,7 +426,7 @@ app.post('/chat-dialogue', async (req, res) => {
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
             
-            // ★修正: JSON強制(responseMimeType)を削除
+            // ★修正: JSON強制は完全に削除
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -443,7 +443,7 @@ app.post('/chat-dialogue', async (req, res) => {
             responseText = result.response.text().trim();
 
         } catch (genError) {
-            console.warn("Generation failed with tools/image. Retrying without tools...", genError.message);
+            console.warn("Generation failed. Retrying without tools...", genError.message);
             const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
             try {
                 if (image) {
@@ -460,9 +460,11 @@ app.post('/chat-dialogue', async (req, res) => {
             }
         }
         
-        // ★修正: サーバー側でJSON形式に包んで返す
+        // ★修正: サーバー側で受け取ったテキストをJSONに包む
+        // これでクライアント側はパースエラーを起こさない
         let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        // 思考ログなどのノイズ除去（念のため）
+        
+        // 念のためシステムログのような行があれば削除
         cleanText = cleanText.split('\n').filter(line => {
             return !/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(line);
         }).join(' ');

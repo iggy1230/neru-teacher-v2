@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v318.0: 住所・地図URL連携強化版) ---
+// --- js/voice-service.js (v311.0: 住所連携対応版) ---
 
 // 音声再生の停止
 window.stopAudioPlayback = function() {
@@ -11,7 +11,7 @@ window.stopAudioPlayback = function() {
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 };
 
-// 常時聞き取り開始 (個別指導・学習モード用)
+// 常時聞き取り開始
 window.startAlwaysOnListening = function() {
     if (!('webkitSpeechRecognition' in window)) {
         console.warn("Speech Recognition not supported.");
@@ -61,7 +61,7 @@ window.startAlwaysOnListening = function() {
         if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('user', text);
 
         try {
-            // 座標(location)と詳細住所(address)の両方を送信
+            // ★修正: 住所情報(address)も送信
             const res = await fetch('/chat-dialogue', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -70,7 +70,7 @@ window.startAlwaysOnListening = function() {
                     name: currentUser ? currentUser.name : "生徒",
                     history: window.chatSessionHistory,
                     location: window.currentLocation,
-                    address: window.currentAddress
+                    address: window.currentAddress // 追加
                 })
             });
             
@@ -129,7 +129,7 @@ window.stopAlwaysOnListening = function() {
     }
 };
 
-// WebSocketチャット用画像送信 (放課後おしゃべりタイム用)
+// WebSocketチャット用画像送信
 window.captureAndSendLiveImage = function(context = 'main') {
     if (context === 'main') {
         if (window.currentMode === 'chat-free') context = 'free';
@@ -152,7 +152,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
     const video = document.getElementById(videoId);
     const btn = document.getElementById('live-camera-btn-free');
 
-    // カメラがまだ動いていない場合は起動する
+    // カメラがまだ動いていない場合は起動する（マイク通話中でない場合など）
     if (!video || !video.srcObject || !video.srcObject.active) {
         if (typeof window.startPreviewCamera === 'function') {
             window.startPreviewCamera(videoId, containerId).then(() => {
@@ -227,7 +227,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
         window.isLiveImageSending = false;
         window.isMicMuted = false;
         
-        // 送信後はカメラを閉じる
+        // 送信完了後は必ずカメラ画面を閉じる
         if (typeof window.stopPreviewCamera === 'function') {
             window.stopPreviewCamera();
         }
@@ -240,7 +240,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
     setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
 };
 
-// HTTPチャット用画像送信 (個別指導・図鑑モードなど)
+// HTTPチャット用画像送信
 window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     if (window.isLiveImageSending) return;
     
@@ -279,7 +279,7 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     try {
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
 
-        // 住所情報(address)も送信
+        // ★修正: 住所情報(address)も送信
         const res = await fetch('/chat-dialogue', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -289,7 +289,7 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
-                address: window.currentAddress
+                address: window.currentAddress // 追加
             })
         });
 
@@ -342,8 +342,6 @@ window.stopLiveChat = function() {
     if (window.liveSocket) {
         window.liveSocket.close(); 
     }
-    
-    // AudioContextのリセット
     if (window.audioContext && window.audioContext.state !== 'closed') {
         window.audioContext.close(); 
     }
@@ -428,9 +426,6 @@ window.startLiveChat = async function(context = 'main') {
             statusSummary += ` 現在地は${window.currentAddress}だにゃ。`;
         } else if (window.currentLocation) {
             statusSummary += ` 現在地は緯度${window.currentLocation.lat}、経度${window.currentLocation.lon}だにゃ。`;
-        }
-        if (window.currentLocation && window.currentLocation.mapUrl) {
-            statusSummary += ` 地図はこちら: ${window.currentLocation.mapUrl}`;
         }
 
         let modeParam = 'chat-free';
