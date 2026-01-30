@@ -1,4 +1,4 @@
-// --- server.js (完全版 v310.0: APIレート制限対策・リトライ機能追加版) ---
+// --- server.js (完全版 v311.0: 位置情報特定プロセス厳格化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -236,12 +236,11 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★ お宝図鑑用 画像解析API (修正版) ---
+// --- ★ お宝図鑑用 画像解析API ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location } = req.body;
         
-        // JSON強制モードを削除（ツール使用のため）
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -251,13 +250,10 @@ app.post('/identify-item', async (req, res) => {
         let locationInfo = "";
         if (location && location.lat && location.lon) {
             locationInfo = `
-            【現在地情報あり】
-            座標: ${location.lat}, ${location.lon}
-            
-            指示:
-            1. 提供されたGoogle検索ツールを使い、必ず「${location.lat},${location.lon} 観光地」や「${location.lat},${location.lon} 施設名」というキーワードで検索を行ってください。
-            2. 検索結果と画像を照らし合わせ、ここが特定の観光地、公園、施設であれば、その「正式名称」を itemName にしてください。
-            3. 場所が特定できない、または一般的な商品（お菓子や文房具など）の場合は、画像の商品名を itemName にしてください。
+            【重要：位置情報】
+            撮影場所の座標: 緯度${location.lat}, 経度${location.lon}
+            指示: 必ずこの座標を使って「${location.lat},${location.lon} 住所」でGoogle検索し、**具体的な都道府県と市町村名**を特定してください。
+            その場所の近くにある観光地、公園、公共施設、店舗などのランドマークである可能性を考慮して、画像の解析を行ってください。
             `;
         }
 
@@ -266,6 +262,11 @@ app.post('/identify-item', async (req, res) => {
         送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
         
         ${locationInfo}
+
+        【特定と命名のルール】
+        1. **位置情報がある場合**: 検索結果を用いて、そこが観光地や公共施設であれば、その「正式名称」を \`itemName\` に設定してください。
+        2. **商品や物体の場合**: 画像検索や知識を用いて、一般的なカテゴリ名ではなく「具体的な商品名・製品名・品種名」を特定してください。
+        3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
@@ -319,7 +320,7 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- HTTPチャット会話 (修正版: リトライロジック追加) ---
+// --- HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
         let { text, name, image, history, location } = req.body;
@@ -344,11 +345,12 @@ app.post('/chat-dialogue', async (req, res) => {
             【重要：現在地情報】
             ユーザーの現在地は 緯度:${location.lat}, 経度:${location.lon} です。
             ユーザーが「天気」「周辺情報」「ここはどこ？」など、場所に関連する質問をした場合は、
-            **必ずこの座標を検索キーワードに含めて（例：「${location.lat}, ${location.lon} 住所」「${location.lat}, ${location.lon} 天気」）Google検索を実行してください。**
-            単に「天気」とだけ検索すると場所が特定できず、誤った情報を回答してしまいます。「座標だけではわからない」という回答は禁止です。検索ツールを使えば必ずわかります。
+            **まずツールを使って「${location.lat},${location.lon} 住所」でGoogle検索を行い、具体的な【都道府県と市町村名】を特定してください。**
+            その後、特定した地名を使って天気などを検索してください。
+            「座標だけではわからない」と答えることは禁止です。必ず検索を行って地名を特定してください。
             `;
             
-            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。天気や場所の質問なら、必ずこの座標を使ってGoogle検索を行い、具体的な地名を特定した上で答えてください。「場所がわからない」と答えることは禁止です。）`;
+            text += `\n（システム付加情報：現在の位置は 緯度:${location.lat}, 経度:${location.lon} です。天気や場所の質問なら、まずこの座標でGoogle検索して具体的な住所（市町村）を特定し、その地名の情報を答えてください。）`;
         }
 
         let prompt = `
@@ -386,15 +388,13 @@ app.post('/chat-dialogue', async (req, res) => {
         let responseText;
 
         try {
-            // ★修正: リトライロジック追加
-            // Google検索ツールを使用（JSON強制モードはOFF）
             const toolsConfig = image ? undefined : [{ google_search: {} }];
+            
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
             });
 
-            // 1回目の試行
             if (image) {
                 result = await model.generateContent([
                     prompt,
@@ -406,17 +406,13 @@ app.post('/chat-dialogue', async (req, res) => {
             responseText = result.response.text().trim();
 
         } catch (genError) {
-            // 429エラーやQuotaエラーの場合のみリトライ
             const isRateLimit = genError.message && (genError.message.includes('429') || genError.message.includes('Quota') || genError.message.includes('RESOURCE_EXHAUSTED'));
             
             if (isRateLimit) {
                 console.warn("API Rate Limit Hit. Retrying after 2s...");
-                // 2秒待機
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
                 try {
-                    // 再試行（同じ構成で）
-                    // ※本来は指数バックオフやモデル変更が理想だが、ここでは単純リトライ
                     const toolsConfig = image ? undefined : [{ google_search: {} }];
                     const modelRetry = genAI.getGenerativeModel({ model: MODEL_FAST, tools: toolsConfig });
                     
@@ -432,11 +428,9 @@ app.post('/chat-dialogue', async (req, res) => {
                     
                 } catch (retryError) {
                     console.error("Retry failed:", retryError);
-                    // さらに失敗した場合はエラーとしてスロー
                     throw retryError;
                 }
             } else {
-                // その他のエラー（ツールエラーなど）は、ツールなしでフォールバック
                 console.warn("Generation failed with tools. Retrying without tools...", genError.message);
                 const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
                 try {
@@ -464,10 +458,13 @@ app.post('/chat-dialogue', async (req, res) => {
                 cleanText = cleanText.substring(firstBrace, lastBrace + 1);
                 jsonResponse = JSON.parse(cleanText);
             } else {
-                // JSONが見つからない場合、平文の回答とみなしてそのままspeechにする
-                // メタ発言が含まれる可能性があるが、何も返さないよりはマシ
-                console.warn("Valid JSON not found, using raw text.");
-                jsonResponse = { speech: responseText, board: "" };
+                const jsonMatch = cleanText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    jsonResponse = JSON.parse(jsonMatch[0]);
+                } else {
+                    console.warn("Valid JSON not found, using raw text.");
+                    jsonResponse = { speech: responseText, board: "" };
+                }
             }
         } catch (e) {
             console.warn("JSON Parse Fallback:", responseText);
@@ -478,7 +475,6 @@ app.post('/chat-dialogue', async (req, res) => {
 
     } catch (error) {
         console.error("Chat API Fatal Error:", error);
-        // エラーメッセージをユーザーに分かりやすく
         const errorMsg = error.message.includes('429') 
             ? "ごめんにゃ、今みんなとお話しすぎて頭がパンクしそうだにゃ…少し休ませてにゃ。" 
             : "ごめんにゃ、調子が悪いみたいだにゃ。";
