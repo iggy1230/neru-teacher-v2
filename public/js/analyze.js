@@ -1,4 +1,4 @@
-// --- js/analyze.js (v316.1: 住所重複チェック強化版) ---
+// --- js/analyze.js (v317.0: 住所重複排除・クライアント側住所特定版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -17,44 +17,36 @@ window.fetchAddressFromCoords = async function(lat, lon) {
             const data = await res.json();
             const addr = data.address;
             
-            // ★修正: 住所連結時の重複排除ロジック
-            const components = [];
-            const seen = new Set(); // 重複チェック用
+            // ★修正: 重複排除ロジック
+            let fullAddress = "";
 
-            // 追加関数
-            const add = (val) => {
-                if (val && !seen.has(val)) {
-                    components.push(val);
-                    seen.add(val);
+            const appendIfNew = (str) => {
+                if (str && !fullAddress.endsWith(str)) {
+                    fullAddress += str;
                 }
             };
             
             // 都道府県
-            if (addr.province) add(addr.province);
-            else if (addr.prefecture) add(addr.prefecture);
+            if (addr.province) appendIfNew(addr.province);
+            else if (addr.prefecture) appendIfNew(addr.prefecture);
             
             // 市区町村・郡
-            if (addr.city) add(addr.city);
-            if (addr.county) add(addr.county);
-            if (addr.town) add(addr.town);
-            if (addr.village) add(addr.village);
+            if (addr.city) appendIfNew(addr.city);
+            if (addr.county) appendIfNew(addr.county);
+            if (addr.town) appendIfNew(addr.town);
+            if (addr.village) appendIfNew(addr.village);
             
             // 町名・字・区
-            if (addr.ward) add(addr.ward);
-            if (addr.suburb) add(addr.suburb);
-            if (addr.city_district) add(addr.city_district);
-            if (addr.neighbourhood) add(addr.neighbourhood);
-            if (addr.quarter) add(addr.quarter);
-            if (addr.hamlet) add(addr.hamlet);
+            if (addr.ward) appendIfNew(addr.ward);
+            if (addr.suburb) appendIfNew(addr.suburb);
+            if (addr.city_district) appendIfNew(addr.city_district);
+            if (addr.neighbourhood) appendIfNew(addr.neighbourhood);
+            if (addr.quarter) appendIfNew(addr.quarter);
+            if (addr.hamlet) appendIfNew(addr.hamlet);
 
-            // 道路・番地・建物
-            if (addr.road) add(addr.road);
-            if (addr.house_number) add(addr.house_number);
-            if (addr.amenity || addr.building || addr.public_building || addr.tourism || addr.shop) {
-                add(addr.amenity || addr.building || addr.public_building || addr.tourism || addr.shop);
-            }
-            
-            let fullAddress = components.join('');
+            // 道路・番地・建物 (あまり長くなりすぎないように調整)
+            // 番地などは重複しやすいので慎重に追加
+            if (addr.road) appendIfNew(addr.road);
             
             if (fullAddress) {
                 window.currentAddress = fullAddress;
@@ -358,9 +350,7 @@ window.startMouthAnimation = function() {
 };
 window.startMouthAnimation();
 
-// ページロード時
 window.addEventListener('DOMContentLoaded', () => {
-    // 位置情報監視開始
     if(typeof window.startLocationWatch === 'function') {
         window.startLocationWatch();
     }
