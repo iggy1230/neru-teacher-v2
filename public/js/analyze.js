@@ -21,7 +21,8 @@ window.fetchAddressFromCoords = async function(lat, lon) {
             let fullAddress = "";
 
             const appendIfNew = (str) => {
-                if (str && !fullAddress.endsWith(str)) {
+                // すでに含まれているかチェック (例: "筑後市"の後に"筑後市"を足さない)
+                if (str && !fullAddress.includes(str)) {
                     fullAddress += str;
                 }
             };
@@ -44,9 +45,12 @@ window.fetchAddressFromCoords = async function(lat, lon) {
             if (addr.quarter) appendIfNew(addr.quarter);
             if (addr.hamlet) appendIfNew(addr.hamlet);
 
-            // 道路・番地・建物 (あまり長くなりすぎないように調整)
-            // 番地などは重複しやすいので慎重に追加
+            // 道路・番地・建物
             if (addr.road) appendIfNew(addr.road);
+            if (addr.house_number) appendIfNew(addr.house_number);
+            if (addr.amenity || addr.building || addr.public_building || addr.tourism || addr.shop) {
+                appendIfNew(addr.amenity || addr.building || addr.public_building || addr.tourism || addr.shop);
+            }
             
             if (fullAddress) {
                 window.currentAddress = fullAddress;
