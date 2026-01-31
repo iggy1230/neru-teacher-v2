@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v308.0: プロフィールUI強化版) ---
+// --- js/ui/ui.js (完全版 v309.0: ログ一括削除機能追加版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -463,7 +463,6 @@ window.switchMemoryTab = async function(tab) {
     }
 };
 
-// ★修正: プロフィールビューの大幅強化
 function renderProfileView(container, profile) {
     container.innerHTML = '';
     if (!profile) {
@@ -509,7 +508,6 @@ function renderProfileView(container, profile) {
     container.appendChild(createSection('👤 あだ名', profile.nickname));
     container.appendChild(createSection('🎂 お誕生日', profile.birthday));
     
-    // 好きなもの・苦手なもの
     const likesContainer = document.createElement('div');
     likesContainer.style.display = "flex";
     likesContainer.style.gap = "5px";
@@ -534,7 +532,6 @@ function renderProfileView(container, profile) {
          container.appendChild(div);
     }
 
-    // 最近の図鑑アイテム
     if (profile.collection && profile.collection.length > 0) {
         const recents = profile.collection.slice(0, 3);
         const div = document.createElement('div');
@@ -564,6 +561,7 @@ function renderProfileView(container, profile) {
     }
 }
 
+// ★修正: ログ表示に削除用チェックボックスとボタンを追加
 function renderLogView(container) {
     container.innerHTML = '';
     const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
@@ -577,9 +575,24 @@ function renderLogView(container) {
         return;
     }
 
-    [...history].reverse().forEach(item => {
+    // 削除ボタンエリア
+    const ctrlDiv = document.createElement('div');
+    ctrlDiv.style.cssText = "margin-bottom:10px; text-align:right;";
+    ctrlDiv.innerHTML = `
+        <span style="font-size:0.8rem; color:#666; float:left;">新しい順</span>
+        <button onclick="deleteSelectedLogs()" class="mini-teach-btn" style="background:#ff5252; color:white;">選択したログを削除</button>
+    `;
+    container.appendChild(ctrlDiv);
+
+    // ログリスト
+    [...history].reverse().forEach((item, index) => {
+        // 元の配列でのインデックスを計算 (history.length - 1 - index)
+        const originalIndex = history.length - 1 - index;
+        
         const div = document.createElement('div');
         div.className = 'memory-item';
+        div.style.display = 'flex';
+        div.style.alignItems = 'flex-start';
         
         const isUser = (item.role === 'user');
         const roleColor = isUser ? '#2196f3' : '#ff85a1';
@@ -592,6 +605,9 @@ function renderLogView(container) {
         } catch(e){}
 
         div.innerHTML = `
+            <div style="padding-right:10px;">
+                <input type="checkbox" class="log-delete-checkbox" value="${originalIndex}" style="transform:scale(1.3);">
+            </div>
             <div style="width:100%;">
                 <div class="memory-meta" style="color:${roleColor}; font-weight:bold; display:flex; justify-content:space-between;">
                     <span>${roleName}</span>
@@ -603,6 +619,24 @@ function renderLogView(container) {
         container.appendChild(div);
     });
 }
+
+// ★追加: ログ削除機能
+window.deleteSelectedLogs = function() {
+    if (!currentUser) return;
+    const checkboxes = document.querySelectorAll('.log-delete-checkbox:checked');
+    if (checkboxes.length === 0) return alert("削除するものを選んでにゃ！");
+    
+    if (!confirm(`${checkboxes.length}件の会話ログを削除するにゃ？`)) return;
+    
+    const indicesToDelete = Array.from(checkboxes).map(cb => parseInt(cb.value)).sort((a, b) => b - a); // 降順にソート
+    
+    if (window.NellMemory) {
+        window.NellMemory.deleteRawChatLogs(currentUser.id, indicesToDelete);
+        // 再描画
+        const container = document.getElementById('memory-list-container');
+        renderLogView(container);
+    }
+};
 
 // ページ読み込み完了時にUI状態を初期化
 document.addEventListener('DOMContentLoaded', () => {
@@ -659,7 +693,7 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     cleanText = cleanText.split('\n').filter(line => {
         const trimmed = line.trim();
         if (!trimmed) return true;
-        if (/^(?:System|User|Model|Assistant|Display|Thinking)[:：]/i.test(trimmed)) return false;
+        if (/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(trimmed)) return false;
         if (/^\*\*.*\*\*$/.test(trimmed)) return false;
         if (/^\[.*\]$/.test(trimmed)) return false;
         const hasJapanese = /[ぁ-んァ-ン一-龠]/.test(line);
@@ -714,7 +748,7 @@ window.sendHttpText = async function(context) {
             const profile = await window.NellMemory.getUserProfile(currentUser.id);
             if (!profile.birthday) missingInfo.push("誕生日");
             if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
-            if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの・嫌いなこと");
+            if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
         } catch(e) {}
     }
 
