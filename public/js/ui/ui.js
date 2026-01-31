@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v310.0: プロフィール編集・削除機能追加版) ---
+// --- js/ui/ui.js (完全版 v327.0: プロフィール編集・ログ削除・レアリティ表示統合版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -57,8 +57,10 @@ window.applyVolumeToAll = function() {
 };
 
 // ==========================================
-// ★ Helper: 表示用テキストクリーニング
+// ★ Helper Functions
 // ==========================================
+
+// 表示用テキストクリーニング
 window.cleanDisplayString = function(text) {
     if (!text) return "";
     let clean = text;
@@ -67,6 +69,14 @@ window.cleanDisplayString = function(text) {
     // 2. 「漢字/英単語(ふりがな)」のふりがな部分を削除して、元の単語だけ残す
     clean = clean.replace(/[\(（][ぁ-んァ-ンー\s　]+[\)）]/g, "");
     return clean;
+};
+
+// レアリティ表示用文字列生成
+window.generateRarityString = function(rarity) {
+    const r = rarity || 1;
+    let stars = "";
+    for(let i=0; i<r; i++) stars += "🐾";
+    return `<span class="rarity-mark rarity-${r}">${stars}</span>`;
 };
 
 // ==========================================
@@ -253,8 +263,11 @@ window.showCollection = async function() {
         img.style.cssText = "width:100%; height:auto; max-height:75%; object-fit:contain; margin-bottom:5px; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));";
         
         const name = document.createElement('div');
-        name.innerText = window.cleanDisplayString(item.name);
-        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;";
+        const rarityMark = window.generateRarityString(item.rarity);
+        const displayName = window.cleanDisplayString(item.name);
+        
+        name.innerHTML = `${rarityMark}<br>${displayName}`;
+        name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; line-height:1.2; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;";
 
         div.appendChild(img);
         div.appendChild(name);
@@ -271,6 +284,7 @@ window.showCollectionDetail = function(item, index) {
     const displayItemName = window.cleanDisplayString(item.name);
     const description = window.cleanDisplayString(item.description || "（ネル先生の解説はまだないみたいだにゃ…）");
     const realDescription = window.cleanDisplayString(item.realDescription || "（まだ情報がないみたいだにゃ…）");
+    const rarityMark = window.generateRarityString(item.rarity);
 
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
@@ -285,6 +299,7 @@ window.showCollectionDetail = function(item, index) {
                     <img src="${item.image}" style="width:100%; max-width:280px; height:auto; object-fit:contain; border-radius:50%; border:5px solid #ffd700; box-shadow:0 4px 10px rgba(0,0,0,0.2);">
                 </div>
                 
+                <div style="text-align:center; margin-bottom:5px;">${rarityMark}</div>
                 <div style="font-size:1.6rem; font-weight:900; color:#e65100; text-align:center; margin-bottom:15px; border-bottom:2px dashed #ffcc80; padding-bottom:10px;">
                     ${displayItemName}
                 </div>
@@ -404,6 +419,7 @@ window.renderMapMarkers = async function() {
             
             const displayName = window.cleanDisplayString(item.name);
             const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
+            const rarityMark = window.generateRarityString(item.rarity);
 
             const marker = L.marker([item.location.lat, item.location.lon], { icon: icon }).addTo(window.mapInstance);
             
@@ -411,6 +427,7 @@ window.renderMapMarkers = async function() {
                 <div style="text-align:center;">
                     <img src="${item.image}" style="width:100px; height:100px; object-fit:contain; margin-bottom:5px;"><br>
                     <strong>${displayName}</strong><br>
+                    <div>${rarityMark}</div>
                     <span style="font-size:0.8rem; color:#666;">${dateStr}</span>
                 </div>
             `);
@@ -470,7 +487,7 @@ function renderProfileView(container, profile) {
         return;
     }
 
-    // ★修正: 削除ボタン付きの項目作成関数
+    // 削除ボタン付きの項目作成関数
     const createSection = (title, items, categoryName, isArray = false) => {
         const div = document.createElement('div');
         div.className = 'profile-section';
@@ -541,6 +558,7 @@ function renderProfileView(container, profile) {
          container.appendChild(div);
     }
 
+    // 最近の図鑑アイテム (サムネイルにレアリティを追加)
     if (profile.collection && profile.collection.length > 0) {
         const recents = profile.collection.slice(0, 3);
         const div = document.createElement('div');
@@ -558,8 +576,10 @@ function renderProfileView(container, profile) {
             const itemDiv = document.createElement('div');
             itemDiv.style.cssText = "flex-shrink: 0; width: 80px; text-align: center; font-size: 0.7rem;";
             const cleanName = window.cleanDisplayString(item.name);
+            const rarityMark = window.generateRarityString(item.rarity);
             itemDiv.innerHTML = `
                 <img src="${item.image}" style="width:50px; height:50px; object-fit:cover; border-radius:8px; border:2px solid #ffb74d;">
+                <div style="font-size:0.6rem;">${rarityMark}</div>
                 <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; margin-top:2px;">${cleanName}</div>
             `;
             listDiv.appendChild(itemDiv);
@@ -570,7 +590,6 @@ function renderProfileView(container, profile) {
     }
 }
 
-// ★追加: プロフィール項目削除処理
 window.deleteProfileItem = async function(category, itemContent) {
     if (!currentUser) return;
     if (!confirm("この情報を忘れさせるにゃ？")) return;
