@@ -1,4 +1,4 @@
-// --- server.js (完全版 v324.0: 記憶更新強化・要約機能付き) ---
+// --- server.js (完全版 v325.0: 軽量化プロフィール更新版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -104,7 +104,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update (強化版) ---
+// --- Memory Update (軽量化版) ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
@@ -115,20 +115,22 @@ app.post('/update-memory', async (req, res) => {
 
         const prompt = `
         あなたは生徒の長期記憶を管理するAIです。
-        以下の「現在のプロフィール」と「直近の会話ログ」を分析し、2つのタスクを行ってください。
+        以下の「現在のプロフィール」と「直近の会話ログ」を分析し、最新のプロフィールJSONを作成してください。
 
-        【タスク1: プロフィールの更新】
-        会話ログから新しい情報を抽出し、プロフィールを更新してください。
-        - **誕生日**: 会話の中で日付（〇月〇日）が出てきたら、それが誕生日である可能性が高いです。文脈を確認し、誕生日であれば必ず \`birthday\` を更新してください。（形式: 〇月〇日）
-        - **好き・嫌い**: 新しい「好きなもの」「苦手なもの」があればリストに追加してください。
-        - **維持**: 情報がない項目は、元のデータをそのまま維持してください。
+        【重要指示】
+        1. **情報の抽出**: 会話ログの中に、誕生日、好きなもの、苦手なもの、趣味、最近したこと等が含まれていれば、**必ず**プロフィールに追加・更新してください。
+        2. **誕生日**: 会話内で日付（〇月〇日）が言及され、それがユーザーの誕生日であれば、必ず \`birthday\` をその日付で上書きしてください。
+        3. **好き・嫌い**: ユーザーが「～が好き」「～は嫌い」と言ったら、\`likes\` や \`weaknesses\` のリストに追加してください。
+        4. **維持**: 会話ログに新しい情報がない項目は、現在の内容をそのまま返してください。
 
         【タスク2: 会話の要約】
-        今回の会話の内容を、**「○○について話した」**や**「○○を勉強した」**のように、一文で簡潔に要約してください。これを \`summary_text\` として出力してください。
+        今回の会話の内容を、「○○について話した」や「○○を勉強した」のように一文で要約し、\`summary_text\` として出力してください。
 
-        【入力データ】
-        現在のプロフィール: ${JSON.stringify(currentProfile)}
-        会話ログ: ${chatLog}
+        【現在のプロフィール (入力)】
+        ${JSON.stringify(currentProfile)}
+
+        【直近の会話ログ】
+        ${chatLog}
 
         【出力フォーマット (JSON)】
         {
@@ -161,12 +163,8 @@ app.post('/update-memory', async (req, res) => {
             return res.json({ profile: currentProfile, summary_text: "（更新なし）" });
         }
 
-        // 配列で返ってきた場合の安全策
         if (Array.isArray(output)) output = output[0];
-        
-        // 構造チェック
         if (!output.profile) {
-            // 古いフォーマットで返ってきた場合の互換性
             output = { profile: output, summary_text: "（会話終了）" };
         }
 
