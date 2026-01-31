@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v309.0: 画像レアリティ対応版) ---
+// --- js/ui/ui.js (完全版 v310.0: 相互リンク対応版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -71,10 +71,9 @@ window.cleanDisplayString = function(text) {
     return clean;
 };
 
-// ★修正: レアリティ表示用文字列生成 (画像を使用)
+// レアリティ表示用文字列生成 (画像を使用)
 window.generateRarityString = function(rarity) {
     const r = rarity || 1;
-    // ローカルパスではなく、Web相対パスを使用
     const imgPath = "assets/images/effects/nikukyurea.png";
     let images = "";
     for(let i=0; i<r; i++) {
@@ -226,12 +225,26 @@ window.updateProgress = function(p) {
 // 図鑑 (Collection)
 // ==========================================
 
+// ★追加: グローバルから詳細を開くためのラッパー
+window.openCollectionDetailByIndex = function(index) {
+    if (!window.NellMemory || !currentUser) return;
+    window.NellMemory.getUserProfile(currentUser.id).then(profile => {
+        if (profile && profile.collection && profile.collection[index]) {
+            // モーダルが非表示なら表示する
+            const modal = document.getElementById('collection-modal');
+            if (modal && modal.classList.contains('hidden')) {
+                modal.classList.remove('hidden');
+            }
+            window.showCollectionDetail(profile.collection[index], index);
+        }
+    });
+};
+
 window.showCollection = async function() {
     if (!currentUser) return;
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
-    // ★更新: モーダルHTMLに「足あとマップを見る」ボタンを追加
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
@@ -284,6 +297,9 @@ window.showCollection = async function() {
 window.showCollectionDetail = function(item, index) {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
+    
+    // マップから呼ばれた場合のために表示を強制
+    modal.classList.remove('hidden');
 
     const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
     
@@ -292,10 +308,19 @@ window.showCollectionDetail = function(item, index) {
     const realDescription = window.cleanDisplayString(item.realDescription || "（まだ情報がないみたいだにゃ…）");
     const rarityMark = window.generateRarityString(item.rarity);
 
+    // ★追加: 地図へ飛ぶボタンのHTML
+    let mapBtnHtml = "";
+    if (item.location && item.location.lat && item.location.lon) {
+        mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
+    }
+
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 戻る</button>
+                <div>
+                    <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 戻る</button>
+                    ${mapBtnHtml}
+                </div>
                 <h3 style="margin:0; color:#f57f17; font-size:1.1rem;">お宝データ</h3>
                 <button onclick="deleteCollectionItem(${index})" class="mini-teach-btn" style="background:#ff5252;">削除</button>
             </div>
@@ -355,7 +380,8 @@ window.closeCollection = function() {
 
 window.mapInstance = null;
 
-window.showMap = async function() {
+// ★修正: 特定の座標へズーム可能に
+window.showMap = async function(targetLat, targetLon) {
     if (!currentUser) return;
     
     if (typeof window.startLocationWatch === 'function') {
@@ -377,15 +403,21 @@ window.showMap = async function() {
     setTimeout(() => {
         window.mapInstance.invalidateSize();
         
-        let centerLat = 35.6895; // 東京
+        let centerLat = 35.6895; 
         let centerLon = 139.6917;
+        let zoomLevel = 15;
         
-        if (window.currentLocation && window.currentLocation.lat) {
+        // ターゲット指定があればそこへ飛ぶ
+        if (targetLat && targetLon) {
+            centerLat = targetLat;
+            centerLon = targetLon;
+            zoomLevel = 18; // ズームイン
+        } else if (window.currentLocation && window.currentLocation.lat) {
             centerLat = window.currentLocation.lat;
             centerLon = window.currentLocation.lon;
         }
         
-        window.mapInstance.setView([centerLat, centerLon], 15);
+        window.mapInstance.setView([centerLat, centerLon], zoomLevel);
         window.renderMapMarkers();
     }, 200);
 };
@@ -404,7 +436,7 @@ window.renderMapMarkers = async function() {
     
     let hasMarkers = false;
     
-    collection.forEach(item => {
+    collection.forEach((item, index) => {
         if (item.location && item.location.lat && item.location.lon) {
             hasMarkers = true;
             
@@ -422,12 +454,14 @@ window.renderMapMarkers = async function() {
 
             const marker = L.marker([item.location.lat, item.location.lon], { icon: icon }).addTo(window.mapInstance);
             
+            // ★修正: ポップアップに「図鑑で見る」ボタンを追加
             marker.bindPopup(`
                 <div style="text-align:center;">
                     <img src="${item.image}" style="width:100px; height:100px; object-fit:contain; margin-bottom:5px;"><br>
                     <strong>${displayName}</strong><br>
                     <div>${rarityMark}</div>
-                    <span style="font-size:0.8rem; color:#666;">${dateStr}</span>
+                    <span style="font-size:0.8rem; color:#666;">${dateStr}</span><br>
+                    <button onclick="window.openCollectionDetailByIndex(${index})" class="mini-teach-btn" style="margin-top:5px; background:#ff85a1;">📖 図鑑で見る</button>
                 </div>
             `);
         }
@@ -773,6 +807,7 @@ window.sendHttpText = async function(context) {
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
+    // ★追加: 未登録情報の検出ロジック
     let missingInfo = [];
     if (window.NellMemory && currentUser) {
         try {
@@ -795,7 +830,7 @@ window.sendHttpText = async function(context) {
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
                 address: window.currentAddress,
-                missingInfo: missingInfo 
+                missingInfo: missingInfo // ★サーバーへ送信
             })
         });
 
