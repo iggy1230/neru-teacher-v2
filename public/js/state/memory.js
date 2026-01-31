@@ -1,11 +1,10 @@
-// --- js/state/memory.js (v320.0: Storageアップロード完全対応版) ---
+// --- js/state/memory.js (v321.0: ログ削除対応版) ---
 
 (function(global) {
     const Memory = {};
 
     // Helper: Base64をBlobに変換
     function base64ToBlob(base64, mimeType = 'image/jpeg') {
-        // Data URL形式 (data:image/jpeg;base64,...) かどうかチェック
         const parts = base64.split(';base64,');
         const raw = window.atob(parts.length > 1 ? parts[1] : base64);
         const rawLength = raw.length;
@@ -45,7 +44,6 @@
     Memory.getUserProfile = async function(userId) {
         let profile = null;
 
-        // 1. Firestoreから取得
         if (typeof db !== 'undefined' && db !== null) {
             try {
                 const doc = await db.collection("users").doc(userId).get();
@@ -55,7 +53,6 @@
             } catch(e) { console.error("Firestore Profile Load Error:", e); }
         }
 
-        // 2. なければLocalStorage
         if (!profile) {
             const key = `nell_profile_${userId}`;
             try {
@@ -63,12 +60,10 @@
             } catch {}
         }
 
-        // 配列リカバリー
         if (Array.isArray(profile)) {
             profile = profile[0];
         }
 
-        // 既存ユーザーにcollectionがない場合の補完
         const defaultProfile = Memory.createEmptyProfile();
         if (!profile) return defaultProfile;
         if (!Array.isArray(profile.collection)) profile.collection = []; 
@@ -126,6 +121,7 @@
         if (p.nickname) context += `・あだ名: ${p.nickname}\n`;
         if (p.birthday) context += `・誕生日: ${p.birthday}\n`; 
         if (p.likes && p.likes.length > 0) context += `・好きなもの: ${p.likes.join(", ")}\n`;
+        if (p.weaknesses && p.weaknesses.length > 0) context += `・苦手なもの: ${p.weaknesses.join(", ")}\n`;
         
         if (p.collection && p.collection.length > 0) {
             const recentItems = p.collection.slice(0, 3).map(i => i.name).join(", ");
@@ -135,7 +131,7 @@
         return context;
     };
 
-    // ★修正: Firebase Storageを使用した画像の保存フロー
+    // 図鑑追加
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null) {
         console.log(`[Memory] addToCollection: ${itemName}`);
         try {
@@ -145,9 +141,8 @@
                 profile.collection = [];
             }
             
-            let imageUrl = imageBase64; // デフォルトはBase64のまま（ゲスト用）
+            let imageUrl = imageBase64; 
 
-            // FirestoreとStorageが使える場合のみアップロード
             if (window.fireStorage && typeof db !== 'undefined' && db !== null) {
                 try {
                     const blob = base64ToBlob(imageBase64);
@@ -156,18 +151,16 @@
                     const storageRef = window.fireStorage.ref().child(storagePath);
                     
                     const snapshot = await storageRef.put(blob);
-                    imageUrl = await snapshot.ref.getDownloadURL(); // URLを取得
+                    imageUrl = await snapshot.ref.getDownloadURL(); 
                     console.log("Image uploaded to Storage:", imageUrl);
                 } catch (uploadError) {
-                    console.warn("Storage upload failed, falling back to Base64 (Low Res)", uploadError);
-                    // アップロード失敗時(容量制限など)は、諦めてBase64のまま保存するが
-                    // Firestore制限回避のため画像なしにするか、大幅圧縮版を使うべきだが、ここではそのまま
+                    console.warn("Storage upload failed, falling back to Base64", uploadError);
                 }
             }
 
             const newItem = {
                 name: itemName,
-                image: imageUrl, // URL または Base64
+                image: imageUrl, 
                 date: new Date().toISOString(),
                 description: description,
                 realDescription: realDescription,
@@ -176,14 +169,10 @@
 
             profile.collection.unshift(newItem); 
 
-            // Storage使用時は上限500、それ以外(Base64)は上限30
             const maxLimit = (imageUrl.startsWith('http')) ? 500 : 30;
 
-            // 上限を超えたら古いものを削除
             if (profile.collection.length > maxLimit) {
                 const removedItems = profile.collection.splice(maxLimit, profile.collection.length - maxLimit);
-                
-                // Storage上の画像も消す
                 for (const item of removedItems) {
                     if (item.image && item.image.startsWith('http')) {
                         await deleteImageFromStorage(item.image);
@@ -203,17 +192,32 @@
             const profile = await Memory.getUserProfile(userId);
             if (profile.collection && profile.collection[index]) {
                 const item = profile.collection[index];
-                
-                // Storage上の画像を削除
                 if (item.image && item.image.startsWith('http')) {
                     await deleteImageFromStorage(item.image);
                 }
-
                 profile.collection.splice(index, 1);
                 await Memory.saveUserProfile(userId, profile);
                 console.log(`[Memory] Deleted item: ${item.name}`);
             }
         } catch(e) { console.error("[Memory] Delete Error:", e); }
+    };
+    
+    // ★追加: ログ削除用関数
+    Memory.deleteRawChatLogs = async function(userId, indicesToDelete) {
+        const memoryKey = `nell_raw_chat_log_${userId}`;
+        let history = [];
+        try {
+            history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
+        } catch(e) {}
+        
+        // インデックスが大きい順に削除（ずれ防止）
+        indicesToDelete.sort((a, b) => b - a).forEach(index => {
+            if (index >= 0 && index < history.length) {
+                history.splice(index, 1);
+            }
+        });
+        
+        localStorage.setItem(memoryKey, JSON.stringify(history));
     };
     
     Memory.updateLatestCollectionItem = async function(userId, newName) {};
