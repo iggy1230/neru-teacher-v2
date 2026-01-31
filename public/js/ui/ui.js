@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v306.0: 表示整形強化版) ---
+// --- js/ui/ui.js (完全版 v307.0: 表示整形強化版2) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -65,8 +65,8 @@ window.cleanDisplayString = function(text) {
     // 1. マークダウンの太字(**)などを削除
     clean = clean.replace(/\*\*/g, "");
     // 2. 「漢字/英単語(ふりがな)」のふりがな部分を削除して、元の単語だけ残す
-    // 例: "iPhone(アイフォーン)" -> "iPhone", "筑後市(ちくごし)" -> "筑後市"
-    clean = clean.replace(/[\(（]([ぁ-んァ-ンー]+)[\)）]/g, "");
+    // ★修正: スペースや長音記号も含む広範囲なマッチングに変更して取りこぼしを防ぐ
+    clean = clean.replace(/[\(（][ぁ-んァ-ンー\s　]+[\)）]/g, "");
     return clean;
 };
 
