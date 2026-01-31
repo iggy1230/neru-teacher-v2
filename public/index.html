@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v305.0: 足あとマップ実装版) -->
+<!-- index.html (完全版 v306.0: Storage SDK追加版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -21,6 +21,8 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <!-- ★追加: Storage用のSDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     
     <style>
         .hidden { display: none !important; }
@@ -56,7 +58,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v305.0-Map</div>
+            <div class="version-tag">Build: v306.0-Map-Fixed</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -103,9 +105,7 @@
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">👩‍🏫 ネル先生の個別指導</button>
                 <button onclick="selectMode('chat-free')" class="main-btn green-btn" style="background:#4db6ac; box-shadow: 0 4px 0 #00897b;">💬 放課後おしゃべりタイム</button>
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
-                <!-- 新しいボタン: 足あとマップ -->
                 <button onclick="showMap()" class="main-btn" style="background:#29b6f6; box-shadow: 0 4px 0 #0288d1;">🗺️ 足あとマップ</button>
-                
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
                 <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b; border:none; box-shadow:0 4px 0 #455a64;">🧠 記憶を整理する</button>
@@ -150,7 +150,7 @@
             <button onclick="backToLobby()" class="main-btn pink-btn" style="margin-top:20px;">教室にもどる</button>
         </section>
 
-        <!-- 7. 足あとマップ画面 (新機能) -->
+        <!-- 7. 足あとマップ画面 -->
         <section id="screen-map" class="screen hidden" style="padding-top: 60px;">
             <h2 class="section-title" style="text-shadow: 2px 2px 0 #000; color:white; margin-bottom:10px;">🗺️ 足あとマップ</h2>
             <div id="map-container" style="width:100%; height:70vh; border-radius:15px; border:4px solid #fff; box-shadow:0 4px 10px rgba(0,0,0,0.3);"></div>
