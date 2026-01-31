@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v320.0: Storage対応・高画質化版) ---
+// --- js/camera-service.js (v326.0: レアリティ対応版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -94,7 +94,6 @@ window.toggleTreasureCamera = function() {
 };
 
 window.createTreasureImage = function(sourceCanvas) {
-    // ★修正: Storage使用のため、高画質・高解像度に戻す
     const OUTPUT_SIZE = 640; 
     const canvas = document.createElement('canvas');
     canvas.width = OUTPUT_SIZE;
@@ -122,11 +121,10 @@ window.createTreasureImage = function(sourceCanvas) {
     ctx.stroke();
     ctx.restore();
     
-    // ★修正: 画質も0.9に戻す
     return canvas.toDataURL('image/jpeg', 0.9);
 };
 
-// GPS取得ヘルパー (フォールバック用: 高精度)
+// GPS取得ヘルパー
 const getLocation = () => {
     return new Promise((resolve) => {
         if (!navigator.geolocation) return resolve(null);
@@ -134,7 +132,7 @@ const getLocation = () => {
         const timeoutId = setTimeout(() => {
             console.warn("GPS Timeout (Fallback)");
             resolve(null);
-        }, 10000); // 10秒待つ
+        }, 10000); 
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -150,7 +148,7 @@ const getLocation = () => {
                 console.warn("GPS Error (Fallback):", err); 
                 resolve(null); 
             },
-            { timeout: 10000, enableHighAccuracy: true } // ★高精度
+            { timeout: 10000, enableHighAccuracy: true }
         );
     });
 };
@@ -175,17 +173,14 @@ window.captureAndIdentifyItem = async function() {
         btn.disabled = true;
     }
 
-    // 位置情報の精度チェックと待機
     let locationData = window.currentLocation;
     
-    // 位置情報がない、または精度が悪い(1000m以上ズレている)場合は、少し待ってみる
     if (!locationData || locationData.accuracy > 1000) {
         console.log("位置情報の精度向上を待機中...");
         if(typeof window.updateNellMessage === 'function') {
             window.updateNellMessage("ん？詳しい場所を調べてるにゃ…ちょっと待ってにゃ…", "thinking", false, true);
         }
         
-        // 3秒間だけ待つループ（0.5秒ごとにチェック）
         for (let i = 0; i < 6; i++) {
             await new Promise(r => setTimeout(r, 500));
             if (window.currentLocation && window.currentLocation.accuracy <= 1000) {
@@ -195,7 +190,6 @@ window.captureAndIdentifyItem = async function() {
         }
     }
     
-    // 最終的に取得できたデータを使用 (待ってもダメならあるもので行く)
     locationData = window.currentLocation;
 
     const canvas = document.createElement('canvas');
@@ -215,7 +209,6 @@ window.captureAndIdentifyItem = async function() {
         window.updateNellMessage("ん？何を見つけたのかにゃ…？", "thinking", false, true);
     }
 
-    // 位置情報がまだnullならフォールバックを実行
     if (!locationData) {
         console.log("Using fallback GPS...");
         try {
@@ -234,8 +227,8 @@ window.captureAndIdentifyItem = async function() {
             body: JSON.stringify({ 
                 image: base64Data,
                 name: currentUser ? currentUser.name : "生徒",
-                location: locationData, // 位置情報
-                address: window.currentAddress // 詳細住所
+                location: locationData, 
+                address: window.currentAddress
             })
         });
 
@@ -262,11 +255,10 @@ window.captureAndIdentifyItem = async function() {
         if (data.itemName && window.NellMemory) {
             const description = data.description || "（解説はないにゃ）";
             const realDescription = data.realDescription || "";
-            // locationData を渡す
-            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description, realDescription, locationData);
+            // ★修正: レアリティ(data.rarity)を保存関数に渡す
+            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description, realDescription, locationData, data.rarity || 1);
             
             const notif = document.createElement('div');
-            // ふりがなを除去して表示
             const cleanName = data.itemName.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
             notif.innerText = `📖 図鑑に「${cleanName}」を登録したにゃ！`;
             notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3);";
