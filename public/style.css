@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v307.0: レアリティスタイル追加版) --- */
+/* --- style.css (完全版 v308.0: 肉球画像対応版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1098,14 +1098,22 @@ button { font-family: inherit; }
     border-color: #ffeb3b;
 }
 
-/* ★新: レアリティマーク */
+/* ★新: レアリティマーク画像 (肉球) */
 .rarity-mark {
-    font-size: 0.8rem;
-    letter-spacing: -2px;
-    text-shadow: 1px 1px 0 #fff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
 }
-.rarity-1 { color: #bdbdbd; }
-.rarity-2 { color: #81c784; }
-.rarity-3 { color: #2196f3; }
-.rarity-4 { color: #ff9800; }
-.rarity-5 { color: #e91e63; text-shadow: 0 0 5px #ff80ab; animation: pulse 1s infinite; }
+.rarity-img {
+    width: 16px; 
+    height: 16px; 
+    object-fit: contain;
+    /* 色調整が必要ならfilterを使うが、画像そのものを使うなら不要 */
+    filter: drop-shadow(1px 1px 0px rgba(255, 255, 255, 0.8));
+}
+
+/* アニメーション用（レア度高） */
+.rarity-5 .rarity-img {
+    animation: bounce 1s infinite alternate;
+}
