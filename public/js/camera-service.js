@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v309.0: 位置情報保存対応版) ---
+// --- js/camera-service.js (v320.0: Storage対応・高画質化版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -94,7 +94,8 @@ window.toggleTreasureCamera = function() {
 };
 
 window.createTreasureImage = function(sourceCanvas) {
-    const OUTPUT_SIZE = 320; 
+    // ★修正: Storage使用のため、高画質・高解像度に戻す
+    const OUTPUT_SIZE = 640; 
     const canvas = document.createElement('canvas');
     canvas.width = OUTPUT_SIZE;
     canvas.height = OUTPUT_SIZE;
@@ -117,16 +118,12 @@ window.createTreasureImage = function(sourceCanvas) {
     ctx.beginPath();
     ctx.arc(OUTPUT_SIZE/2, OUTPUT_SIZE/2, OUTPUT_SIZE/2 - 5, 0, Math.PI * 2);
     ctx.strokeStyle = '#ffd700'; 
-    ctx.lineWidth = 8;
+    ctx.lineWidth = 10;
     ctx.stroke();
     ctx.restore();
     
-    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.beginPath();
-    ctx.arc(OUTPUT_SIZE*0.2, OUTPUT_SIZE*0.2, OUTPUT_SIZE*0.05, 0, Math.PI*2);
-    ctx.fill();
-    
-    return canvas.toDataURL('image/jpeg', 0.8);
+    // ★修正: 画質も0.9に戻す
+    return canvas.toDataURL('image/jpeg', 0.9);
 };
 
 // GPS取得ヘルパー (フォールバック用: 高精度)
@@ -178,7 +175,7 @@ window.captureAndIdentifyItem = async function() {
         btn.disabled = true;
     }
 
-    // ★追加: 位置情報の精度チェックと待機
+    // 位置情報の精度チェックと待機
     let locationData = window.currentLocation;
     
     // 位置情報がない、または精度が悪い(1000m以上ズレている)場合は、少し待ってみる
@@ -265,7 +262,7 @@ window.captureAndIdentifyItem = async function() {
         if (data.itemName && window.NellMemory) {
             const description = data.description || "（解説はないにゃ）";
             const realDescription = data.realDescription || "";
-            // ★修正: locationData を渡す
+            // locationData を渡す
             await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description, realDescription, locationData);
             
             const notif = document.createElement('div');
