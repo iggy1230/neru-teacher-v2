@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v323.0: プロフィール更新軽量化版) ---
+// --- js/state/memory.js (v326.0: レアリティ保存対応版) ---
 
 (function(global) {
     const Memory = {};
@@ -68,13 +68,9 @@
         }
     };
 
-    // ★修正: 重たいcollectionデータを除外してサーバーに送り、軽量化する
     Memory.updateProfileFromChat = async function(userId, chatLog) {
         if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
-        
-        // 図鑑データ(collection)はAIによるプロフィール分析には不要かつ重いため、
-        // 一時的に退避させてサーバーには送らない
         const { collection, ...profileForAnalysis } = currentProfile;
         
         try {
@@ -89,8 +85,6 @@
                 let newProfile = data.profile || data; 
                 if (Array.isArray(newProfile)) newProfile = newProfile[0];
                 
-                // サーバーから戻ってきた新しいプロフィール情報に、
-                // 退避しておいた図鑑データ(collection)を戻す
                 const updatedProfile = {
                     ...newProfile,
                     collection: collection || [] 
@@ -122,8 +116,9 @@
         return context;
     };
 
-    Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null) {
-        console.log(`[Memory] addToCollection: ${itemName}`);
+    // ★修正: rarity 引数を追加
+    Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null, rarity = 1) {
+        console.log(`[Memory] addToCollection: ${itemName}, Rarity: ${rarity}`);
         try {
             const profile = await Memory.getUserProfile(userId);
             if (!Array.isArray(profile.collection)) profile.collection = [];
@@ -149,7 +144,8 @@
                 date: new Date().toISOString(),
                 description: description,
                 realDescription: realDescription,
-                location: location
+                location: location,
+                rarity: rarity // ★保存
             };
 
             profile.collection.unshift(newItem); 
