@@ -1,4 +1,4 @@
-// --- server.js (完全版 v321.0: ふりがな過剰抑制・表示最適化版) ---
+// --- server.js (完全版 v322.0: プロフィール会話強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -84,14 +84,8 @@ app.post('/synthesize', async (req, res) => {
         if (!ttsClient) throw new Error("TTS Not Ready");
         const { text, mood } = req.body;
         
-        // 読み上げ用テキストのクリーニング
         let speakText = text;
-
-        // 1. マークダウン記号 (*, **, #) を削除
         speakText = speakText.replace(/[\*#_`~]/g, "");
-
-        // 2. 「漢字(ふりがな)」および「英単語(ふりがな)」を「ふりがな」のみに置換 (二重読み防止)
-        // 例: "筑後市(ちくごし)" -> "ちくごし", "iPhone(アイフォーン)" -> "アイフォーン"
         speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
 
         let rate = "1.1"; let pitch = "+2st";
@@ -126,6 +120,7 @@ app.post('/update-memory', async (req, res) => {
         【重要】
         - 出力は純粋なJSONのみにしてください。
         - 図鑑データ(collection)は入力のまま維持してください。
+        - **会話から「苦手なもの」「嫌いなこと」が見つかれば weaknesses に追加してください。**
 
         【現在のプロフィール】
         ${JSON.stringify(currentProfile)}
@@ -165,11 +160,6 @@ app.post('/update-memory', async (req, res) => {
         res.json(newProfile);
 
     } catch (error) {
-        if (error.message && (error.message.includes('429') || error.message.includes('Quota'))) {
-            console.warn("⚠️ Memory Update Skipped (Google API Busy)");
-        } else {
-            console.error("Memory Update Error:", error.message);
-        }
         res.status(200).json(req.body.currentProfile || {});
     }
 });
@@ -351,7 +341,7 @@ app.post('/identify-item', async (req, res) => {
 // --- HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        let { text, name, image, history, location, address } = req.body;
+        let { text, name, image, history, location, address, missingInfo } = req.body;
         
         if (address) console.log(`[Chat住所] ${address}`);
         if (location) console.log(`[ChatGPS] ${location.lat}, ${location.lon}`);
@@ -368,6 +358,21 @@ app.post('/chat-dialogue', async (req, res) => {
                 contextPrompt += `${speaker}: ${h.text}\n`;
             });
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
+        }
+
+        // ★追加: 未登録情報がある場合のプロンプト注入
+        let missingInfoPrompt = "";
+        if (missingInfo && missingInfo.length > 0) {
+            const items = missingInfo.join("、");
+            missingInfoPrompt = `
+            【重要ミッション】
+            現在、ユーザーのプロフィールで以下の情報が不足しています：
+            **${items}**
+            
+            今回の会話の中で、**自然な流れで**これらの情報を聞き出すような質問を投げかけてください。
+            唐突すぎず、会話の文脈に沿って聞いてください。
+            （例：「そういえば、誕生日はいつにゃ？」「好きな食べ物は何にゃ？」など）
+            `;
         }
 
         let locationPrompt = "";
@@ -415,6 +420,8 @@ app.post('/chat-dialogue', async (req, res) => {
         - **相手を呼ぶときは必ず「${name}さん」と呼んでください。**
         - **表記ルール**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください（例: 狩野英孝(かのえいこう)、筑後市(ちくごし)、iPhone(アイフォーン)）。**一般的な簡単な漢字（例: 有名、僕、歌、面白い、好き など）には絶対にふりがなを振らないでください。**
         
+        ${missingInfoPrompt}
+
         ${locationPrompt}
 
         ${contextPrompt}
