@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v309.0: ログ一括削除機能追加版) ---
+// --- js/ui/ui.js (完全版 v310.0: プロフィール編集・削除機能追加版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -470,10 +470,11 @@ function renderProfileView(container, profile) {
         return;
     }
 
-    const createSection = (title, items, isArray = false) => {
+    // ★修正: 削除ボタン付きの項目作成関数
+    const createSection = (title, items, categoryName, isArray = false) => {
         const div = document.createElement('div');
         div.className = 'profile-section';
-        div.style.cssText = "background: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);";
+        div.style.cssText = "background: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); position:relative;";
         
         const h4 = document.createElement('h4');
         h4.className = 'profile-title';
@@ -489,7 +490,7 @@ function renderProfileView(container, profile) {
                 items.forEach(item => {
                     const tag = document.createElement('span');
                     tag.className = 'profile-tag';
-                    tag.innerText = window.cleanDisplayString(item);
+                    tag.innerHTML = `${window.cleanDisplayString(item)} <button onclick="deleteProfileItem('${categoryName}', '${item}')" class="profile-tag-delete">×</button>`;
                     tagsDiv.appendChild(tag);
                 });
             }
@@ -499,30 +500,38 @@ function renderProfileView(container, profile) {
             p.style.fontSize = '0.9rem';
             p.style.margin = '0';
             p.style.paddingLeft = '5px';
-            p.innerText = items ? window.cleanDisplayString(items) : '(まだ教えてもらってないにゃ)';
+            p.style.display = 'flex';
+            p.style.justifyContent = 'space-between';
+            
+            const textContent = items ? window.cleanDisplayString(items) : '(まだ教えてもらってないにゃ)';
+            let deleteBtn = '';
+            if (items) {
+                deleteBtn = `<button onclick="deleteProfileItem('${categoryName}', '')" class="profile-tag-delete" style="margin-left:10px;">×</button>`;
+            }
+            p.innerHTML = `<span>${textContent}</span>${deleteBtn}`;
             div.appendChild(p);
         }
         return div;
     };
 
-    container.appendChild(createSection('👤 あだ名', profile.nickname));
-    container.appendChild(createSection('🎂 お誕生日', profile.birthday));
+    container.appendChild(createSection('👤 あだ名', profile.nickname, 'nickname'));
+    container.appendChild(createSection('🎂 お誕生日', profile.birthday, 'birthday'));
     
     const likesContainer = document.createElement('div');
     likesContainer.style.display = "flex";
     likesContainer.style.gap = "5px";
     
-    const likesSec = createSection('❤️ 好きなもの', profile.likes, true);
+    const likesSec = createSection('❤️ 好きなもの', profile.likes, 'likes', true);
     likesSec.style.flex = "1";
     
-    const dislikesSec = createSection('💔 苦手なもの', profile.weaknesses, true);
+    const dislikesSec = createSection('💔 苦手なもの', profile.weaknesses, 'weaknesses', true);
     dislikesSec.style.flex = "1";
     
     likesContainer.appendChild(likesSec);
     likesContainer.appendChild(dislikesSec);
     container.appendChild(likesContainer);
 
-    container.appendChild(createSection('🏆 頑張ったこと', profile.achievements, true));
+    container.appendChild(createSection('🏆 頑張ったこと', profile.achievements, 'achievements', true));
     
     if (profile.last_topic) {
          const div = document.createElement('div');
@@ -561,7 +570,20 @@ function renderProfileView(container, profile) {
     }
 }
 
-// ★修正: ログ表示に削除用チェックボックスとボタンを追加
+// ★追加: プロフィール項目削除処理
+window.deleteProfileItem = async function(category, itemContent) {
+    if (!currentUser) return;
+    if (!confirm("この情報を忘れさせるにゃ？")) return;
+    
+    if (window.NellMemory) {
+        await window.NellMemory.deleteProfileItem(currentUser.id, category, itemContent);
+        // 再描画
+        const container = document.getElementById('profile-container');
+        const profile = await window.NellMemory.getUserProfile(currentUser.id);
+        renderProfileView(container, profile);
+    }
+};
+
 function renderLogView(container) {
     container.innerHTML = '';
     const memoryKey = `nell_raw_chat_log_${currentUser.id}`;
@@ -575,7 +597,6 @@ function renderLogView(container) {
         return;
     }
 
-    // 削除ボタンエリア
     const ctrlDiv = document.createElement('div');
     ctrlDiv.style.cssText = "margin-bottom:10px; text-align:right;";
     ctrlDiv.innerHTML = `
@@ -584,9 +605,7 @@ function renderLogView(container) {
     `;
     container.appendChild(ctrlDiv);
 
-    // ログリスト
     [...history].reverse().forEach((item, index) => {
-        // 元の配列でのインデックスを計算 (history.length - 1 - index)
         const originalIndex = history.length - 1 - index;
         
         const div = document.createElement('div');
@@ -620,7 +639,6 @@ function renderLogView(container) {
     });
 }
 
-// ★追加: ログ削除機能
 window.deleteSelectedLogs = function() {
     if (!currentUser) return;
     const checkboxes = document.querySelectorAll('.log-delete-checkbox:checked');
@@ -628,11 +646,10 @@ window.deleteSelectedLogs = function() {
     
     if (!confirm(`${checkboxes.length}件の会話ログを削除するにゃ？`)) return;
     
-    const indicesToDelete = Array.from(checkboxes).map(cb => parseInt(cb.value)).sort((a, b) => b - a); // 降順にソート
+    const indicesToDelete = Array.from(checkboxes).map(cb => parseInt(cb.value)).sort((a, b) => b - a); 
     
     if (window.NellMemory) {
         window.NellMemory.deleteRawChatLogs(currentUser.id, indicesToDelete);
-        // 再描画
         const container = document.getElementById('memory-list-container');
         renderLogView(container);
     }
@@ -741,7 +758,6 @@ window.sendHttpText = async function(context) {
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
-    // ★追加: 未登録情報の検出ロジック
     let missingInfo = [];
     if (window.NellMemory && currentUser) {
         try {
@@ -764,7 +780,7 @@ window.sendHttpText = async function(context) {
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
                 address: window.currentAddress,
-                missingInfo: missingInfo // ★サーバーへ送信
+                missingInfo: missingInfo 
             })
         });
 
