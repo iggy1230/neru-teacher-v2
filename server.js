@@ -1,4 +1,4 @@
-// --- server.js (完全版 v323.0: プロフィール更新強化・積極会話版) ---
+// --- server.js (完全版 v324.0: 記憶更新強化・要約機能付き) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -104,11 +104,10 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update ---
+// --- Memory Update (強化版) ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // MODEL_FASTを使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -116,35 +115,39 @@ app.post('/update-memory', async (req, res) => {
 
         const prompt = `
         あなたは生徒の長期記憶を管理するAIです。
-        以下の「現在のプロフィール」と「直近の会話ログ」を統合し、最新のプロフィールJSONを作成してください。
+        以下の「現在のプロフィール」と「直近の会話ログ」を分析し、2つのタスクを行ってください。
 
-        【重要指示】
-        1. **情報の抽出**: 会話ログの中に、誕生日、好きなもの、苦手なもの、趣味、最近したこと等が含まれていれば、**必ず**プロフィールに追加・更新してください。
-        2. **誕生日**: 「誕生日は〇月〇日」といった発言があれば、必ず \`birthday\` フィールドを更新してください。
-        3. **維持**: 会話ログに新しい情報がない項目は、現在のプロフィールの内容をそのまま維持してください。消さないでください。
-        4. **出力**: 純粋なJSONのみを出力してください。
+        【タスク1: プロフィールの更新】
+        会話ログから新しい情報を抽出し、プロフィールを更新してください。
+        - **誕生日**: 会話の中で日付（〇月〇日）が出てきたら、それが誕生日である可能性が高いです。文脈を確認し、誕生日であれば必ず \`birthday\` を更新してください。（形式: 〇月〇日）
+        - **好き・嫌い**: 新しい「好きなもの」「苦手なもの」があればリストに追加してください。
+        - **維持**: 情報がない項目は、元のデータをそのまま維持してください。
 
-        【現在のプロフィール】
-        ${JSON.stringify(currentProfile)}
+        【タスク2: 会話の要約】
+        今回の会話の内容を、**「○○について話した」**や**「○○を勉強した」**のように、一文で簡潔に要約してください。これを \`summary_text\` として出力してください。
 
-        【直近の会話ログ】
-        ${chatLog}
+        【入力データ】
+        現在のプロフィール: ${JSON.stringify(currentProfile)}
+        会話ログ: ${chatLog}
 
         【出力フォーマット (JSON)】
         {
-            "nickname": "...",
-            "birthday": "...",
-            "likes": ["..."],
-            "weaknesses": ["..."],
-            "achievements": ["..."],
-            "last_topic": "..."
+            "profile": {
+                "nickname": "...",
+                "birthday": "...",
+                "likes": ["..."],
+                "weaknesses": ["..."],
+                "achievements": ["..."],
+                "last_topic": "..."
+            },
+            "summary_text": "会話の要約文"
         }
         `;
 
         const result = await model.generateContent(prompt);
         const responseText = result.response.text();
         
-        let newProfile;
+        let output;
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             const firstBrace = cleanText.indexOf('{');
@@ -152,18 +155,26 @@ app.post('/update-memory', async (req, res) => {
             if (firstBrace !== -1 && lastBrace !== -1) {
                 cleanText = cleanText.substring(firstBrace, lastBrace + 1);
             }
-            newProfile = JSON.parse(cleanText);
+            output = JSON.parse(cleanText);
         } catch (e) {
             console.warn("Memory JSON Parse Error. Using fallback.");
-            return res.json(currentProfile);
+            return res.json({ profile: currentProfile, summary_text: "（更新なし）" });
         }
 
-        if (Array.isArray(newProfile)) newProfile = newProfile[0];
-        res.json(newProfile);
+        // 配列で返ってきた場合の安全策
+        if (Array.isArray(output)) output = output[0];
+        
+        // 構造チェック
+        if (!output.profile) {
+            // 古いフォーマットで返ってきた場合の互換性
+            output = { profile: output, summary_text: "（会話終了）" };
+        }
+
+        res.json(output);
 
     } catch (error) {
         console.error("Memory Update Error:", error);
-        res.status(200).json(req.body.currentProfile || {});
+        res.status(200).json({ profile: req.body.currentProfile || {}, summary_text: "" });
     }
 });
 
@@ -357,10 +368,8 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
-        // ★強化: プロフィール補完のための積極的な質問ロジック
         let activeQuestionPrompt = "";
         if (missingInfo && missingInfo.length > 0) {
-            // ランダムに1つ選んで質問候補にする
             const targetInfo = missingInfo[Math.floor(Math.random() * missingInfo.length)];
             let specificQuestion = "";
             switch(targetInfo) {
@@ -381,7 +390,6 @@ app.post('/chat-dialogue', async (req, res) => {
             `;
         }
 
-        // プロフィール情報を活かした話題振り指示
         const profileUsagePrompt = `
         【記憶の活用】
         もし会話が途切れそうなら、これまでの会話履歴やプロフィールにある「好きなもの」や「最近の話題」に関連した話を振ってください。
