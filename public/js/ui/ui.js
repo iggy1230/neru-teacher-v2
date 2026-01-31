@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v307.0: 表示整形強化版2) ---
+// --- js/ui/ui.js (完全版 v308.0: プロフィールUI強化版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -65,7 +65,6 @@ window.cleanDisplayString = function(text) {
     // 1. マークダウンの太字(**)などを削除
     clean = clean.replace(/\*\*/g, "");
     // 2. 「漢字/英単語(ふりがな)」のふりがな部分を削除して、元の単語だけ残す
-    // ★修正: スペースや長音記号も含む広範囲なマッチングに変更して取りこぼしを防ぐ
     clean = clean.replace(/[\(（][ぁ-んァ-ンー\s　]+[\)）]/g, "");
     return clean;
 };
@@ -221,7 +220,7 @@ window.showCollection = async function() {
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;">
@@ -254,7 +253,6 @@ window.showCollection = async function() {
         img.style.cssText = "width:100%; height:auto; max-height:75%; object-fit:contain; margin-bottom:5px; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));";
         
         const name = document.createElement('div');
-        // ★修正: 図鑑リスト表示でもふりがなやマークダウンを隠す
         name.innerText = window.cleanDisplayString(item.name);
         name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;";
 
@@ -270,7 +268,6 @@ window.showCollectionDetail = function(item, index) {
 
     const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
     
-    // ★修正: 詳細表示でもふりがなやマークダウンを隠す
     const displayItemName = window.cleanDisplayString(item.name);
     const description = window.cleanDisplayString(item.description || "（ネル先生の解説はまだないみたいだにゃ…）");
     const realDescription = window.cleanDisplayString(item.realDescription || "（まだ情報がないみたいだにゃ…）");
@@ -405,7 +402,6 @@ window.renderMapMarkers = async function() {
                 popupAnchor: [0, -30]
             });
             
-            // ★修正: マップの吹き出しでもふりがなを隠す
             const displayName = window.cleanDisplayString(item.name);
             const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
 
@@ -428,7 +424,7 @@ window.renderMapMarkers = async function() {
 };
 
 // ==========================================
-// ★ 記憶管理
+// ★ 記憶管理 (プロフィール)
 // ==========================================
 
 window.openMemoryManager = function() {
@@ -467,6 +463,7 @@ window.switchMemoryTab = async function(tab) {
     }
 };
 
+// ★修正: プロフィールビューの大幅強化
 function renderProfileView(container, profile) {
     container.innerHTML = '';
     if (!profile) {
@@ -477,6 +474,8 @@ function renderProfileView(container, profile) {
     const createSection = (title, items, isArray = false) => {
         const div = document.createElement('div');
         div.className = 'profile-section';
+        div.style.cssText = "background: white; padding: 10px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);";
+        
         const h4 = document.createElement('h4');
         h4.className = 'profile-title';
         h4.innerText = title;
@@ -486,12 +485,12 @@ function renderProfileView(container, profile) {
             const tagsDiv = document.createElement('div');
             tagsDiv.className = 'profile-tags';
             if (!items || items.length === 0) {
-                tagsDiv.innerHTML = '<span style="color:#aaa; font-size:0.8rem;">(まだないにゃ)</span>';
+                tagsDiv.innerHTML = '<span style="color:#aaa; font-size:0.8rem;">(まだ教えてもらってないにゃ)</span>';
             } else {
                 items.forEach(item => {
                     const tag = document.createElement('span');
                     tag.className = 'profile-tag';
-                    tag.innerText = item;
+                    tag.innerText = window.cleanDisplayString(item);
                     tagsDiv.appendChild(tag);
                 });
             }
@@ -501,23 +500,67 @@ function renderProfileView(container, profile) {
             p.style.fontSize = '0.9rem';
             p.style.margin = '0';
             p.style.paddingLeft = '5px';
-            p.innerText = items || '(まだわかんないにゃ)';
+            p.innerText = items ? window.cleanDisplayString(items) : '(まだ教えてもらってないにゃ)';
             div.appendChild(p);
         }
         return div;
     };
 
-    container.appendChild(createSection('あだ名', profile.nickname));
-    container.appendChild(createSection('お誕生日', profile.birthday));
-    container.appendChild(createSection('好きなもの', profile.likes, true));
-    container.appendChild(createSection('苦手なこと', profile.weaknesses, true));
-    container.appendChild(createSection('頑張ったこと', profile.achievements, true));
+    container.appendChild(createSection('👤 あだ名', profile.nickname));
+    container.appendChild(createSection('🎂 お誕生日', profile.birthday));
+    
+    // 好きなもの・苦手なもの
+    const likesContainer = document.createElement('div');
+    likesContainer.style.display = "flex";
+    likesContainer.style.gap = "5px";
+    
+    const likesSec = createSection('❤️ 好きなもの', profile.likes, true);
+    likesSec.style.flex = "1";
+    
+    const dislikesSec = createSection('💔 苦手なもの', profile.weaknesses, true);
+    dislikesSec.style.flex = "1";
+    
+    likesContainer.appendChild(likesSec);
+    likesContainer.appendChild(dislikesSec);
+    container.appendChild(likesContainer);
+
+    container.appendChild(createSection('🏆 頑張ったこと', profile.achievements, true));
     
     if (profile.last_topic) {
          const div = document.createElement('div');
          div.className = 'profile-section';
-         div.innerHTML = `<h4 class="profile-title">最後のお話</h4><p style="font-size:0.8rem; color:#666;">${profile.last_topic}</p>`;
+         div.style.cssText = "background: #e3f2fd; padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #90caf9;";
+         div.innerHTML = `<h4 class="profile-title" style="color:#1565c0;">💬 最後のお話</h4><p style="font-size:0.8rem; color:#333;">${window.cleanDisplayString(profile.last_topic)}</p>`;
          container.appendChild(div);
+    }
+
+    // 最近の図鑑アイテム
+    if (profile.collection && profile.collection.length > 0) {
+        const recents = profile.collection.slice(0, 3);
+        const div = document.createElement('div');
+        div.className = 'profile-section';
+        div.style.cssText = "background: #fff3e0; padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #ffe0b2;";
+        div.innerHTML = `<h4 class="profile-title" style="color:#e65100;">📍 最近見つけたもの</h4>`;
+        
+        const listDiv = document.createElement('div');
+        listDiv.style.display = "flex";
+        listDiv.style.gap = "8px";
+        listDiv.style.overflowX = "auto";
+        listDiv.style.paddingBottom = "5px";
+        
+        recents.forEach(item => {
+            const itemDiv = document.createElement('div');
+            itemDiv.style.cssText = "flex-shrink: 0; width: 80px; text-align: center; font-size: 0.7rem;";
+            const cleanName = window.cleanDisplayString(item.name);
+            itemDiv.innerHTML = `
+                <img src="${item.image}" style="width:50px; height:50px; object-fit:cover; border-radius:8px; border:2px solid #ffb74d;">
+                <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; margin-top:2px;">${cleanName}</div>
+            `;
+            listDiv.appendChild(itemDiv);
+        });
+        
+        div.appendChild(listDiv);
+        container.appendChild(div);
     }
 }
 
@@ -554,7 +597,7 @@ function renderLogView(container) {
                     <span>${roleName}</span>
                     <span style="color:#ccc; font-weight:normal; font-size:0.7rem;">${timeStr}</span>
                 </div>
-                <div class="memory-text" style="margin-top:2px;">${item.text}</div>
+                <div class="memory-text" style="margin-top:2px;">${window.cleanDisplayString(item.text)}</div>
             </div>
         `;
         container.appendChild(div);
@@ -582,17 +625,13 @@ document.addEventListener('click', (e) => {
 // ★ ログ管理・セッション履歴・UI更新
 // ==========================================
 
-// ★修正: 画面表示用テキスト（ふりがな削除）
 window.addLogItem = function(role, text) {
     const container = document.getElementById('log-content');
     if (!container) return;
     const div = document.createElement('div');
     div.className = `log-item log-${role}`;
     const name = role === 'user' ? (currentUser ? currentUser.name : 'あなた') : 'ネル先生';
-    
-    // ★修正: Helper関数を使ってクリーニング
     const displayText = window.cleanDisplayString(text);
-
     div.innerHTML = `<span class="log-role">${name}:</span><span>${displayText}</span>`;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
@@ -616,9 +655,7 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const targetId = isGameHidden ? 'nell-text' : 'nell-text-game';
     const el = document.getElementById(targetId);
     
-    // --- 表示用テキストのクリーニング ---
     let cleanText = t || "";
-
     cleanText = cleanText.split('\n').filter(line => {
         const trimmed = line.trim();
         if (!trimmed) return true;
@@ -635,7 +672,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     cleanText = cleanText.replace(/[\(（【\[].*?[\)）】\]]\s*$/gm, "");
     cleanText = cleanText.trim();
     
-    // ★修正: Helper関数を使ってクリーニング（画面表示用）
     const displayText = window.cleanDisplayString(cleanText);
     
     if (el) el.innerText = displayText;
@@ -644,8 +680,6 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     
     if (saveToMemory) { window.saveToNellMemory('nell', cleanText); }
     
-    // ★修正: 音声合成には元のテキスト（ふりがな付き）を渡す
-    // サーバー側で「漢字(ふりがな)」を「ふりがな」に置換して発音するため
     if (speak && typeof speakNell === 'function') {
         let textForSpeech = cleanText.replace(/【.*?】/g, "").replace(/\[.*?\]/g, "").trim();
         textForSpeech = textForSpeech.replace(/🐾/g, "");
@@ -673,6 +707,17 @@ window.sendHttpText = async function(context) {
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
+    // ★追加: 未登録情報の検出ロジック
+    let missingInfo = [];
+    if (window.NellMemory && currentUser) {
+        try {
+            const profile = await window.NellMemory.getUserProfile(currentUser.id);
+            if (!profile.birthday) missingInfo.push("誕生日");
+            if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
+            if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの・嫌いなこと");
+        } catch(e) {}
+    }
+
     try {
         window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
         
@@ -684,7 +729,8 @@ window.sendHttpText = async function(context) {
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
-                address: window.currentAddress
+                address: window.currentAddress,
+                missingInfo: missingInfo // ★サーバーへ送信
             })
         });
 
