@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v306.0: マップスタイル追加版) --- */
+/* --- style.css (完全版 v307.0: レアリティスタイル追加版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1027,13 +1027,14 @@ button { font-family: inherit; }
     font-size: 1rem;
     line-height: 1;
     padding: 0;
+    margin-left: 5px;
 }
 
 .settings-btn-fixed {
     display: none !important;
 }
 
-/* 新: 音量コントロール固定表示 */
+/* 音量コントロール固定表示 */
 .volume-controls-fixed {
     position: fixed; 
     top: 10px; 
@@ -1096,3 +1097,15 @@ button { font-family: inherit; }
     z-index: 1000 !important;
     border-color: #ffeb3b;
 }
+
+/* ★新: レアリティマーク */
+.rarity-mark {
+    font-size: 0.8rem;
+    letter-spacing: -2px;
+    text-shadow: 1px 1px 0 #fff;
+}
+.rarity-1 { color: #bdbdbd; }
+.rarity-2 { color: #81c784; }
+.rarity-3 { color: #2196f3; }
+.rarity-4 { color: #ff9800; }
+.rarity-5 { color: #e91e63; text-shadow: 0 0 5px #ff80ab; animation: pulse 1s infinite; }
