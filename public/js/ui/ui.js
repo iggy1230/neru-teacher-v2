@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v305.0: 足あとマップ実装版) ---
+// --- js/ui/ui.js (完全版 v306.0: 表示整形強化版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -54,6 +54,20 @@ window.applyVolumeToAll = function() {
         // 現在時刻で即座に変更
         window.masterGainNode.gain.setValueAtTime(targetVol, window.audioCtx.currentTime);
     }
+};
+
+// ==========================================
+// ★ Helper: 表示用テキストクリーニング
+// ==========================================
+window.cleanDisplayString = function(text) {
+    if (!text) return "";
+    let clean = text;
+    // 1. マークダウンの太字(**)などを削除
+    clean = clean.replace(/\*\*/g, "");
+    // 2. 「漢字/英単語(ふりがな)」のふりがな部分を削除して、元の単語だけ残す
+    // 例: "iPhone(アイフォーン)" -> "iPhone", "筑後市(ちくごし)" -> "筑後市"
+    clean = clean.replace(/[\(（]([ぁ-んァ-ンー]+)[\)）]/g, "");
+    return clean;
 };
 
 // ==========================================
@@ -240,8 +254,8 @@ window.showCollection = async function() {
         img.style.cssText = "width:100%; height:auto; max-height:75%; object-fit:contain; margin-bottom:5px; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));";
         
         const name = document.createElement('div');
-        // 図鑑リスト表示でもふりがなを隠す
-        name.innerText = item.name.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+        // ★修正: 図鑑リスト表示でもふりがなやマークダウンを隠す
+        name.innerText = window.cleanDisplayString(item.name);
         name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;";
 
         div.appendChild(img);
@@ -256,10 +270,10 @@ window.showCollectionDetail = function(item, index) {
 
     const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
     
-    // 詳細表示でもふりがなを隠す
-    const displayItemName = item.name.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
-    const description = (item.description || "（ネル先生の解説はまだないみたいだにゃ…）").replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
-    const realDescription = (item.realDescription || "（まだ情報がないみたいだにゃ…）").replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+    // ★修正: 詳細表示でもふりがなやマークダウンを隠す
+    const displayItemName = window.cleanDisplayString(item.name);
+    const description = window.cleanDisplayString(item.description || "（ネル先生の解説はまだないみたいだにゃ…）");
+    const realDescription = window.cleanDisplayString(item.realDescription || "（まだ情報がないみたいだにゃ…）");
 
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
@@ -366,7 +380,7 @@ window.showMap = async function() {
 window.renderMapMarkers = async function() {
     if (!window.mapInstance || !window.NellMemory || !currentUser) return;
     
-    // 既存マーカーを削除 (レイヤーグループを使うのが一般的だが、簡易的に全削除)
+    // 既存マーカーを削除
     window.mapInstance.eachLayer((layer) => {
         if (layer instanceof L.Marker) {
             window.mapInstance.removeLayer(layer);
@@ -391,8 +405,8 @@ window.renderMapMarkers = async function() {
                 popupAnchor: [0, -30]
             });
             
-            // ふりがな除去
-            const displayName = item.name.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+            // ★修正: マップの吹き出しでもふりがなを隠す
+            const displayName = window.cleanDisplayString(item.name);
             const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
 
             const marker = L.marker([item.location.lat, item.location.lon], { icon: icon }).addTo(window.mapInstance);
@@ -568,8 +582,7 @@ document.addEventListener('click', (e) => {
 // ★ ログ管理・セッション履歴・UI更新
 // ==========================================
 
-// ★修正: サーバーから送られた「筑後市(ちくごし)」などのふりがな付きテキストを、
-// 表示用は「筑後市」、音声用は「筑後市(ちくごし)」（サーバー側で読み上げ時にふりがなのみ化）に分ける処理を追加
+// ★修正: 画面表示用テキスト（ふりがな削除）
 window.addLogItem = function(role, text) {
     const container = document.getElementById('log-content');
     if (!container) return;
@@ -577,8 +590,8 @@ window.addLogItem = function(role, text) {
     div.className = `log-item log-${role}`;
     const name = role === 'user' ? (currentUser ? currentUser.name : 'あなた') : 'ネル先生';
     
-    // 表示用に「漢字(ふりがな)」のふりがな部分を削除
-    const displayText = text.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+    // ★修正: Helper関数を使ってクリーニング
+    const displayText = window.cleanDisplayString(text);
 
     div.innerHTML = `<span class="log-role">${name}:</span><span>${displayText}</span>`;
     container.appendChild(div);
@@ -622,8 +635,8 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     cleanText = cleanText.replace(/[\(（【\[].*?[\)）】\]]\s*$/gm, "");
     cleanText = cleanText.trim();
     
-    // ★修正: 画面表示用テキスト（ふりがな削除）
-    const displayText = cleanText.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+    // ★修正: Helper関数を使ってクリーニング（画面表示用）
+    const displayText = window.cleanDisplayString(cleanText);
     
     if (el) el.innerText = displayText;
     
@@ -657,7 +670,6 @@ window.sendHttpText = async function(context) {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
     
-    // ★修正: ログ表示もふりがな削除対応
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
@@ -680,7 +692,6 @@ window.sendHttpText = async function(context) {
             const data = await res.json();
             const speechText = data.speech || data.reply || "教えてあげるにゃ！";
             
-            // ★修正: ログ表示もふりがな削除対応
             window.addLogItem('nell', speechText);
             window.addToSessionHistory('nell', speechText);
             
