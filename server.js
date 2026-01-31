@@ -1,4 +1,4 @@
-// --- server.js (完全版 v322.0: プロフィール会話強化版) ---
+// --- server.js (完全版 v323.0: プロフィール更新強化・積極会話版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -23,10 +23,10 @@ app.use(express.json({ limit: '50mb' }));
 const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
-// --- AI Model Constants (ユーザー指定) ---
-const MODEL_HOMEWORK = "gemini-2.5-pro";         // 宿題分析用（高精度）
-const MODEL_FAST = "gemini-2.5-flash";           // 基本（会話・反応・記憶整理）
-const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // リアルタイムWebSocket（対話）
+// --- AI Model Constants ---
+const MODEL_HOMEWORK = "gemini-2.5-pro";
+const MODEL_FAST = "gemini-2.5-flash";
+const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -108,6 +108,7 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
+        // MODEL_FASTを使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -115,12 +116,13 @@ app.post('/update-memory', async (req, res) => {
 
         const prompt = `
         あなたは生徒の長期記憶を管理するAIです。
-        以下の「現在のプロフィール」と「直近の会話ログ」をもとに、プロフィールを更新してください。
-        
-        【重要】
-        - 出力は純粋なJSONのみにしてください。
-        - 図鑑データ(collection)は入力のまま維持してください。
-        - **会話から「苦手なもの」「嫌いなこと」が見つかれば weaknesses に追加してください。**
+        以下の「現在のプロフィール」と「直近の会話ログ」を統合し、最新のプロフィールJSONを作成してください。
+
+        【重要指示】
+        1. **情報の抽出**: 会話ログの中に、誕生日、好きなもの、苦手なもの、趣味、最近したこと等が含まれていれば、**必ず**プロフィールに追加・更新してください。
+        2. **誕生日**: 「誕生日は〇月〇日」といった発言があれば、必ず \`birthday\` フィールドを更新してください。
+        3. **維持**: 会話ログに新しい情報がない項目は、現在のプロフィールの内容をそのまま維持してください。消さないでください。
+        4. **出力**: 純粋なJSONのみを出力してください。
 
         【現在のプロフィール】
         ${JSON.stringify(currentProfile)}
@@ -128,7 +130,7 @@ app.post('/update-memory', async (req, res) => {
         【直近の会話ログ】
         ${chatLog}
 
-        【出力フォーマット】
+        【出力フォーマット (JSON)】
         {
             "nickname": "...",
             "birthday": "...",
@@ -160,6 +162,7 @@ app.post('/update-memory', async (req, res) => {
         res.json(newProfile);
 
     } catch (error) {
+        console.error("Memory Update Error:", error);
         res.status(200).json(req.body.currentProfile || {});
     }
 });
@@ -237,14 +240,11 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★ お宝図鑑用 画像解析API ---
+// --- お宝図鑑用 画像解析API ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location, address } = req.body;
         
-        if (address) console.log(`[図鑑住所] ${address}`);
-        else if (location) console.log(`[図鑑GPS] ${location.lat}, ${location.lon}`);
-
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -343,9 +343,6 @@ app.post('/chat-dialogue', async (req, res) => {
     try {
         let { text, name, image, history, location, address, missingInfo } = req.body;
         
-        if (address) console.log(`[Chat住所] ${address}`);
-        if (location) console.log(`[ChatGPS] ${location.lat}, ${location.lon}`);
-        
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
         const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
@@ -360,53 +357,46 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
         }
 
-        // ★追加: 未登録情報がある場合のプロンプト注入
-        let missingInfoPrompt = "";
+        // ★強化: プロフィール補完のための積極的な質問ロジック
+        let activeQuestionPrompt = "";
         if (missingInfo && missingInfo.length > 0) {
-            const items = missingInfo.join("、");
-            missingInfoPrompt = `
-            【重要ミッション】
-            現在、ユーザーのプロフィールで以下の情報が不足しています：
-            **${items}**
+            // ランダムに1つ選んで質問候補にする
+            const targetInfo = missingInfo[Math.floor(Math.random() * missingInfo.length)];
+            let specificQuestion = "";
+            switch(targetInfo) {
+                case "誕生日": specificQuestion = "そういえば、誕生日はいつにゃ？お祝いしたいにゃ！"; break;
+                case "好きなもの": specificQuestion = "ねえねえ、好きな漫画やキャラクターはあるにゃ？"; break;
+                case "苦手なもの": specificQuestion = "実は苦手な教科とか、嫌いな食べ物ってあるにゃ？"; break;
+                default: specificQuestion = "もっとキミのことを教えてほしいにゃ！趣味とかあるにゃ？"; break;
+            }
+
+            activeQuestionPrompt = `
+            【重要ミッション：プロフィールの穴埋め】
+            現在、ユーザーの「${targetInfo}」の情報がまだ登録されていません。
+            **今回の会話の最後に、自然な流れで以下のような質問をして情報を引き出してください。**
             
-            今回の会話の中で、**自然な流れで**これらの情報を聞き出すような質問を投げかけてください。
-            唐突すぎず、会話の文脈に沿って聞いてください。
-            （例：「そういえば、誕生日はいつにゃ？」「好きな食べ物は何にゃ？」など）
+            質問例: 「${specificQuestion}」
+            
+            ※ユーザーが既に何か質問している場合は、まずそれに答えてから、最後に「ところで…」と切り出してください。
             `;
         }
+
+        // プロフィール情報を活かした話題振り指示
+        const profileUsagePrompt = `
+        【記憶の活用】
+        もし会話が途切れそうなら、これまでの会話履歴やプロフィールにある「好きなもの」や「最近の話題」に関連した話を振ってください。
+        `;
 
         let locationPrompt = "";
         if (address) {
             locationPrompt = `
             【最優先情報：現在地】
             クライアント特定住所: **${address}**
-            
-            回答作成時の検索ルール:
-            1. **「一番近い〇〇」「近くの〇〇」「最寄りの〇〇」と聞かれた場合**:
-               - **★重要**: 住所名ではなく **座標** を使って、「${location.lat},${location.lon} 最寄りの〇〇」でGoogle検索を実行してください。
-               - 単に「${address} 〇〇」で検索すると、市内の代表的な施設（遠い場合がある）が出てしまうので注意してください。
-            
-            2. **「ここはどこ？」「天気を教えて」と聞かれた場合**:
-               - **${address}** という住所情報を正解として扱ってください。
-               - 天気は「${address} 天気」で検索してください。
-            
-            3. **禁止事項**:
-               - 座標の数値（${location.lat}など）はセリフに入れないでください。
-               - 検索せずに推測で地名を答えることは厳禁です。
+            禁止事項: 座標の数値（${location.lat}など）はセリフに入れないでください。
             `;
-            
             text += `\n（システム情報：現在地は「${address}」です。）`;
-
-        } else if (location && location.lat && location.lon) {
-            locationPrompt = `
-            【位置情報】
-            GPS座標: ${location.lat}, ${location.lon}
-            
-            回答ルール:
-            - 「近い〇〇」の質問は、「${location.lat},${location.lon} 最寄りの〇〇」で検索してください。
-            - 「ここはどこ？」の質問は、Google検索で「${location.lat},${location.lon} 住所」を検索し、正確な市町村を特定してください。
-            `;
-            
+        } else if (location && location.lat) {
+            locationPrompt = `GPS座標: ${location.lat}, ${location.lon}`;
             text += `\n（システム情報：現在の座標は ${location.lat}, ${location.lon} です。）`;
         }
 
@@ -416,14 +406,11 @@ app.post('/chat-dialogue', async (req, res) => {
 
         【重要：現在の状況】
         - **現在は ${currentDateTime} です。**
-        - **わからないことや最新の情報、天気予報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
-        - **相手を呼ぶときは必ず「${name}さん」と呼んでください。**
-        - **表記ルール**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください（例: 狩野英孝(かのえいこう)、筑後市(ちくごし)、iPhone(アイフォーン)）。**一般的な簡単な漢字（例: 有名、僕、歌、面白い、好き など）には絶対にふりがなを振らないでください。**
+        - **表記ルール**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
         
-        ${missingInfoPrompt}
-
+        ${activeQuestionPrompt}
+        ${profileUsagePrompt}
         ${locationPrompt}
-
         ${contextPrompt}
 
         【出力について】
