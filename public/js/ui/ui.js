@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v304.0: 初期表示同期強化版) ---
+// --- js/ui/ui.js (完全版 v305.0: 足あとマップ実装版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -207,7 +207,7 @@ window.showCollection = async function() {
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:15px; flex: 1; overflow-y:auto; padding:10px;">
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;">
@@ -240,7 +240,7 @@ window.showCollection = async function() {
         img.style.cssText = "width:100%; height:auto; max-height:75%; object-fit:contain; margin-bottom:5px; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.1));";
         
         const name = document.createElement('div');
-        // ★修正: 図鑑リスト表示でもふりがなを隠す
+        // 図鑑リスト表示でもふりがなを隠す
         name.innerText = item.name.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
         name.style.cssText = "font-size:0.8rem; font-weight:bold; color:#555; width:100%; line-height:1.2; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;";
 
@@ -256,7 +256,7 @@ window.showCollectionDetail = function(item, index) {
 
     const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
     
-    // ★修正: 詳細表示でもふりがなを隠す
+    // 詳細表示でもふりがなを隠す
     const displayItemName = item.name.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
     const description = (item.description || "（ネル先生の解説はまだないみたいだにゃ…）").replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
     const realDescription = (item.realDescription || "（まだ情報がないみたいだにゃ…）").replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
@@ -315,6 +315,102 @@ window.deleteCollectionItem = async function(index) {
 window.closeCollection = function() {
     const modal = document.getElementById('collection-modal');
     if (modal) modal.classList.add('hidden');
+};
+
+// ==========================================
+// ★ 足あとマップ (Leaflet)
+// ==========================================
+
+window.mapInstance = null;
+
+window.showMap = async function() {
+    if (!currentUser) return;
+    
+    // 現在地情報の更新を試みる
+    if (typeof window.startLocationWatch === 'function') {
+        window.startLocationWatch();
+    }
+
+    switchScreen('screen-map');
+    
+    // マップ初期化 (初回のみ)
+    if (!window.mapInstance) {
+        window.mapInstance = L.map('map-container');
+        
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(window.mapInstance);
+    }
+    
+    // サイズ再計算 (display:none解除後のお作法)
+    setTimeout(() => {
+        window.mapInstance.invalidateSize();
+        
+        // 中心点を決定
+        let centerLat = 35.6895; // 東京
+        let centerLon = 139.6917;
+        
+        if (window.currentLocation && window.currentLocation.lat) {
+            centerLat = window.currentLocation.lat;
+            centerLon = window.currentLocation.lon;
+        }
+        
+        window.mapInstance.setView([centerLat, centerLon], 15);
+        
+        // ピン立て処理
+        window.renderMapMarkers();
+    }, 200);
+};
+
+window.renderMapMarkers = async function() {
+    if (!window.mapInstance || !window.NellMemory || !currentUser) return;
+    
+    // 既存マーカーを削除 (レイヤーグループを使うのが一般的だが、簡易的に全削除)
+    window.mapInstance.eachLayer((layer) => {
+        if (layer instanceof L.Marker) {
+            window.mapInstance.removeLayer(layer);
+        }
+    });
+
+    const profile = await window.NellMemory.getUserProfile(currentUser.id);
+    const collection = profile.collection || [];
+    
+    let hasMarkers = false;
+    
+    collection.forEach(item => {
+        if (item.location && item.location.lat && item.location.lon) {
+            hasMarkers = true;
+            
+            // カスタムアイコン (写真を表示)
+            const icon = L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div class="map-pin-icon" style="background-image: url('${item.image}');"></div>`,
+                iconSize: [50, 50],
+                iconAnchor: [25, 25],
+                popupAnchor: [0, -30]
+            });
+            
+            // ふりがな除去
+            const displayName = item.name.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+            const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
+
+            const marker = L.marker([item.location.lat, item.location.lon], { icon: icon }).addTo(window.mapInstance);
+            
+            marker.bindPopup(`
+                <div style="text-align:center;">
+                    <img src="${item.image}" style="width:100px; height:100px; object-fit:contain; margin-bottom:5px;"><br>
+                    <strong>${displayName}</strong><br>
+                    <span style="font-size:0.8rem; color:#666;">${dateStr}</span>
+                </div>
+            `);
+        }
+    });
+    
+    if (!hasMarkers && window.currentLocation) {
+        L.marker([window.currentLocation.lat, window.currentLocation.lon]).addTo(window.mapInstance)
+            .bindPopup("現在はここだにゃ！").openPopup();
+    }
 };
 
 // ==========================================
