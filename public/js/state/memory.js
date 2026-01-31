@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v322.0: プロフィール削除・要約ログ対応版) ---
+// --- js/state/memory.js (v323.0: プロフィール更新軽量化版) ---
 
 (function(global) {
     const Memory = {};
@@ -68,32 +68,36 @@
         }
     };
 
-    // ★更新: サーバーからの要約を受け取り、ログに追加する
+    // ★修正: 重たいcollectionデータを除外してサーバーに送り、軽量化する
     Memory.updateProfileFromChat = async function(userId, chatLog) {
         if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
+        
+        // 図鑑データ(collection)はAIによるプロフィール分析には不要かつ重いため、
+        // 一時的に退避させてサーバーには送らない
+        const { collection, ...profileForAnalysis } = currentProfile;
         
         try {
             const res = await fetch('/update-memory', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ currentProfile, chatLog })
+                body: JSON.stringify({ currentProfile: profileForAnalysis, chatLog })
             });
             
             if (res.ok) {
                 const data = await res.json();
-                let newProfile = data.profile || data; // 新形式か旧形式か判定
-                
+                let newProfile = data.profile || data; 
                 if (Array.isArray(newProfile)) newProfile = newProfile[0];
                 
+                // サーバーから戻ってきた新しいプロフィール情報に、
+                // 退避しておいた図鑑データ(collection)を戻す
                 const updatedProfile = {
                     ...newProfile,
-                    collection: currentProfile.collection || []
+                    collection: collection || [] 
                 };
                 
                 await Memory.saveUserProfile(userId, updatedProfile);
 
-                // 要約があればログに追加
                 if (data.summary_text && data.summary_text.length > 0 && data.summary_text !== "（更新なし）") {
                     window.saveToNellMemory('nell', `【会話のまとめ】 ${data.summary_text}`);
                 }
@@ -191,18 +195,13 @@
         localStorage.setItem(memoryKey, JSON.stringify(history));
     };
 
-    // ★追加: プロフィール項目削除用
     Memory.deleteProfileItem = async function(userId, category, itemContent) {
         const profile = await Memory.getUserProfile(userId);
-        
         if (category === 'birthday' || category === 'nickname' || category === 'last_topic') {
-            // 文字列項目はクリア
             profile[category] = "";
         } else if (Array.isArray(profile[category])) {
-            // 配列項目は特定要素を削除
             profile[category] = profile[category].filter(i => i !== itemContent);
         }
-        
         await Memory.saveUserProfile(userId, profile);
     };
 
