@@ -1,4 +1,4 @@
-// --- server.js (完全版 v319.0: 読み上げ・表示・図鑑ロジック修正版) ---
+// --- server.js (完全版 v321.0: ふりがな過剰抑制・表示最適化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -67,7 +67,7 @@ try {
 function getSubjectInstructions(subject) {
     switch (subject) {
         case 'さんすう': return `- **数式の記号**: 筆算の「横線」と「マイナス記号」を絶対に混同しないこと。\n- **複雑な表記**: 累乗（2^2など）、分数、帯分数を正確に認識すること。\n- **図形問題**: 図の中に書かれた長さや角度の数値も見落とさないこと。`;
-        case 'こくご': return `- **縦書きレイアウトの厳格な分離**: 問題文や選択肢は縦書きです。**縦の罫線や行間の余白**を強く意識し、隣の行や列の内容が絶対に混ざらないようにしてください。\n- **列の独立性**: ある問題の列にある文字と、隣の問題の列にある文字を混同しないこと。\n- **読み取り順序**: 右の行から左の行へ、上から下へ読み取ること。\n- **ふりがな表記**: 問題文中の読み仮名はそのまま認識すること。回答時の漢字には必要に応じて『漢字(ふりがな)』の形式を使うこと。`;
+        case 'こくご': return `- **縦書きレイアウトの厳格な分離**: 問題文や選択肢は縦書きです。**縦の罫線や行間の余白**を強く意識し、隣の行や列の内容が絶対に混ざらないようにしてください。\n- **列の独立性**: ある問題の列にある文字と、隣の問題の列にある文字を混同しないこと。\n- **読み取り順序**: 右の行から左の行へ、上から下へ読み取ること。`;
         case 'りか': return `- **グラフ・表**: グラフの軸ラベルや単位（g, cm, ℃, A, Vなど）を絶対に省略せず読み取ること。\n- **選択問題**: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。\n- **配置**: 図や表のすぐ近くや上部に「最初の問題」が配置されている場合が多いので、見逃さないこと。`;
         case 'しゃかい': return `- **選択問題**: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。\n- **資料読み取り**: 地図やグラフ、年表の近くにある「最初の問題」を見逃さないこと。\n- **用語**: 歴史用語や地名は正確に（子供の字が崩れていても文脈から補正して）読み取ること。`;
         default: return `- 基本的にすべての文字、図表内の数値を拾うこと。`;
@@ -84,15 +84,14 @@ app.post('/synthesize', async (req, res) => {
         if (!ttsClient) throw new Error("TTS Not Ready");
         const { text, mood } = req.body;
         
-        // ★修正: 読み上げ用テキストのクリーニング強化
+        // 読み上げ用テキストのクリーニング
         let speakText = text;
 
-        // 1. マークダウン記号 (*, **, #) を削除 ("アスタリスク"等の読み上げ防止)
+        // 1. マークダウン記号 (*, **, #) を削除
         speakText = speakText.replace(/[\*#_`~]/g, "");
 
         // 2. 「漢字(ふりがな)」および「英単語(ふりがな)」を「ふりがな」のみに置換 (二重読み防止)
         // 例: "筑後市(ちくごし)" -> "ちくごし", "iPhone(アイフォーン)" -> "アイフォーン"
-        // 漢字、英数字、カタカナ等 + (ふりがな) のパターンに対応
         speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
 
         let rate = "1.1"; let pitch = "+2st";
@@ -115,7 +114,6 @@ app.post('/synthesize', async (req, res) => {
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             generationConfig: { responseMimeType: "application/json" }
@@ -180,8 +178,6 @@ app.post('/update-memory', async (req, res) => {
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        
-        // MODEL_HOMEWORK (gemini-2.5-pro) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_HOMEWORK, 
             generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
@@ -195,7 +191,7 @@ app.post('/analyze', async (req, res) => {
 
         【重要: 教科別の解析ルール (${subject})】
         ${subjectSpecificInstructions}
-        - **表記ルール**: 解説文の中に人名、地名、難しい漢字が出てくる場合は、必ず『漢字(ふりがな)』の形式で記述してください（例: 筑後市(ちくごし)）。
+        - **表記ルール**: 解説文の中に読み間違いやすい人名、地名、難読漢字が出てくる場合は、『漢字(ふりがな)』の形式で記述してください（例: 筑後市(ちくごし)）。**一般的な簡単な漢字にはふりがなを振らないでください。**
 
         【タスク1: 問題文の書き起こし】
         - 設問文、選択肢を正確に書き起こす。
@@ -259,7 +255,6 @@ app.post('/identify-item', async (req, res) => {
         if (address) console.log(`[図鑑住所] ${address}`);
         else if (location) console.log(`[図鑑GPS] ${location.lat}, ${location.lon}`);
 
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
@@ -302,7 +297,7 @@ app.post('/identify-item', async (req, res) => {
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
         2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
-        3. **ふりがな**: 人名、地名、難しい漢字、英単語の読みには必ず『漢字(ふりがな)』の形式で読み仮名を振ってください（例: 狩野英孝(かのえいこう)、筑後市(ちくごし)、iPhone(アイフォーン)）。
+        3. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください（例: 狩野英孝(かのえいこう)、筑後市(ちくごし)、iPhone(アイフォーン)）。**一般的な簡単な漢字（例: 有名、僕、歌、面白い、好き など）には絶対にふりがなを振らないでください。**
         4. **場所の言及ルール**: 撮影されたものが「建物」や「風景」ではなく、持ち運び可能な「商品」や「小物」の場合、解説文の中で**「ここは〇〇市〇〇町〜」のような撮影場所への言及は絶対にしないでください**。違和感があります。
         5. **禁止事項**: 座標の数値をそのままユーザーへの返答に入れないでください。
 
@@ -336,7 +331,6 @@ app.post('/identify-item', async (req, res) => {
             }
         } catch (e) {
             console.warn("JSON Parse Fallback (Item):", responseText);
-            // フォールバック: AIの応答をそのままspeechTextとして利用
             let fallbackText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             json = {
                 itemName: "なぞの物体",
@@ -419,7 +413,7 @@ app.post('/chat-dialogue', async (req, res) => {
         - **現在は ${currentDateTime} です。**
         - **わからないことや最新の情報、天気予報が必要な場合は、提供されたGoogle検索ツールを使って調べてください。**
         - **相手を呼ぶときは必ず「${name}さん」と呼んでください。**
-        - **表記ルール**: 人名、地名、難しい漢字、英単語には必ず『漢字(ふりがな)』の形式で読み仮名を振ってください（例: 狩野英孝(かのえいこう)、筑後市(ちくごし)、iPhone(アイフォーン)）。
+        - **表記ルール**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください（例: 狩野英孝(かのえいこう)、筑後市(ちくごし)、iPhone(アイフォーン)）。**一般的な簡単な漢字（例: 有名、僕、歌、面白い、好き など）には絶対にふりがなを振らないでください。**
         
         ${locationPrompt}
 
@@ -441,8 +435,6 @@ app.post('/chat-dialogue', async (req, res) => {
 
         try {
             const toolsConfig = image ? undefined : [{ google_search: {} }];
-            
-            // ★修正: JSON強制は完全に削除
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST,
                 tools: toolsConfig
@@ -476,11 +468,7 @@ app.post('/chat-dialogue', async (req, res) => {
             }
         }
         
-        // ★修正: サーバー側で受け取ったテキストをJSONに包む
-        // これでクライアント側はパースエラーを起こさない
         let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        
-        // 念のためシステムログのような行があれば削除
         cleanText = cleanText.split('\n').filter(line => {
             return !/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(line);
         }).join(' ');
@@ -505,7 +493,6 @@ app.post('/lunch-reaction', async (req, res) => {
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
         
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             safetySettings: [
@@ -541,7 +528,6 @@ app.post('/lunch-reaction', async (req, res) => {
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
-        // MODEL_FAST (gemini-2.5-flash) を使用
         const model = genAI.getGenerativeModel({ model: MODEL_FAST });
         let prompt = "";
         let mood = "excited";
@@ -607,7 +593,7 @@ wss.on('connection', async (clientWs, req) => {
                 5. とにかく何でも知っているにゃ。
 
                 【表記と発音のルール】
-                1. **ふりがな**: 人名、地名、難しい漢字、英単語には必ず『漢字(ふりがな)』の形式で読み仮名を振ること（例: 筑後市(ちくごし)、iPhone(アイフォーン)）。
+                1. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ること（例: 筑後市(ちくごし)、狩野英孝(かのえいこう)、iPhone(アイフォーン)）。**一般的な簡単な漢字（例: 有名、僕、歌、面白い、好き など）には絶対にふりがなを振らないでください。**
                 2. **音声重複防止**: 音声で話すときは、テキストにある『漢字(ふりがな)』をそのまま読まず、括弧内のふりがなのみを読み上げること（例: 「筑後市」と書いてあっても「ちくごし」とだけ発音する）。
 
                 【最重要：位置情報の取り扱い】
