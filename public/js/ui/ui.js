@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v327.0: プロフィール編集・ログ削除・レアリティ表示統合版) ---
+// --- js/ui/ui.js (完全版 v309.0: 画像レアリティ対応版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -71,12 +71,16 @@ window.cleanDisplayString = function(text) {
     return clean;
 };
 
-// レアリティ表示用文字列生成
+// ★修正: レアリティ表示用文字列生成 (画像を使用)
 window.generateRarityString = function(rarity) {
     const r = rarity || 1;
-    let stars = "";
-    for(let i=0; i<r; i++) stars += "🐾";
-    return `<span class="rarity-mark rarity-${r}">${stars}</span>`;
+    // ローカルパスではなく、Web相対パスを使用
+    const imgPath = "assets/images/effects/nikukyurea.png";
+    let images = "";
+    for(let i=0; i<r; i++) {
+        images += `<img src="${imgPath}" class="rarity-img" alt="🐾">`;
+    }
+    return `<div class="rarity-mark rarity-${r}">${images}</div>`;
 };
 
 // ==========================================
@@ -227,9 +231,11 @@ window.showCollection = async function() {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
+    // ★更新: モーダルHTMLに「足あとマップを見る」ボタンを追加
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 80vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
+            <button onclick="closeCollection(); showMap();" class="main-btn" style="margin-bottom:10px; background:#29b6f6; box-shadow: 0 4px 0 #0288d1; padding:10px; font-size:0.9rem;">🗺️ 足あとマップを見る</button>
             <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
@@ -352,14 +358,13 @@ window.mapInstance = null;
 window.showMap = async function() {
     if (!currentUser) return;
     
-    // 現在地情報の更新を試みる
     if (typeof window.startLocationWatch === 'function') {
         window.startLocationWatch();
     }
 
     switchScreen('screen-map');
     
-    // マップ初期化 (初回のみ)
+    // マップ初期化
     if (!window.mapInstance) {
         window.mapInstance = L.map('map-container');
         
@@ -369,11 +374,9 @@ window.showMap = async function() {
         }).addTo(window.mapInstance);
     }
     
-    // サイズ再計算 (display:none解除後のお作法)
     setTimeout(() => {
         window.mapInstance.invalidateSize();
         
-        // 中心点を決定
         let centerLat = 35.6895; // 東京
         let centerLon = 139.6917;
         
@@ -383,8 +386,6 @@ window.showMap = async function() {
         }
         
         window.mapInstance.setView([centerLat, centerLon], 15);
-        
-        // ピン立て処理
         window.renderMapMarkers();
     }, 200);
 };
@@ -392,7 +393,6 @@ window.showMap = async function() {
 window.renderMapMarkers = async function() {
     if (!window.mapInstance || !window.NellMemory || !currentUser) return;
     
-    // 既存マーカーを削除
     window.mapInstance.eachLayer((layer) => {
         if (layer instanceof L.Marker) {
             window.mapInstance.removeLayer(layer);
@@ -408,7 +408,6 @@ window.renderMapMarkers = async function() {
         if (item.location && item.location.lat && item.location.lon) {
             hasMarkers = true;
             
-            // カスタムアイコン (写真を表示)
             const icon = L.divIcon({
                 className: 'custom-div-icon',
                 html: `<div class="map-pin-icon" style="background-image: url('${item.image}');"></div>`,
@@ -487,7 +486,6 @@ function renderProfileView(container, profile) {
         return;
     }
 
-    // 削除ボタン付きの項目作成関数
     const createSection = (title, items, categoryName, isArray = false) => {
         const div = document.createElement('div');
         div.className = 'profile-section';
@@ -558,7 +556,6 @@ function renderProfileView(container, profile) {
          container.appendChild(div);
     }
 
-    // 最近の図鑑アイテム (サムネイルにレアリティを追加)
     if (profile.collection && profile.collection.length > 0) {
         const recents = profile.collection.slice(0, 3);
         const div = document.createElement('div');
@@ -596,7 +593,6 @@ window.deleteProfileItem = async function(category, itemContent) {
     
     if (window.NellMemory) {
         await window.NellMemory.deleteProfileItem(currentUser.id, category, itemContent);
-        // 再描画
         const container = document.getElementById('profile-container');
         const profile = await window.NellMemory.getUserProfile(currentUser.id);
         renderProfileView(container, profile);
