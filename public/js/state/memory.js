@@ -1,9 +1,8 @@
-// --- js/state/memory.js (v321.0: ログ削除対応版) ---
+// --- js/state/memory.js (v322.0: プロフィール削除・要約ログ対応版) ---
 
 (function(global) {
     const Memory = {};
 
-    // Helper: Base64をBlobに変換
     function base64ToBlob(base64, mimeType = 'image/jpeg') {
         const parts = base64.split(';base64,');
         const raw = window.atob(parts.length > 1 ? parts[1] : base64);
@@ -15,7 +14,6 @@
         return new Blob([uInt8Array], { type: mimeType });
     }
 
-    // Helper: Storageから画像を削除
     async function deleteImageFromStorage(url) {
         if (!window.fireStorage || !url) return;
         try {
@@ -27,7 +25,6 @@
         }
     }
 
-    // 空のプロフィールを作成
     Memory.createEmptyProfile = function() {
         return {
             nickname: "",
@@ -36,14 +33,12 @@
             weaknesses: [],
             achievements: [],
             last_topic: "",
-            collection: [] // 図鑑データ
+            collection: []
         };
     };
 
-    // プロフィールを取得
     Memory.getUserProfile = async function(userId) {
         let profile = null;
-
         if (typeof db !== 'undefined' && db !== null) {
             try {
                 const doc = await db.collection("users").doc(userId).get();
@@ -52,33 +47,20 @@
                 }
             } catch(e) { console.error("Firestore Profile Load Error:", e); }
         }
-
         if (!profile) {
             const key = `nell_profile_${userId}`;
-            try {
-                profile = JSON.parse(localStorage.getItem(key));
-            } catch {}
+            try { profile = JSON.parse(localStorage.getItem(key)); } catch {}
         }
-
-        if (Array.isArray(profile)) {
-            profile = profile[0];
-        }
-
+        if (Array.isArray(profile)) profile = profile[0];
         const defaultProfile = Memory.createEmptyProfile();
         if (!profile) return defaultProfile;
         if (!Array.isArray(profile.collection)) profile.collection = []; 
-
         return profile;
     };
 
-    // プロフィールを保存
     Memory.saveUserProfile = async function(userId, profile) {
-        if (Array.isArray(profile)) {
-            profile = profile[0] || Memory.createEmptyProfile();
-        }
-
+        if (Array.isArray(profile)) profile = profile[0] || Memory.createEmptyProfile();
         localStorage.setItem(`nell_profile_${userId}`, JSON.stringify(profile));
-
         if (typeof db !== 'undefined' && db !== null) {
             try {
                 await db.collection("users").doc(userId).set({ profile: profile }, { merge: true });
@@ -86,7 +68,7 @@
         }
     };
 
-    // サーバー更新用
+    // ★更新: サーバーからの要約を受け取り、ログに追加する
     Memory.updateProfileFromChat = async function(userId, chatLog) {
         if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
@@ -99,22 +81,28 @@
             });
             
             if (res.ok) {
-                let newProfileText = await res.json();
-                if (Array.isArray(newProfileText)) newProfileText = newProfileText[0];
+                const data = await res.json();
+                let newProfile = data.profile || data; // 新形式か旧形式か判定
+                
+                if (Array.isArray(newProfile)) newProfile = newProfile[0];
                 
                 const updatedProfile = {
-                    ...newProfileText,
+                    ...newProfile,
                     collection: currentProfile.collection || []
                 };
                 
                 await Memory.saveUserProfile(userId, updatedProfile);
+
+                // 要約があればログに追加
+                if (data.summary_text && data.summary_text.length > 0 && data.summary_text !== "（更新なし）") {
+                    window.saveToNellMemory('nell', `【会話のまとめ】 ${data.summary_text}`);
+                }
             }
         } catch(e) {
             console.warn("Profile update failed, keeping existing data.", e);
         }
     };
 
-    // コンテキスト生成
     Memory.generateContextString = async function(userId) {
         const p = await Memory.getUserProfile(userId);
         let context = "";
@@ -127,29 +115,22 @@
             const recentItems = p.collection.slice(0, 3).map(i => i.name).join(", ");
             context += `・最近見せてくれたもの図鑑: ${recentItems}\n`;
         }
-        
         return context;
     };
 
-    // 図鑑追加
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null) {
         console.log(`[Memory] addToCollection: ${itemName}`);
         try {
             const profile = await Memory.getUserProfile(userId);
-            
-            if (!Array.isArray(profile.collection)) {
-                profile.collection = [];
-            }
+            if (!Array.isArray(profile.collection)) profile.collection = [];
             
             let imageUrl = imageBase64; 
-
             if (window.fireStorage && typeof db !== 'undefined' && db !== null) {
                 try {
                     const blob = base64ToBlob(imageBase64);
                     const timestamp = Date.now();
                     const storagePath = `user_images/${userId}/${timestamp}.jpg`;
                     const storageRef = window.fireStorage.ref().child(storagePath);
-                    
                     const snapshot = await storageRef.put(blob);
                     imageUrl = await snapshot.ref.getDownloadURL(); 
                     console.log("Image uploaded to Storage:", imageUrl);
@@ -168,7 +149,6 @@
             };
 
             profile.collection.unshift(newItem); 
-
             const maxLimit = (imageUrl.startsWith('http')) ? 500 : 30;
 
             if (profile.collection.length > maxLimit) {
@@ -179,9 +159,7 @@
                     }
                 }
             }
-
             await Memory.saveUserProfile(userId, profile);
-            console.log(`[Memory] Collection added. Total: ${profile.collection.length}`);
         } catch (e) {
             console.error("[Memory] Add Collection Error:", e);
         }
@@ -197,30 +175,36 @@
                 }
                 profile.collection.splice(index, 1);
                 await Memory.saveUserProfile(userId, profile);
-                console.log(`[Memory] Deleted item: ${item.name}`);
             }
         } catch(e) { console.error("[Memory] Delete Error:", e); }
     };
     
-    // ★追加: ログ削除用関数
     Memory.deleteRawChatLogs = async function(userId, indicesToDelete) {
         const memoryKey = `nell_raw_chat_log_${userId}`;
         let history = [];
-        try {
-            history = JSON.parse(localStorage.getItem(memoryKey) || '[]');
-        } catch(e) {}
-        
-        // インデックスが大きい順に削除（ずれ防止）
+        try { history = JSON.parse(localStorage.getItem(memoryKey) || '[]'); } catch(e) {}
         indicesToDelete.sort((a, b) => b - a).forEach(index => {
             if (index >= 0 && index < history.length) {
                 history.splice(index, 1);
             }
         });
-        
         localStorage.setItem(memoryKey, JSON.stringify(history));
     };
-    
-    Memory.updateLatestCollectionItem = async function(userId, newName) {};
+
+    // ★追加: プロフィール項目削除用
+    Memory.deleteProfileItem = async function(userId, category, itemContent) {
+        const profile = await Memory.getUserProfile(userId);
+        
+        if (category === 'birthday' || category === 'nickname' || category === 'last_topic') {
+            // 文字列項目はクリア
+            profile[category] = "";
+        } else if (Array.isArray(profile[category])) {
+            // 配列項目は特定要素を削除
+            profile[category] = profile[category].filter(i => i !== itemContent);
+        }
+        
+        await Memory.saveUserProfile(userId, profile);
+    };
 
     global.NellMemory = Memory;
 })(window);
