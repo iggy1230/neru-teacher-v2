@@ -1,4 +1,4 @@
-// --- js/analyze.js (v335.0: タイマー終了遅延修正版) ---
+// --- js/analyze.js (v336.0: タイマー音声タイミング完全調整版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -406,7 +406,7 @@ window.setSubject = function(s) {
 window.setAnalyzeMode = function(type) { window.analysisType = 'precision'; };
 
 // ==========================================
-// ★ タイマー関連 (カウントダウン終了タイミング修正)
+// ★ タイマー関連 (カウントダウン音修正)
 // ==========================================
 
 window.openTimerModal = function() {
@@ -452,9 +452,10 @@ window.toggleTimer = function() {
         
         window.studyTimerInterval = setInterval(() => {
             if (window.studyTimerValue > 0) {
-                // ★修正: 10秒〜1秒の範囲で、その秒数のWAVを再生
-                if (window.studyTimerValue <= 10) {
-                     const sfx = window.sfxCountdown[window.studyTimerValue];
+                // ★修正: 1秒先読み再生 (残り2秒で「1」を鳴らす)
+                if (window.studyTimerValue <= 11 && window.studyTimerValue >= 2) {
+                     const soundIndex = window.studyTimerValue - 1;
+                     const sfx = window.sfxCountdown[soundIndex];
                      if (sfx) window.safePlay(sfx);
                 }
 
@@ -472,13 +473,13 @@ window.toggleTimer = function() {
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
                 
-                // ★修正: 「0」になっても、最後の「1」の音声が終わるまで少し待ってから終了音を鳴らす
+                // ★修正: 最後の「1」の再生完了を待って（1秒後）チャイムを鳴らす
                 setTimeout(() => {
                     if(window.safePlay) window.safePlay(window.sfxChime); 
                     window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
                     document.getElementById('mini-timer-display').classList.add('hidden');
                     window.openTimerModal();
-                }, 1000); // 1秒待機
+                }, 1000); 
             }
         }, 1000);
     }
