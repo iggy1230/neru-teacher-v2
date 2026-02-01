@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v327.0: 画像サイズ・通信量最適化版) ---
+// --- js/camera-service.js (v338.0: iPhone最適化・軽量化対応版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -9,37 +9,56 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
     const container = document.getElementById(containerId);
     if (!video || !container) return;
 
+    // ★追加: カメラ起動中は重いCSSエフェクトを切るクラスを付与
+    document.body.classList.add('camera-active');
+
     try {
         if (window.previewStream) {
             window.previewStream.getTracks().forEach(t => t.stop());
         }
         try {
-            // 通信量節約のため、カメラ自体の要求解像度も少し抑える（HDクラス）
+            // ★修正: iPhone等の負荷軽減のため解像度とフレームレートを制限
+            // Geminiの画像認識はVGA(640x480)でも十分な精度が出ます
             window.previewStream = await navigator.mediaDevices.getUserMedia({ 
-                video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+                video: { 
+                    facingMode: "environment", 
+                    width: { ideal: 640 }, 
+                    height: { ideal: 480 },
+                    frameRate: { ideal: 15 } // 30fpsは不要なので15fpsに制限
+                },
                 audio: false 
             });
         } catch(e) {
             window.previewStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         }
         video.srcObject = window.previewStream;
+        // iOSでのインライン再生を確実にする
+        video.setAttribute('playsinline', true);
         await video.play();
         container.style.display = 'block';
 
     } catch (e) {
         console.warn("[Preview] Camera init failed:", e);
+        document.body.classList.remove('camera-active'); // 失敗時はクラス解除
         alert("カメラが使えないにゃ…。");
     }
 };
 
 window.stopPreviewCamera = function() {
+    // ★追加: CSSエフェクト復帰
+    document.body.classList.remove('camera-active');
+
     if (window.previewStream) {
         window.previewStream.getTracks().forEach(t => t.stop());
         window.previewStream = null;
     }
     ['live-chat-video', 'live-chat-video-embedded', 'live-chat-video-simple', 'live-chat-video-free'].forEach(vid => {
         const v = document.getElementById(vid);
-        if(v) v.srcObject = null;
+        if(v) {
+            v.pause();
+            v.srcObject = null;
+            v.load(); // ★追加: メモリ解放を促進
+        }
     });
     ['live-chat-video-container', 'live-chat-video-container-embedded', 'live-chat-video-container-simple', 'live-chat-video-container-free'].forEach(cid => {
         const c = document.getElementById(cid);
@@ -94,8 +113,6 @@ window.toggleTreasureCamera = function() {
     }
 };
 
-// ★修正: 図鑑用画像のサイズダウン (400px, quality 0.7)
-// これでサムネイルとしての視認性は保ちつつ、容量を削減
 window.createTreasureImage = function(sourceCanvas) {
     const OUTPUT_SIZE = 400; 
     const canvas = document.createElement('canvas');
@@ -127,8 +144,6 @@ window.createTreasureImage = function(sourceCanvas) {
     return canvas.toDataURL('image/jpeg', 0.7);
 };
 
-// ★修正: AI送信用画像のサイズダウン (1024px, quality 0.7)
-// 文字認識精度を維持しつつ、パケットを節約するライン
 window.processImageForAI = function(sourceCanvas) { 
     const MAX_WIDTH = 1024; 
     const QUALITY = 0.7;
@@ -217,11 +232,9 @@ window.captureAndIdentifyItem = async function() {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // ★修正: AI送信用に圧縮
     const compressedDataUrl = window.processImageForAI(canvas);
     const base64Data = compressedDataUrl.split(',')[1];
     
-    // ★修正: 図鑑用にも圧縮版生成
     const treasureDataUrl = window.createTreasureImage(canvas);
 
     const flash = document.createElement('div');
@@ -249,7 +262,7 @@ window.captureAndIdentifyItem = async function() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                image: base64Data, // 圧縮済みデータ
+                image: base64Data, 
                 name: currentUser ? currentUser.name : "生徒",
                 location: locationData, 
                 address: window.currentAddress
@@ -315,6 +328,10 @@ window.startHomeworkWebcam = async function() {
     const shutter = document.getElementById('camera-shutter-btn');
     const cancel = document.getElementById('camera-cancel-btn');
     if (!modal || !video) return;
+
+    // ★追加: 宿題カメラ起動中も軽量化
+    document.body.classList.add('camera-active');
+
     try {
         let constraints = { video: { facingMode: "environment" } };
         try { window.homeworkStream = await navigator.mediaDevices.getUserMedia(constraints); } 
@@ -343,8 +360,15 @@ window.startHomeworkWebcam = async function() {
 window.closeHomeworkCamera = function() {
     const modal = document.getElementById('camera-modal');
     const video = document.getElementById('camera-video');
+    
+    // ★追加: 軽量化解除
+    document.body.classList.remove('camera-active');
+
     if (window.homeworkStream) { window.homeworkStream.getTracks().forEach(t => t.stop()); window.homeworkStream = null; }
-    if (video) video.srcObject = null;
+    if (video) {
+        video.srcObject = null;
+        video.load(); // ★追加: メモリ解放
+    }
     if (modal) modal.classList.add('hidden');
 };
 
@@ -460,7 +484,6 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
     if (w < 1) w = 1; if (h < 1) h = 1; 
     const tempCv = document.createElement('canvas'); tempCv.width = w; tempCv.height = h; 
     const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, w, h); 
-    // ★修正: 圧縮処理を通す
     return window.processImageForAI(tempCv).split(',')[1]; 
 };
 
@@ -623,7 +646,6 @@ window.captureAndSendLiveImage = function(context = 'main') {
     document.body.appendChild(notif);
     setTimeout(() => notif.remove(), 2000);
     
-    // ★修正: 圧縮処理を通す
     const compressedDataUrl = window.processImageForAI(canvas);
     const base64Data = compressedDataUrl.split(',')[1];
     
@@ -673,9 +695,6 @@ window.captureAndSendLiveImage = function(context = 'main') {
     setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
 };
 
-// ==========================================
-// HTTPチャット用画像送信 (圧縮版)
-// ==========================================
 window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     if (window.isLiveImageSending) return;
     
@@ -703,7 +722,6 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // ★修正: 圧縮処理を通す
     const compressedDataUrl = window.processImageForAI(canvas);
     const base64Data = compressedDataUrl.split(',')[1];
     
@@ -714,6 +732,13 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
 
     if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
 
+    let memoryContext = "";
+    if (window.NellMemory && currentUser) {
+        try {
+            memoryContext = await window.NellMemory.generateContextString(currentUser.id);
+        } catch(e) {}
+    }
+
     try {
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
 
@@ -721,12 +746,13 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                image: base64Data, // 圧縮済み
+                image: base64Data, 
                 text: "この問題を教えてください。",
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
-                address: window.currentAddress // 追加
+                address: window.currentAddress,
+                memoryContext: memoryContext
             })
         });
 
