@@ -1,4 +1,4 @@
-// --- server.js (完全版 v330.0: レアリティ判定強化版) ---
+// --- server.js (完全版 v342.0: 難易度調整・読み間違い修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -74,6 +74,39 @@ function getSubjectInstructions(subject) {
     }
 }
 
+// 読み間違い補正関数
+function fixPronunciation(text) {
+    if (!text) return "";
+    let t = text;
+
+    // --- 算数・数学用語 ---
+    t = t.replace(/角/g, "かく"); // つの -> かく
+    t = t.replace(/辺/g, "へん"); // あたり -> へん
+    t = t.replace(/真分数/g, "しんぶんすう");
+    t = t.replace(/仮分数/g, "かぶんすう");
+    t = t.replace(/帯分数/g, "たいぶんすう");
+    t = t.replace(/約分/g, "やくぶん");
+    t = t.replace(/通分/g, "つうぶん");
+    t = t.replace(/直角/g, "ちょっかく");
+    
+    // --- 記号 (文脈によるが、小学生算数ならこう読むのが安全) ---
+    // 文中にある "＋" は "たす" と読む
+    t = t.replace(/\+/g, "たす");
+    t = t.replace(/＋/g, "たす");
+    // "-" は "ひく" (文脈によってはマイナスだが、低学年はひく)
+    t = t.replace(/\-/g, "ひく");
+    t = t.replace(/－/g, "ひく");
+    // "=" は "わ"
+    t = t.replace(/\=/g, "わ");
+    t = t.replace(/＝/g, "わ");
+    // "×" は "かける"
+    t = t.replace(/×/g, "かける");
+    // "÷" は "わる"
+    t = t.replace(/÷/g, "わる");
+
+    return t;
+}
+
 // ==========================================
 // API Endpoints
 // ==========================================
@@ -85,8 +118,14 @@ app.post('/synthesize', async (req, res) => {
         const { text, mood } = req.body;
         
         let speakText = text;
+        // 不要なマークダウン記号削除
         speakText = speakText.replace(/[\*#_`~]/g, "");
-        speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
+        // ふりがな削除 (漢字のみ読む)
+        speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2'); // ふりがな優先で読むように変更($1だと漢字、$2だとふりがな)
+        // もしふりがな優先だと誤読がある場合は $1 に戻すが、子供向けならふりがなを信じる
+
+        // ★追加: 読み間違い補正
+        speakText = fixPronunciation(speakText);
 
         let rate = "1.1"; let pitch = "+2st";
         if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
@@ -193,6 +232,11 @@ app.post('/analyze', async (req, res) => {
         ${subjectSpecificInstructions}
         - **表記ルール**: 解説文の中に読み間違いやすい人名、地名、難読漢字が出てくる場合は、『漢字(ふりがな)』の形式で記述してください（例: 筑後市(ちくごし)）。**一般的な簡単な漢字にはふりがなを振らないでください。**
 
+        【重要: 子供向け解説】
+        - **解説やヒントは、必ず小学${grade}年生が理解できる言葉遣い、漢字（習っていない漢字はひらがなにする）、概念で記述してください。**
+        - 専門用語は使わず、噛み砕いて説明してください。
+        - 難しい言い回しは禁止です。優しく語りかけてください。
+
         【タスク1: 問題文の書き起こし】
         - 設問文、選択肢を正確に書き起こす。
 
@@ -202,7 +246,7 @@ app.post('/analyze', async (req, res) => {
         【タスク3: 採点 & ヒント】
         - 手書きの答え(student_answer)を読み取り、正誤判定(is_correct)を行う。
         - student_answer が空文字 "" の場合は、is_correct は false にする。
-        - 3段階のヒント(hints)を作成する。
+        - 3段階のヒント(hints)を作成する。ヒントも小学${grade}年生向けに平易にすること。
 
         【出力JSONフォーマット】
         [
