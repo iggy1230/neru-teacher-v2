@@ -1,4 +1,4 @@
-// --- js/analyze.js (v334.0: タイマー音声タイミング修正版) ---
+// --- js/analyze.js (v335.0: タイマー終了遅延修正版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -406,7 +406,7 @@ window.setSubject = function(s) {
 window.setAnalyzeMode = function(type) { window.analysisType = 'precision'; };
 
 // ==========================================
-// ★ タイマー関連 (カウントダウン音修正)
+// ★ タイマー関連 (カウントダウン終了タイミング修正)
 // ==========================================
 
 window.openTimerModal = function() {
@@ -452,9 +452,8 @@ window.toggleTimer = function() {
         
         window.studyTimerInterval = setInterval(() => {
             if (window.studyTimerValue > 0) {
-                // ★修正: 素直に現在の残り秒数を再生 (10～1)
-                // WAVファイルなので即時再生され、ラグの考慮は不要
-                if (window.studyTimerValue <= 10 && window.studyTimerValue >= 1) {
+                // ★修正: 10秒〜1秒の範囲で、その秒数のWAVを再生
+                if (window.studyTimerValue <= 10) {
                      const sfx = window.sfxCountdown[window.studyTimerValue];
                      if (sfx) window.safePlay(sfx);
                 }
@@ -472,11 +471,14 @@ window.toggleTimer = function() {
                 window.studyTimerRunning = false;
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
-                // 終了チャイム
-                if(window.safePlay) window.safePlay(window.sfxChime); 
-                window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
-                document.getElementById('mini-timer-display').classList.add('hidden');
-                window.openTimerModal();
+                
+                // ★修正: 「0」になっても、最後の「1」の音声が終わるまで少し待ってから終了音を鳴らす
+                setTimeout(() => {
+                    if(window.safePlay) window.safePlay(window.sfxChime); 
+                    window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
+                    document.getElementById('mini-timer-display').classList.add('hidden');
+                    window.openTimerModal();
+                }, 1000); // 1秒待機
             }
         }, 1000);
     }
