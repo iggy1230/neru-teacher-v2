@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v337.0: iOS非対応アナウンス追加版) ---
+// --- js/voice-service.js (v330.0: 黒板機能復元版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -14,22 +14,14 @@ window.stopAudioPlayback = function() {
 };
 
 // ==========================================
-// 常時聞き取り (Speech Recognition) - 個別指導用
+// 常時聞き取り (Speech Recognition)
 // ==========================================
 window.startAlwaysOnListening = function() {
-    // ブラウザが音声認識に対応しているかチェック
     if (!('webkitSpeechRecognition' in window)) {
-        console.warn("Speech Recognition not supported on this browser/device.");
-        
-        // ★修正: iPhoneなどで非対応の場合、ユーザーに通知する
-        // ただし、何度も言うとうるさいので、一度だけ、またはコンソールに出すだけにするか、
-        // ネル先生に優しく言わせる
+        console.warn("Speech Recognition not supported.");
         if (window.currentMode === 'simple-chat' || window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
-             // 画面下部のテキストエリア付近にヒントを出すなどの処理が望ましいが、
-             // ここではネル先生が一言案内する形にする（会話の邪魔にならない程度に）
-             // 既に何か喋っている場合は言わない
              if (!window.isNellSpeaking && !window.iosAlertShown) {
-                 window.iosAlertShown = true; // フラグを立てて連呼防止
+                 window.iosAlertShown = true; 
                  if(typeof window.updateNellMessage === 'function') {
                      window.updateNellMessage("iPhoneの人は、キーボードのマイクボタンを使って話しかけてにゃ！", "normal", false, true);
                  }
@@ -52,7 +44,6 @@ window.startAlwaysOnListening = function() {
         const text = event.results[0][0].transcript;
         if (!text || text.trim() === "") return;
 
-        // 割り込み判定
         const stopKeywords = ["違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか"];
         const isStopCommand = stopKeywords.some(w => text.includes(w));
         const isLongEnough = text.length >= 10;
@@ -70,17 +61,14 @@ window.startAlwaysOnListening = function() {
         console.log(`[User Said] ${text}`);
         window.continuousRecognition.stop();
         
-        // 音声認識結果を表示
         let targetId = 'user-speech-text-embedded';
         if (window.currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
-        
         const embeddedText = document.getElementById(targetId);
         if (embeddedText) embeddedText.innerText = text;
 
         if(typeof window.addLogItem === 'function') window.addLogItem('user', text);
         if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('user', text);
 
-        // 記憶データ取得
         let missingInfo = [];
         let memoryContext = "";
         if (window.NellMemory && currentUser) {
@@ -112,20 +100,22 @@ window.startAlwaysOnListening = function() {
                 const data = await res.json();
                 const speechText = data.speech || data.reply || "ごめんにゃ、よくわからなかったにゃ"; 
                 
+                // ★修正: 黒板の表示制御を追加
+                if (data.board && data.board.trim() !== "") {
+                    let boardId = 'embedded-chalkboard';
+                    if (window.currentMode === 'simple-chat') boardId = 'chalkboard-simple';
+                    const embedBoard = document.getElementById(boardId);
+                    if (embedBoard) {
+                        embedBoard.innerText = data.board;
+                        embedBoard.classList.remove('hidden');
+                    }
+                }
+
                 if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText);
                 if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
                 
                 if(typeof window.updateNellMessage === 'function') {
                     await window.updateNellMessage(speechText, "normal", true, true);
-                }
-                
-                let boardId = 'embedded-chalkboard';
-                if (window.currentMode === 'simple-chat') boardId = 'chalkboard-simple';
-                const embedBoard = document.getElementById(boardId);
-                
-                if (embedBoard && data.board && data.board.trim() !== "") {
-                    embedBoard.innerText = data.board;
-                    embedBoard.classList.remove('hidden');
                 }
             }
         } catch(e) {
@@ -162,7 +152,7 @@ window.stopAlwaysOnListening = function() {
 };
 
 // ==========================================
-// リアルタイムチャット (WebSocket) - 放課後おしゃべり用
+// リアルタイムチャット (WebSocket)
 // ==========================================
 
 window.stopLiveChat = function() {
@@ -662,18 +652,21 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
         
         const speechText = data.speech || data.reply || "教えてあげるにゃ！";
         
+        // ★修正: 黒板表示
+        if (data.board && data.board.trim() !== "") {
+            let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
+            const embedBoard = document.getElementById(boardId);
+            if (embedBoard) {
+                embedBoard.innerText = data.board;
+                embedBoard.classList.remove('hidden');
+            }
+        }
+        
         if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText);
         if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
         
         if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(speechText, "happy", true, true);
         
-        let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
-        const embedBoard = document.getElementById(boardId);
-        if (embedBoard && data.board && data.board.trim() !== "") {
-            embedBoard.innerText = data.board;
-            embedBoard.classList.remove('hidden');
-        }
-
     } catch(e) {
         console.error("HTTP Image Error:", e);
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true);
