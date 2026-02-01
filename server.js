@@ -1,4 +1,4 @@
-// --- server.js (完全版 v327.0: レアリティ基準厳格化版) ---
+// --- server.js (完全版 v328.0: 記憶コンテキスト連携強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -247,7 +247,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★ お宝図鑑用 画像解析API (レアリティ厳格化) ---
+// --- お宝図鑑用 画像解析API ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location, address } = req.body;
@@ -292,25 +292,11 @@ app.post('/identify-item', async (req, res) => {
         3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
         【★レアリティ判定基準 (肉球ランク 1〜5)】
-        そのアイテムや場所の「見つけにくさ」「希少性」を以下の基準で厳格に判定してください。
-        
-        - **1 (★) [厳格に判定]**: 
-            - どこでも買える市販の商品（お菓子、飲み物、文房具、おもちゃ、スマホ、家電など）。
-            - どこにでも生えている植物（雑草、ありふれた花）。
-            - 日常的な風景（道路、普通の家、信号機）。
-            - **※スーパーやコンビニで買えるものは、どんなに美味しくても必ず「1」にしてください。**
-            
-        - **2 (★★)**: 
-            - ちょっとだけ珍しいもの（季節限定のパッケージ、少し見つけにくい植物、公園の立派な遊具）。
-            
-        - **3 (★★★)**: 
-            - その場所に行かないと見られないもの（地域のお店の看板、少し有名な公園のモニュメント、野良猫）。
-            
-        - **4 (★★★★)**: 
-            - かなり珍しいもの（歴史的建造物、有名なテーマパークのアトラクション、高級ブランドの限定品、美しい夕焼け）。
-            
-        - **5 (★★★★★)**: 
-            - 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、野生のレア動物、虹、めったに見れない絶景）。
+        - **1 (★) [厳格に判定]**: どこでも買える市販の商品（お菓子、飲み物、文房具、おもちゃ、スマホ、家電）、どこにでも生えている植物（雑草）、日常的な風景。**※スーパーやコンビニで買えるものは必ず「1」にしてください。**
+        - **2 (★★)**: ちょっとだけ珍しいもの。
+        - **3 (★★★)**: その場所に行かないと見られないもの。
+        - **4 (★★★★)**: かなり珍しいもの（歴史的建造物、有名なテーマパーク）。
+        - **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
@@ -368,10 +354,10 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- HTTPチャット会話 ---
+// --- HTTPチャット会話 (修正版: 記憶参照機能追加) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        let { text, name, image, history, location, address, missingInfo } = req.body;
+        let { text, name, image, history, location, address, missingInfo, memoryContext } = req.body;
         
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
@@ -403,7 +389,6 @@ app.post('/chat-dialogue', async (req, res) => {
             現在、ユーザーの「${targetInfo}」の情報がまだ登録されていません。
             **今回の会話の最後に、自然な流れで以下のような質問をして情報を引き出してください。**
             質問例: 「${specificQuestion}」
-            ※ユーザーが既に何か質問している場合は、まずそれに答えてから、最後に「ところで…」と切り出してください。
             `;
         }
 
@@ -433,6 +418,9 @@ app.post('/chat-dialogue', async (req, res) => {
         - **現在は ${currentDateTime} です。**
         - **表記ルール**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
         
+        【生徒についての記憶 (プロフィール)】
+        ${memoryContext || "（まだ情報はありません）"}
+
         ${activeQuestionPrompt}
         ${profileUsagePrompt}
         ${locationPrompt}
