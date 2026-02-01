@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v338.0: iPhone最適化・軽量化対応版) ---
+// --- js/camera-service.js (v339.0: iPhone分析音対策・軽量化対応版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -9,7 +9,7 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
     const container = document.getElementById(containerId);
     if (!video || !container) return;
 
-    // ★追加: カメラ起動中は重いCSSエフェクトを切るクラスを付与
+    // カメラ起動中は重いCSSエフェクトを切るクラスを付与
     document.body.classList.add('camera-active');
 
     try {
@@ -17,14 +17,13 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
             window.previewStream.getTracks().forEach(t => t.stop());
         }
         try {
-            // ★修正: iPhone等の負荷軽減のため解像度とフレームレートを制限
-            // Geminiの画像認識はVGA(640x480)でも十分な精度が出ます
+            // iPhone等の負荷軽減のため解像度とフレームレートを制限
             window.previewStream = await navigator.mediaDevices.getUserMedia({ 
                 video: { 
                     facingMode: "environment", 
                     width: { ideal: 640 }, 
                     height: { ideal: 480 },
-                    frameRate: { ideal: 15 } // 30fpsは不要なので15fpsに制限
+                    frameRate: { ideal: 15 }
                 },
                 audio: false 
             });
@@ -39,13 +38,13 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
 
     } catch (e) {
         console.warn("[Preview] Camera init failed:", e);
-        document.body.classList.remove('camera-active'); // 失敗時はクラス解除
+        document.body.classList.remove('camera-active'); 
         alert("カメラが使えないにゃ…。");
     }
 };
 
 window.stopPreviewCamera = function() {
-    // ★追加: CSSエフェクト復帰
+    // CSSエフェクト復帰
     document.body.classList.remove('camera-active');
 
     if (window.previewStream) {
@@ -57,7 +56,7 @@ window.stopPreviewCamera = function() {
         if(v) {
             v.pause();
             v.srcObject = null;
-            v.load(); // ★追加: メモリ解放を促進
+            v.load(); // メモリ解放を促進
         }
     });
     ['live-chat-video-container', 'live-chat-video-container-embedded', 'live-chat-video-container-simple', 'live-chat-video-container-free'].forEach(cid => {
@@ -329,7 +328,7 @@ window.startHomeworkWebcam = async function() {
     const cancel = document.getElementById('camera-cancel-btn');
     if (!modal || !video) return;
 
-    // ★追加: 宿題カメラ起動中も軽量化
+    // 宿題カメラ起動中も軽量化
     document.body.classList.add('camera-active');
 
     try {
@@ -361,13 +360,13 @@ window.closeHomeworkCamera = function() {
     const modal = document.getElementById('camera-modal');
     const video = document.getElementById('camera-video');
     
-    // ★追加: 軽量化解除
+    // 軽量化解除
     document.body.classList.remove('camera-active');
 
     if (window.homeworkStream) { window.homeworkStream.getTracks().forEach(t => t.stop()); window.homeworkStream = null; }
     if (video) {
         video.srcObject = null;
-        video.load(); // ★追加: メモリ解放
+        video.load(); // メモリ解放
     }
     if (modal) modal.classList.add('hidden');
 };
@@ -445,6 +444,17 @@ window.initCustomCropper = function() {
         document.getElementById('upload-controls').classList.remove('hidden'); 
     }; 
     document.getElementById('cropper-ok-btn').onclick = () => { 
+        // ★iOS対策: 分析完了音(hirameku.mp3)をここでアンロックしておく
+        if (window.sfxHirameku) {
+            const originalVol = window.sfxHirameku.volume;
+            window.sfxHirameku.volume = 0;
+            window.sfxHirameku.play().then(() => {
+                window.sfxHirameku.pause();
+                window.sfxHirameku.currentTime = 0;
+                window.sfxHirameku.volume = originalVol;
+            }).catch(e => {});
+        }
+
         modal.classList.add('hidden'); 
         window.onmousemove = null; window.ontouchmove = null; 
         const croppedBase64 = window.performPerspectiveCrop(canvas, window.cropPoints); 
