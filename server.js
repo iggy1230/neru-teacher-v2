@@ -1,4 +1,4 @@
-// --- server.js (完全版 v330.0: 黒板機能復元版) ---
+// --- server.js (完全版 v331.0: 検索ツールとJSONモードの競合修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -292,7 +292,7 @@ app.post('/identify-item', async (req, res) => {
         3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
         【★レアリティ判定基準 (肉球ランク 1〜5)】
-        - **1 (★) [厳格に判定]**: どこでも買える市販の商品、どこにでも生えている植物、日常的な風景。
+        - **1 (★) [厳格に判定]**: どこでも買える市販の商品、どこにでも生えている植物、日常的な風景。**※スーパーやコンビニで買えるものは必ず「1」にしてください。**
         - **2 (★★)**: ちょっとだけ珍しいもの。
         - **3 (★★★)**: その場所に行かないと見られないもの。
         - **4 (★★★★)**: かなり珍しいもの（歴史的建造物、有名なテーマパーク）。
@@ -354,7 +354,7 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- HTTPチャット会話 (★黒板機能対応版) ---
+// --- HTTPチャット会話 (修正版: JSON強制解除) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
         let { text, name, image, history, location, address, missingInfo, memoryContext } = req.body;
@@ -449,12 +449,12 @@ app.post('/chat-dialogue', async (req, res) => {
         let result;
         let responseText;
 
-        // ★修正: JSONモードを有効化
+        // ★修正: JSON強制はOFFにする（検索ツールとの競合回避）
         const toolsConfig = image ? undefined : [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
-            tools: toolsConfig,
-            generationConfig: { responseMimeType: "application/json" } // JSON強制
+            tools: toolsConfig
+            // generationConfig: { responseMimeType: "application/json" } // 削除
         });
 
         if (image) {
@@ -468,14 +468,13 @@ app.post('/chat-dialogue', async (req, res) => {
         
         responseText = result.response.text();
         
-        // JSONパース
+        // JSONパース (Markdownブロック対策)
         let jsonResponse;
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             jsonResponse = JSON.parse(cleanText);
         } catch (e) {
-            console.warn("Chat JSON Parse Error:", e);
-            // フォールバック: JSONじゃない場合はそのままセリフとする
+            // パース失敗時は、セリフ全体をspeechとして扱う
             jsonResponse = { speech: responseText, board: "" };
         }
         
