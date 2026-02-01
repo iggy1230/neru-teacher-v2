@@ -1,4 +1,4 @@
-// --- server.js (完全版 v329.0: 呼び捨て防止・さん付け強制版) ---
+// --- server.js (完全版 v330.0: 黒板機能復元版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -247,7 +247,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- ★ お宝図鑑用 画像解析API (レアリティ厳格化) ---
+// --- お宝図鑑用 画像解析API ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location, address } = req.body;
@@ -292,19 +292,18 @@ app.post('/identify-item', async (req, res) => {
         3. **一般的な商品**: 位置情報があっても、それが一般的な商品の場合は、場所の名前は登録せず、商品の正式名称を \`itemName\` にしてください。
 
         【★レアリティ判定基準 (肉球ランク 1〜5)】
-        - **1 (★) [厳格に判定]**: どこでも買える市販の商品（お菓子、飲み物、文房具、おもちゃ、スマホ、家電）、どこにでも生えている植物（雑草）、日常的な風景。**※スーパーやコンビニで買えるものは必ず「1」にしてください。**
+        - **1 (★) [厳格に判定]**: どこでも買える市販の商品、どこにでも生えている植物、日常的な風景。
         - **2 (★★)**: ちょっとだけ珍しいもの。
         - **3 (★★★)**: その場所に行かないと見られないもの。
         - **4 (★★★★)**: かなり珍しいもの（歴史的建造物、有名なテーマパーク）。
         - **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
 
         【解説のルール】
-        1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。
-        2. **呼び方ルール**: **解説の最後に、「${name}さんはこれ知ってたにゃ？」のように、必ず『${name}さん』とさん付けで呼びかけてください。呼び捨ては厳禁です。**
-        3. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
-        4. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
-        5. **場所の言及ルール**: 撮影されたものが「建物」や「風景」ではなく、持ち運び可能な「商品」や「小物」の場合、解説文の中で**「ここは〇〇市〇〇町〜」のような撮影場所への言及は絶対にしないでください**。違和感があります。
-        6. **禁止事項**: 座標の数値をそのままユーザーへの返答に入れないでください。
+        1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**★重要: 解説の最後に、「${name}さんはこれ知ってたにゃ？」や「これ好きにゃ？」など、ユーザーが返事をしやすい短い問いかけを必ず入れてください。**
+        2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
+        3. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
+        4. **場所の言及ルール**: 撮影されたものが「建物」や「風景」ではなく、持ち運び可能な「商品」や「小物」の場合、解説文の中で**「ここは〇〇市〇〇町〜」のような撮影場所への言及は絶対にしないでください**。違和感があります。
+        5. **禁止事項**: 座標の数値をそのままユーザーへの返答に入れないでください。
 
         【出力フォーマット (JSON)】
         \`\`\`json
@@ -340,7 +339,7 @@ app.post('/identify-item', async (req, res) => {
             let fallbackText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             json = {
                 itemName: "なぞの物体",
-                rarity: 1, // Fallback
+                rarity: 1, 
                 description: fallbackText,
                 realDescription: "AIの解析結果を直接表示しています。",
                 speechText: fallbackText
@@ -355,7 +354,7 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- HTTPチャット会話 (修正版: 呼び方ルール強化) ---
+// --- HTTPチャット会話 (★黒板機能対応版) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
         let { text, name, image, history, location, address, missingInfo, memoryContext } = req.body;
@@ -411,7 +410,6 @@ app.post('/chat-dialogue', async (req, res) => {
             text += `\n（システム情報：現在の座標は ${location.lat}, ${location.lon} です。）`;
         }
 
-        // ★修正: 呼び方ルールを強化
         let prompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
@@ -421,6 +419,10 @@ app.post('/chat-dialogue', async (req, res) => {
         - **呼び方ルール**: **相手を呼ぶときは必ず「${name}さん」と呼んでください。絶対に呼び捨てにしないでください。**
         - **表記ルール**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
         
+        【★黒板（ホワイトボード）の使用】
+        - 返答の中で、重要な公式、計算式、難しい熟語、または会話の「まとめ」があれば、それを \`board\` フィールドに出力してください。
+        - 雑談の場合は \`board\` は空文字で構いません。
+
         【生徒についての記憶 (プロフィール)】
         ${memoryContext || "（まだ情報はありません）"}
 
@@ -429,9 +431,13 @@ app.post('/chat-dialogue', async (req, res) => {
         ${locationPrompt}
         ${contextPrompt}
 
-        【出力について】
-        **形式は自由なテキストで構いません。JSONにする必要はありません。**
-        ネル先生として、親しみやすく「にゃ」をつけて話してください。
+        【出力フォーマット (JSON)】
+        \`\`\`json
+        {
+            "speech": "ネル先生のセリフ（です・ます調、語尾は「にゃ」）",
+            "board": "黒板に書く内容（重要な式やキーワードのみ。箇条書き推奨）"
+        }
+        \`\`\`
         
         ユーザー発言: ${text}
         `;
@@ -443,50 +449,35 @@ app.post('/chat-dialogue', async (req, res) => {
         let result;
         let responseText;
 
-        try {
-            const toolsConfig = image ? undefined : [{ google_search: {} }];
-            const model = genAI.getGenerativeModel({ 
-                model: MODEL_FAST,
-                tools: toolsConfig
-            });
+        // ★修正: JSONモードを有効化
+        const toolsConfig = image ? undefined : [{ google_search: {} }];
+        const model = genAI.getGenerativeModel({ 
+            model: MODEL_FAST,
+            tools: toolsConfig,
+            generationConfig: { responseMimeType: "application/json" } // JSON強制
+        });
 
-            if (image) {
-                result = await model.generateContent([
-                    prompt,
-                    { inlineData: { mime_type: "image/jpeg", data: image } }
-                ]);
-            } else {
-                result = await model.generateContent(prompt);
-            }
-            responseText = result.response.text().trim();
-
-        } catch (genError) {
-            console.warn("Generation failed. Retrying without tools...", genError.message);
-            const modelFallback = genAI.getGenerativeModel({ model: MODEL_FAST });
-            try {
-                if (image) {
-                    result = await modelFallback.generateContent([
-                        prompt,
-                        { inlineData: { mime_type: "image/jpeg", data: image } }
-                    ]);
-                } else {
-                    result = await modelFallback.generateContent(prompt);
-                }
-                responseText = result.response.text().trim();
-            } catch (retryError) {
-                throw retryError;
-            }
+        if (image) {
+            result = await model.generateContent([
+                prompt,
+                { inlineData: { mime_type: "image/jpeg", data: image } }
+            ]);
+        } else {
+            result = await model.generateContent(prompt);
         }
         
-        let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        cleanText = cleanText.split('\n').filter(line => {
-            return !/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(line);
-        }).join(' ');
-
-        const jsonResponse = { 
-            speech: cleanText, 
-            board: "" 
-        };
+        responseText = result.response.text();
+        
+        // JSONパース
+        let jsonResponse;
+        try {
+            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            jsonResponse = JSON.parse(cleanText);
+        } catch (e) {
+            console.warn("Chat JSON Parse Error:", e);
+            // フォールバック: JSONじゃない場合はそのままセリフとする
+            jsonResponse = { speech: responseText, board: "" };
+        }
         
         res.json(jsonResponse);
 
