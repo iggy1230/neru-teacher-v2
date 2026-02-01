@@ -1,4 +1,4 @@
-// --- js/analyze.js (v339.0: iPhoneタイマー音声対応版) ---
+// --- js/analyze.js (v340.0: 分析中音声オフ機能追加版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -406,7 +406,7 @@ window.setSubject = function(s) {
 window.setAnalyzeMode = function(type) { window.analysisType = 'precision'; };
 
 // ==========================================
-// ★ タイマー関連 (カウントダウン音修正 + iOSハック)
+// ★ タイマー関連 (カウントダウン音修正)
 // ==========================================
 
 window.openTimerModal = function() {
@@ -698,6 +698,7 @@ window.checkOneProblem = function(id) {
 };
 window.updateMarkDisplay = function(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } };
 
+// ★修正箇所: 正解数カウントの初期値を0にし、満点判定を修正
 window.updateGradingMessage = function() { 
     let correctCount = 0; 
     window.transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); 

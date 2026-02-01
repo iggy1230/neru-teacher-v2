@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v339.0: iPhone分析音対策・軽量化対応版) ---
+// --- js/camera-service.js (v340.0: お宝図鑑音声停止・軽量化対応版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -189,7 +189,10 @@ const getLocation = () => {
 window.captureAndIdentifyItem = async function() {
     if (window.isLiveImageSending) return;
     
-    if (window.isAlwaysListening && window.continuousRecognition) {
+    // ★追加: 分析開始時に音声入力を確実にオフにする
+    if (typeof window.stopAlwaysOnListening === 'function') {
+        window.stopAlwaysOnListening();
+    } else if (window.isAlwaysListening && window.continuousRecognition) {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
 
@@ -315,8 +318,13 @@ window.captureAndIdentifyItem = async function() {
             btn.disabled = false;
         }
         
-        if (window.isAlwaysListening && window.currentMode === 'chat') {
-            try { window.continuousRecognition.start(); } catch(e){}
+        // ★修正: 図鑑モードなら音声入力を再開する
+        if (window.currentMode === 'chat') {
+            if (typeof window.startAlwaysOnListening === 'function') {
+                window.startAlwaysOnListening();
+            } else if (window.isAlwaysListening) {
+                try { window.continuousRecognition.start(); } catch(e){}
+            }
         }
     }
 };
@@ -444,7 +452,7 @@ window.initCustomCropper = function() {
         document.getElementById('upload-controls').classList.remove('hidden'); 
     }; 
     document.getElementById('cropper-ok-btn').onclick = () => { 
-        // ★iOS対策: 分析完了音(hirameku.mp3)をここでアンロックしておく
+        // iOS対策: 分析完了音(hirameku.mp3)をここでアンロックしておく
         if (window.sfxHirameku) {
             const originalVol = window.sfxHirameku.volume;
             window.sfxHirameku.volume = 0;
