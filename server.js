@@ -1,4 +1,4 @@
-// --- server.js (完全版 v342.0: 難易度調整・読み間違い修正版) ---
+// --- server.js (完全版 v343.0: 嗜好判定厳格化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -80,8 +80,8 @@ function fixPronunciation(text) {
     let t = text;
 
     // --- 算数・数学用語 ---
-    t = t.replace(/角/g, "かく"); // つの -> かく
-    t = t.replace(/辺/g, "へん"); // あたり -> へん
+    t = t.replace(/角/g, "かく"); 
+    t = t.replace(/辺/g, "へん");
     t = t.replace(/真分数/g, "しんぶんすう");
     t = t.replace(/仮分数/g, "かぶんすう");
     t = t.replace(/帯分数/g, "たいぶんすう");
@@ -89,19 +89,14 @@ function fixPronunciation(text) {
     t = t.replace(/通分/g, "つうぶん");
     t = t.replace(/直角/g, "ちょっかく");
     
-    // --- 記号 (文脈によるが、小学生算数ならこう読むのが安全) ---
-    // 文中にある "＋" は "たす" と読む
+    // --- 記号 ---
     t = t.replace(/\+/g, "たす");
     t = t.replace(/＋/g, "たす");
-    // "-" は "ひく" (文脈によってはマイナスだが、低学年はひく)
     t = t.replace(/\-/g, "ひく");
     t = t.replace(/－/g, "ひく");
-    // "=" は "わ"
     t = t.replace(/\=/g, "わ");
     t = t.replace(/＝/g, "わ");
-    // "×" は "かける"
     t = t.replace(/×/g, "かける");
-    // "÷" は "わる"
     t = t.replace(/÷/g, "わる");
 
     return t;
@@ -118,13 +113,9 @@ app.post('/synthesize', async (req, res) => {
         const { text, mood } = req.body;
         
         let speakText = text;
-        // 不要なマークダウン記号削除
         speakText = speakText.replace(/[\*#_`~]/g, "");
-        // ふりがな削除 (漢字のみ読む)
-        speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2'); // ふりがな優先で読むように変更($1だと漢字、$2だとふりがな)
-        // もしふりがな優先だと誤読がある場合は $1 に戻すが、子供向けならふりがなを信じる
+        speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
 
-        // ★追加: 読み間違い補正
         speakText = fixPronunciation(speakText);
 
         let rate = "1.1"; let pitch = "+2st";
@@ -160,6 +151,10 @@ app.post('/update-memory', async (req, res) => {
         1. **情報の抽出**: 会話ログから誕生日、好きなもの、苦手なもの、趣味等の情報を抽出し、プロフィールを更新してください。
         2. **誕生日**: 会話内で日付（〇月〇日）が言及され、それがユーザーの誕生日であれば、必ず \`birthday\` を更新してください。
         3. **維持**: 会話ログに新しい情報がない項目は、現在の内容をそのまま維持してください。
+
+        【★重要: 好きなものの判定ルール (厳守)】
+        - **ユーザーが画像を見せただけ、または「これは何？」と質問しただけの対象は、絶対に「好きなもの」に追加しないでください。**
+        - ユーザーが明確に「～が好き」「～にハマっている」「～が気に入っている」と言葉で発言した場合のみ、「好きなもの」に追加してください。
 
         【タスク2: 会話の要約】
         今回の会話の内容を、「○○について話した」のように一文で要約し、\`summary_text\` として出力してください。
