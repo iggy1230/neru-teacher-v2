@@ -1,4 +1,4 @@
-// --- js/analyze.js (v331.0: タイマー音声ファイル差替版) ---
+// --- js/analyze.js (v333.0: タイマー音声タイミング調整版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -406,7 +406,7 @@ window.setSubject = function(s) {
 window.setAnalyzeMode = function(type) { window.analysisType = 'precision'; };
 
 // ==========================================
-// ★ タイマー関連 (カウントダウン音声ファイル対応)
+// ★ タイマー関連 (カウントダウンタイミング調整版)
 // ==========================================
 
 window.openTimerModal = function() {
@@ -452,9 +452,11 @@ window.toggleTimer = function() {
         
         window.studyTimerInterval = setInterval(() => {
             if (window.studyTimerValue > 0) {
-                // ★修正: 残り10秒〜1秒の時に、音声ファイルでカウントダウン
-                if (window.studyTimerValue <= 10 && window.studyTimerValue >= 1) {
-                     const sfx = window.sfxCountdown[window.studyTimerValue];
+                // ★修正: 残り11秒〜2秒の時に、音声ファイルで1秒先読みカウントダウン
+                // (例: 残り11秒の時に、10.wavを再生)
+                if (window.studyTimerValue <= 11 && window.studyTimerValue >= 2) {
+                     const soundIndex = window.studyTimerValue - 1;
+                     const sfx = window.sfxCountdown[soundIndex];
                      if (sfx) window.safePlay(sfx);
                 }
 
