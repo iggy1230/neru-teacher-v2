@@ -1,4 +1,4 @@
-// --- js/analyze.js (v332.0: タイマー音声カウントダウン版) ---
+// --- js/analyze.js (v333.0: タイマー調整版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -388,7 +388,7 @@ window.setSubject = function(s) {
 window.setAnalyzeMode = function(type) { window.analysisType = 'precision'; };
 
 // ==========================================
-// ★ タイマー関連 (カウントダウン音追加)
+// ★ タイマー関連 (カウントダウン音修正)
 // ==========================================
 
 window.openTimerModal = function() {
@@ -400,6 +400,7 @@ window.closeTimerModal = function() {
 };
 window.setTimer = function(minutes) {
     if (window.studyTimerRunning) return;
+    // 分単位なので60倍。0.5なら30秒。
     window.studyTimerValue += minutes * 60;
     window.updateTimerDisplay();
 };
@@ -434,14 +435,15 @@ window.toggleTimer = function() {
         
         window.studyTimerInterval = setInterval(() => {
             if (window.studyTimerValue > 0) {
-                // ★修正: 残り10秒以下でネル先生がカウントダウン
-                if (window.studyTimerValue <= 10) {
+                // ★修正: 残り11秒〜2秒の時に、次の秒数(10〜1)を読み上げる（1秒先読み）
+                if (window.studyTimerValue <= 11 && window.studyTimerValue > 1) {
+                    const speakVal = window.studyTimerValue - 1;
                     const counts = {
                         10: "じゅう！", 9: "きゅう！", 8: "はち！", 7: "なな！", 6: "ろく！",
                         5: "ご！", 4: "よん！", 3: "さん！", 2: "に！", 1: "いち！"
                     };
-                    if (counts[window.studyTimerValue]) {
-                        window.updateNellMessage(counts[window.studyTimerValue], "excited", false, true);
+                    if (counts[speakVal]) {
+                        window.updateNellMessage(counts[speakVal], "excited", false, true);
                     }
                 }
 
