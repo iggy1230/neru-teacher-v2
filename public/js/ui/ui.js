@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v328.0: 記憶コンテキスト連携対応版) ---
+// --- js/ui/ui.js (v330.0: 黒板機能復元版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -871,19 +871,15 @@ window.sendHttpText = async function(context) {
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
-    // ★修正: メモリ参照ロジックの追加
     let missingInfo = [];
     let memoryContext = "";
     
     if (window.NellMemory && currentUser) {
         try {
-            // プロファイル取得
             const profile = await window.NellMemory.getUserProfile(currentUser.id);
             if (!profile.birthday) missingInfo.push("誕生日");
             if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
             if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
-            
-            // コンテキスト文字列生成
             memoryContext = await window.NellMemory.generateContextString(currentUser.id);
         } catch(e) {
             console.warn("Memory access error:", e);
@@ -903,7 +899,7 @@ window.sendHttpText = async function(context) {
                 location: window.currentLocation,
                 address: window.currentAddress,
                 missingInfo: missingInfo,
-                memoryContext: memoryContext // ★追加: 記憶データを送信
+                memoryContext: memoryContext 
             })
         });
 
@@ -911,17 +907,21 @@ window.sendHttpText = async function(context) {
             const data = await res.json();
             const speechText = data.speech || data.reply || "教えてあげるにゃ！";
             
+            // ★修正: 黒板の表示制御を追加
+            if (data.board && data.board.trim() !== "") {
+                const boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
+                const boardEl = document.getElementById(boardId);
+                if (boardEl) {
+                    boardEl.innerText = data.board;
+                    boardEl.classList.remove('hidden');
+                }
+            }
+
             window.addLogItem('nell', speechText);
             window.addToSessionHistory('nell', speechText);
             
             await window.updateNellMessage(speechText, "happy", true, true);
             
-            let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
-            const embedBoard = document.getElementById(boardId);
-            if (embedBoard && data.board && data.board.trim() !== "") {
-                embedBoard.innerText = data.board;
-                embedBoard.classList.remove('hidden');
-            }
             input.value = ""; 
         }
     } catch(e) {
