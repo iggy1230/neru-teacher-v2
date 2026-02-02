@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v344.0: 画像送信プロンプト変更版) ---
+// --- js/camera-service.js (v346.0: カード生成連携版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -16,7 +16,6 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
             window.previewStream.getTracks().forEach(t => t.stop());
         }
         try {
-            // iPhone負荷軽減: VGA 15fps
             window.previewStream = await navigator.mediaDevices.getUserMedia({ 
                 video: { 
                     facingMode: "environment", 
@@ -161,7 +160,7 @@ const getLocation = () => {
         const timeoutId = setTimeout(() => {
             console.warn("GPS Timeout (Fallback)");
             resolve(null);
-        }, 8000); // タイムアウト短縮
+        }, 8000); 
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -193,18 +192,18 @@ window.captureAndIdentifyItem = async function() {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
 
-    // 2. iOS対策: ボタン押下直後に音声コンテキストを再開＆効果音をアンロック
+    // 2. iOS対策: 音声アンロック
     if (window.initAudioContext) {
         window.initAudioContext().catch(e => console.warn("AudioContext init error:", e));
     }
     if (window.sfxHirameku) {
         const originalVol = window.sfxHirameku.volume;
-        window.sfxHirameku.volume = 0; // 無音で
+        window.sfxHirameku.volume = 0; 
         window.sfxHirameku.play().then(() => {
             window.sfxHirameku.pause();
             window.sfxHirameku.currentTime = 0;
-            window.sfxHirameku.volume = originalVol; // 音量戻す
-        }).catch(e => {}); // エラーは無視
+            window.sfxHirameku.volume = originalVol;
+        }).catch(e => {});
     }
 
     const video = document.getElementById('live-chat-video');
@@ -230,12 +229,11 @@ window.captureAndIdentifyItem = async function() {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // エラーハンドリング: 画像処理でのクラッシュ防止
-        let compressedDataUrl, base64Data, treasureDataUrl;
+        let compressedDataUrl, base64Data;
         try {
             compressedDataUrl = window.processImageForAI(canvas);
             base64Data = compressedDataUrl.split(',')[1];
-            treasureDataUrl = window.createTreasureImage(canvas);
+            // treasureDataUrlは後でカード生成時に作るのでここでは不要
         } catch (imgErr) {
             throw new Error("画像の処理に失敗したにゃ。メモリ不足かもしれないにゃ。");
         }
@@ -251,7 +249,7 @@ window.captureAndIdentifyItem = async function() {
 
         // GPS精度待ち
         if (!locationData || locationData.accuracy > 1000) {
-            for (let i = 0; i < 4; i++) { // 待ち時間短縮
+            for (let i = 0; i < 4; i++) {
                 await new Promise(r => setTimeout(r, 500));
                 if (window.currentLocation && window.currentLocation.accuracy <= 1000) {
                     locationData = window.currentLocation;
@@ -306,10 +304,20 @@ window.captureAndIdentifyItem = async function() {
             window.addToSessionHistory('nell', speech);
         }
 
-        if (data.itemName && window.NellMemory) {
-            const description = data.description || "（解説はないにゃ）";
-            const realDescription = data.realDescription || "";
-            await window.NellMemory.addToCollection(currentUser.id, data.itemName, treasureDataUrl, description, realDescription, locationData, data.rarity || 1);
+        if (data.itemName && window.NellMemory && window.generateTradingCard) {
+            // ★カード画像の生成
+            const cardDataUrl = await window.generateTradingCard(base64Data, data, currentUser);
+            
+            // 図鑑に登録 (カード画像を保存)
+            await window.NellMemory.addToCollection(
+                currentUser.id, 
+                data.itemName, 
+                cardDataUrl, // ★ここが変わった！
+                data.description, 
+                data.realDescription, 
+                locationData, 
+                data.rarity || 1
+            );
             
             const notif = document.createElement('div');
             const cleanName = data.itemName.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
