@@ -1,4 +1,4 @@
-// --- js/card-generator.js (v347.0: 枠画像活用・位置調整版) ---
+// --- js/card-generator.js (v348.1: 座標・サイズ微調整版) ---
 
 window.CardGenerator = {};
 
@@ -13,7 +13,7 @@ function loadImage(src) {
     });
 }
 
-// テキストの自動改行処理 (行間調整機能付き)
+// テキストの自動改行処理
 function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
     const words = text.split('');
     let line = '';
@@ -37,7 +37,6 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
 
 // ★カード生成メイン関数
 window.generateTradingCard = async function(photoBase64, itemData, userData) {
-    // 画像サイズ（枠画像の比率に合わせる: 600x880想定）
     const CANVAS_W = 600;
     const CANVAS_H = 880; 
     const canvas = document.createElement('canvas');
@@ -45,40 +44,36 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     canvas.height = CANVAS_H;
     const ctx = canvas.getContext('2d');
 
-    // 1. 背景（クリーム色） - 透過PNG対策
+    // 1. 背景
     ctx.fillStyle = "#fffbe6"; 
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
     // 2. 枠画像の読み込み
-    // ※ index.htmlと同じ階層の assets/images/ui/card_frame.png を読み込みます
     try {
         const frameImg = await loadImage('assets/images/ui/card_frame.png');
         ctx.drawImage(frameImg, 0, 0, CANVAS_W, CANVAS_H);
     } catch (e) {
-        console.error("枠画像の読み込みに失敗しました。パスを確認してください。", e);
-        // 画像がない場合の緊急用枠線（デバッグ用）
+        console.error("枠画像の読み込み失敗", e);
         ctx.strokeStyle = "orange";
         ctx.lineWidth = 10;
         ctx.strokeRect(0, 0, CANVAS_W, CANVAS_H);
     }
 
-    // 3. 写真の描画（上部の円に合わせて切り抜き）
+    // 3. 写真の描画（位置とサイズを微調整）
     try {
         const photoImg = await loadImage("data:image/jpeg;base64," + photoBase64);
         
-        // ★調整: 画像の黒丸エリアに合わせる座標
-        // 枠画像のデザインに合わせて数値を微調整してください
+        // ★調整: 写真を枠の円の中に収める
         const photoCenterX = 300; 
-        const photoCenterY = 225; // 円の中心Y座標
-        const photoRadius = 145;  // 円の半径
+        const photoCenterY = 230; // 少し下げて円の中心に合わせる
+        const photoRadius = 135;  // 半径を小さくして枠内に収める
 
         ctx.save();
         ctx.beginPath();
         ctx.arc(photoCenterX, photoCenterY, photoRadius, 0, Math.PI * 2);
         ctx.closePath();
-        ctx.clip(); // ここで円形にマスク
+        ctx.clip(); 
 
-        // 写真をアスペクト比維持で中心に描画
         const scale = Math.max((photoRadius * 2) / photoImg.width, (photoRadius * 2) / photoImg.height);
         const w = photoImg.width * scale;
         const h = photoImg.height * scale;
@@ -86,7 +81,7 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
         const y = photoCenterY - h / 2;
         
         ctx.drawImage(photoImg, x, y, w, h);
-        ctx.restore(); // マスク解除
+        ctx.restore();
 
     } catch (e) {
         console.warn("Card Photo Load Error", e);
@@ -96,75 +91,71 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     ctx.fillStyle = "#aaa";
     ctx.font = "bold 24px 'M PLUS Rounded 1c', sans-serif";
     ctx.textAlign = "left";
-    // 枠画像の「No.044」等の位置に重ねるか、システムで管理する場合は描画
-    // 今回は枠画像に文字が入っていない前提で描画します
+    // 枠画像に番号欄がある場合は位置を合わせる（必要なければコメントアウト）
     // ctx.fillText("No.???", 60, 65); 
 
-    // 5. アイテム名 (写真の下、中央)
-    ctx.fillStyle = "#d84315"; // 濃いオレンジ
+    // 5. アイテム名
+    ctx.fillStyle = "#d84315"; 
     ctx.font = "900 40px 'M PLUS Rounded 1c', sans-serif";
     ctx.textAlign = "center";
-    // 影をつけて視認性を上げる
     ctx.shadowColor = "white";
     ctx.shadowBlur = 0;
     ctx.shadowOffsetX = 2;
     ctx.shadowOffsetY = 2;
     
-    // 名前が長すぎる場合はフォントを小さくする自動調整
+    // フォントサイズ自動調整
     let nameFontSize = 40;
     ctx.font = `900 ${nameFontSize}px 'M PLUS Rounded 1c', sans-serif`;
-    while (ctx.measureText(itemData.itemName).width > 500 && nameFontSize > 20) {
+    while (ctx.measureText(itemData.itemName).width > 520 && nameFontSize > 20) {
         nameFontSize -= 2;
         ctx.font = `900 ${nameFontSize}px 'M PLUS Rounded 1c', sans-serif`;
     }
-    // ★調整: 名前のY座標
-    ctx.fillText(itemData.itemName, 300, 450);
     
-    // 影リセット
+    // ★調整: 解説枠に被らないよう、Y座標を上に上げる
+    ctx.fillText(itemData.itemName, 300, 420); 
+    
     ctx.shadowColor = "transparent";
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
 
     // 6. ネル先生の解説テキスト
-    // ★枠線の描画は削除し、文字だけを配置します
-    const descX = 50;   // 左端
-    const descY = 530;  // 開始Y座標
-    const descW = 500;  // 折り返し幅
+    // ★調整: 見出し帯（オレンジ）を避けて、本文エリアから書き始める
+    const descX = 55;   // 左端（アイコンを避けるため少し右へ）
+    const descY = 560;  // 開始Y座標（帯の下へ移動）
+    const descW = 490;  // 幅調整
     
-    ctx.fillStyle = "#5d4037"; // こげ茶色
-    ctx.font = "17px 'M PLUS Rounded 1c', sans-serif"; // 少し丸文字で見やすく
+    ctx.fillStyle = "#5d4037"; 
+    ctx.font = "17px 'M PLUS Rounded 1c', sans-serif";
     ctx.textAlign = "left";
     
     let descText = itemData.description || "（解説なし）";
-    // 読み仮名の削除（スッキリさせるため）
     descText = descText.replace(/[\(（][ぁ-んァ-ンー\s　]+[\)）]/g, "");
     
-    wrapText(ctx, descText, descX, descY, descW, 26); // 行間26px
+    wrapText(ctx, descText, descX, descY, descW, 26);
 
     // 7. ほんとうのことテキスト
-    const realX = 50;
-    const realY = 745; // 青い枠の開始位置に合わせて調整
-    const realW = 500;
+    // ★調整: 見出し帯（青）を避けて、本文エリアから書き始める
+    const realX = 55;
+    const realY = 765; // 開始Y座標（帯の下へ移動）
+    const realW = 490;
 
-    ctx.fillStyle = "#01579b"; // 濃い青
-    ctx.font = "16px 'Sawarabi Gothic', sans-serif"; // 少し真面目なフォント
+    ctx.fillStyle = "#01579b";
+    ctx.font = "16px 'Sawarabi Gothic', sans-serif";
     
     let realText = itemData.realDescription || "（情報なし）";
     realText = realText.replace(/[\(（][ぁ-んァ-ンー\s　]+[\)）]/g, "");
 
-    wrapText(ctx, realText, realX, realY, realW, 24); // 行間24px
+    wrapText(ctx, realText, realX, realY, realW, 24);
 
-    // 8. フッター (日付・名前)
+    // 8. フッター
     const today = new Date();
     const dateStr = `${today.getFullYear()}/${today.getMonth()+1}/${today.getDate()}`;
     
     ctx.fillStyle = "#888";
-    ctx.font = "14px sans-serif";
+    ctx.font = "12px sans-serif";
     ctx.textAlign = "right";
     const footerText = `発見日: ${dateStr} | 発見者: ${userData ? userData.name : 'ゲスト'}`;
-    // 右下に配置
-    ctx.fillText(footerText, CANVAS_W - 30, CANVAS_H - 15);
+    ctx.fillText(footerText, CANVAS_W - 30, CANVAS_H - 12);
 
-    // 9. JPEG画像としてエクスポート (画質0.85)
     return canvas.toDataURL("image/jpeg", 0.85);
 };
