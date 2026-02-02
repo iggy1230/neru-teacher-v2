@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v341.0: iPhone音声・図鑑登録修正版) ---
+// --- js/camera-service.js (v344.0: 画像送信プロンプト変更版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -182,7 +182,7 @@ const getLocation = () => {
     });
 };
 
-// ★修正: iPhoneでの音声・登録不具合対策
+// iPhoneでの音声・登録不具合対策
 window.captureAndIdentifyItem = async function() {
     if (window.isLiveImageSending) return;
     
@@ -193,7 +193,7 @@ window.captureAndIdentifyItem = async function() {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
 
-    // 2. ★iOS対策: ボタン押下直後に音声コンテキストを再開＆効果音をアンロック
+    // 2. iOS対策: ボタン押下直後に音声コンテキストを再開＆効果音をアンロック
     if (window.initAudioContext) {
         window.initAudioContext().catch(e => console.warn("AudioContext init error:", e));
     }
@@ -230,7 +230,7 @@ window.captureAndIdentifyItem = async function() {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // ★エラーハンドリング: 画像処理でのクラッシュ防止
+        // エラーハンドリング: 画像処理でのクラッシュ防止
         let compressedDataUrl, base64Data, treasureDataUrl;
         try {
             compressedDataUrl = window.processImageForAI(canvas);
@@ -318,7 +318,7 @@ window.captureAndIdentifyItem = async function() {
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 4000);
             
-            // ★再生: ここで分析完了音が鳴るはず（アンロック済みなら）
+            // 分析完了音
             if(window.safePlay) window.safePlay(window.sfxHirameku);
         }
 
@@ -337,7 +337,7 @@ window.captureAndIdentifyItem = async function() {
             btn.disabled = false;
         }
         
-        // ★修正: 完了後に音声入力を再開
+        // 完了後に音声入力を再開
         if (window.currentMode === 'chat') {
             if (typeof window.startAlwaysOnListening === 'function') {
                 window.startAlwaysOnListening();
@@ -469,7 +469,7 @@ window.initCustomCropper = function() {
         document.getElementById('upload-controls').classList.remove('hidden'); 
     }; 
     document.getElementById('cropper-ok-btn').onclick = () => { 
-        // ★iOS対策: 決定ボタンを押した瞬間に音声をアンロック
+        // iOS対策: 決定ボタンを押した瞬間に音声をアンロック
         if (window.sfxHirameku) {
             const originalVol = window.sfxHirameku.volume;
             window.sfxHirameku.volume = 0;
@@ -532,7 +532,7 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
 window.startAnalysis = async function(b64) {
     if (window.isAnalyzing) return;
     
-    // ★分析中は音声入力を完全停止
+    // 分析中は音声入力を完全停止
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
 
     window.isAnalyzing = true; 
@@ -609,7 +609,7 @@ window.startAnalysis = async function(b64) {
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(doneMsg, "happy", false); 
             } 
             
-            // ★完了後に音声入力再開 (モードに応じて)
+            // 完了後に音声入力再開 (モードに応じて)
             if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
                 if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
             }
@@ -622,7 +622,7 @@ window.startAnalysis = async function(b64) {
         if(backBtn) backBtn.classList.remove('hidden'); 
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("うまく読めなかったにゃ…もう一度お願いにゃ！", "thinking", false); 
         
-        // ★エラー時も再開
+        // エラー時も再開
         if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
             if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
         }
@@ -800,7 +800,7 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 image: base64Data, 
-                text: "この問題を教えてください。",
+                text: "この写真に写っているものについて解説してください", 
                 name: currentUser ? currentUser.name : "生徒",
                 history: window.chatSessionHistory,
                 location: window.currentLocation,
