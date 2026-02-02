@@ -1,4 +1,4 @@
-// --- js/card-generator.js (v350.0: 新フレーム対応版) ---
+// --- js/card-generator.js (v351.0: テキスト位置微調整版) ---
 
 window.CardGenerator = {};
 
@@ -94,12 +94,12 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     // --- テキスト描画設定 ---
 
     // 4. 登録No. (左上)
-    // 実際はDBのIDなどを使うが、ここでは仮置き
-    const regNo = "No.000"; 
+    // 修正: 開始ナンバーをNo.001にし、X座標を左へ移動 (70 -> 40)
+    const regNo = "No.001"; 
     ctx.fillStyle = "#555"; 
     ctx.font = "bold 18px sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText(regNo, 70, 50); // 左上の枠内
+    ctx.fillText(regNo, 40, 50); 
 
     // 5. 物体名 (上部中央)
     ctx.fillStyle = "#d32f2f"; // 赤
@@ -117,11 +117,9 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     // 「レアリティ」の文字の右横に肉球マークを表示
     const rarity = itemData.rarity || 1;
     const pawX = 220; // 開始位置
-    const pawY = 848;
-    const pawSize = 30; // 肉球画像のサイズ
+    // 発見日と同じ高さに合わせるため少し上げます
+    const pawY = 818; 
     
-    // 肉球画像を読み込んで描画する関数 (簡易実装: 文字で代用も可だが画像推奨)
-    // ここでは絵文字で代用しますが、画像がある場合はdrawImageを使用してください
     ctx.font = "24px sans-serif";
     ctx.textAlign = "left";
     let paws = "";
@@ -135,11 +133,13 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     ctx.fillStyle = "#333";
     ctx.font = "16px sans-serif";
     ctx.textAlign = "right";
-    ctx.fillText(dateStr, 540, 848);
+    // 修正: Y座標を上へ移動 (848 -> 818)
+    ctx.fillText(dateStr, 540, 818);
 
     // 8. ネル先生の解説 (中央枠)
     const descX = 60;
-    const descY = 460;
+    // 修正: Y座標を上へ移動 (460 -> 440)
+    const descY = 440;
     const descW = 480;
     
     ctx.fillStyle = "#5d4037"; // 茶色
@@ -152,9 +152,9 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
 
     // 9. ほんとうのこと (下部枠)
     const realX = 60;
-    const realY = 690;
+    // 修正: Y座標を上へ移動 (690 -> 640)
+    const realY = 640;
     
-    ctx.fillStyle = "#ffffff"; // 白文字 (青背景の場合) または濃い青
     // 背景が薄い青なら濃い文字にする
     ctx.fillStyle = "#0d47a1"; 
     ctx.font = "16px 'Sawarabi Gothic', sans-serif";
