@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v348.0: カード表示最適化版) ---
+// --- js/ui/ui.js (v353.0: カード表示完全修正版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -40,7 +40,7 @@ window.updateVolumeUI = function() {
 window.applyVolumeToAll = function() {
     const targetVol = window.isMuted ? 0 : window.appVolume;
     
-    // 1. Audio Elements (constants.jsで定義された効果音たち)
+    // 1. Audio Elements
     if (window.audioList) {
         window.audioList.forEach(audio => {
             if (audio === window.sfxBunseki) {
@@ -51,9 +51,8 @@ window.applyVolumeToAll = function() {
         });
     }
     
-    // 2. Web Audio API Master Gain (TTS & Realtime Chat)
+    // 2. Web Audio API Master Gain
     if (window.masterGainNode && window.audioCtx) {
-        // 現在時刻で即座に変更
         window.masterGainNode.gain.setValueAtTime(targetVol, window.audioCtx.currentTime);
     }
 };
@@ -66,9 +65,7 @@ window.applyVolumeToAll = function() {
 window.cleanDisplayString = function(text) {
     if (!text) return "";
     let clean = text;
-    // 1. マークダウンの太字(**)などを削除
     clean = clean.replace(/\*\*/g, "");
-    // 2. 「漢字/英単語(ふりがな)」のふりがな部分を削除して、元の単語だけ残す
     clean = clean.replace(/[\(（][ぁ-んァ-ンー\s　]+[\)）]/g, "");
     return clean;
 };
@@ -102,7 +99,7 @@ window.switchScreen = function(to) {
     } else {
         console.error(`Screen not found: ${to}`);
     }
-    window.updateVolumeUI(); // 画面遷移時にUI状態を確認
+    window.updateVolumeUI(); 
 };
 
 window.startApp = async function() {
@@ -276,7 +273,7 @@ window.showCollection = async function() {
                 </div>
             </div>
 
-            <!-- カード型グリッドに変更 -->
+            <!-- カード型グリッド -->
             <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
@@ -363,7 +360,7 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
-    // ★修正: カード画像自体に全ての情報が含まれているため、HTMLでの重複表示をやめる
+    // ★カード画像のみを表示するレイアウト (余計なHTML装飾を排除)
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -374,9 +371,9 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
                 <button onclick="deleteCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff5252;">削除</button>
             </div>
             
-            <div style="flex:1; overflow-y:auto; background:transparent; display:flex; flex-direction:column; align-items:center;">
-                <!-- カード画像をそのまま表示 (枠や丸抜きなし) -->
-                <img src="${item.image}" style="width:100%; max-width:400px; height:auto; object-fit:contain; border-radius:12px; box-shadow:0 5px 15px rgba(0,0,0,0.3);">
+            <div style="flex:1; overflow-y:auto; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px;">
+                <!-- 画像そのものを表示 (影付き) -->
+                <img src="${item.image}" style="width:auto; max-width:100%; height:auto; max-height:100%; object-fit:contain; border-radius:15px; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
             </div>
             
             <div style="text-align:center; margin-top:10px; flex-shrink:0;">
@@ -455,7 +452,6 @@ window.renderMapMarkers = async function() {
 
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
     const collection = profile.collection || [];
-    const totalCount = collection.length;
     
     let hasMarkers = false;
     
@@ -474,12 +470,12 @@ window.renderMapMarkers = async function() {
             const displayName = window.cleanDisplayString(item.name);
             const dateStr = item.date ? new Date(item.date).toLocaleDateString() : "";
             
-            // 地図のポップアップでも、カード画像全体を見せるようにする
+            // 地図のポップアップでも、カード画像を表示
             const marker = L.marker([item.location.lat, item.location.lon], { icon: icon }).addTo(window.mapInstance);
             
             marker.bindPopup(`
                 <div style="text-align:center; width: 150px;">
-                    <img src="${item.image}" style="width:100%; height:auto; border-radius:5px; margin-bottom:5px;">
+                    <img src="${item.image}" style="width:100%; height:auto; border-radius:5px; margin-bottom:5px; box-shadow:0 2px 5px rgba(0,0,0,0.2);">
                     <strong>${displayName}</strong><br>
                     <span style="font-size:0.8rem; color:#666;">${dateStr}</span><br>
                     <button onclick="window.openCollectionDetailByIndex(${index})" class="mini-teach-btn" style="margin-top:5px; background:#ff85a1;">📖 詳しく見る</button>
