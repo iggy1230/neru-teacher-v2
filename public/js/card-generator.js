@@ -1,4 +1,4 @@
-// --- js/card-generator.js (v352.0: タイトル改行＆フォント自動縮小版) ---
+// --- js/card-generator.js (v354.0: テキスト位置微調整版2) ---
 
 window.CardGenerator = {};
 
@@ -97,7 +97,7 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     ctx.fillStyle = "#d32f2f"; 
     ctx.textAlign = "center";
     
-    const titleMaxWidth = 360; // No.と被らないための最大幅
+    const titleMaxWidth = 360; 
     let titleFontSize = 32;
     ctx.font = `bold ${titleFontSize}px 'M PLUS Rounded 1c', sans-serif`;
     
@@ -110,19 +110,20 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
         ctx.font = `bold ${titleFontSize}px 'M PLUS Rounded 1c', sans-serif`;
         titleLines = getWrappedLines(ctx, itemData.itemName, titleMaxWidth);
         
-        // 2行で描画 (Y座標を調整して上下中央っぽく)
+        // 2行で描画 (Y座標を調整)
         const lineHeight = titleFontSize * 1.1;
-        const startY = 60 - (lineHeight / 2) + (titleFontSize / 2) - 10; // 少し上に詰める
+        // ★修正: 開始Y座標を少し下げて 75 ベースに
+        const startY = 75 - (lineHeight / 2) + (titleFontSize / 2) - 10; 
         
         titleLines.forEach((line, i) => {
-            // 最大2行まで表示
             if (i < 2) {
                 ctx.fillText(line, 300, startY + (i * lineHeight));
             }
         });
     } else {
         // 1行で収まる場合
-        ctx.fillText(itemData.itemName, 300, 60);
+        // ★修正: Y座標を 60 -> 75 に変更（下へ）
+        ctx.fillText(itemData.itemName, 300, 75);
     }
 
     // 6. レアリティ
@@ -142,12 +143,12 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     ctx.fillStyle = "#333";
     ctx.font = "16px sans-serif";
     ctx.textAlign = "right";
-    ctx.fillText(dateStr, 540, 818); // 右下
+    ctx.fillText(dateStr, 540, 818); 
 
     // 8. ネル先生の解説
     const descX = 60;
-    // ★修正: さらに上へ (440 -> 415)
-    const descY = 415;
+    // ★修正: Y座標を 440 -> 455 に変更（下へ）
+    const descY = 455;
     const descW = 480;
     
     ctx.fillStyle = "#5d4037"; 
@@ -157,7 +158,6 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     let descText = itemData.description || "";
     descText = descText.replace(/[\(（][ぁ-んァ-ンー\s　]+[\)）]/g, ""); 
     
-    // そのまま描画
     const descLines = getWrappedLines(ctx, descText, descW);
     descLines.forEach((line, i) => {
         ctx.fillText(line, descX, descY + (i * 28));
@@ -165,9 +165,8 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
 
     // 9. ほんとうのこと (自動縮小処理)
     const realX = 60;
-    // ★修正: 上へ (640付近)
     const realY = 640;
-    const realMaxHeight = 150; // 青枠内の許容高さ (大体)
+    const realMaxHeight = 150; 
     
     ctx.fillStyle = "#0d47a1"; 
     let realFontSize = 16;
@@ -175,7 +174,6 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     let realText = itemData.realDescription || "";
     realText = realText.replace(/[\(（][ぁ-んァ-ンー\s　]+[\)）]/g, "");
     
-    // 枠に収まるまでフォントサイズを小さくするループ
     let realLines = [];
     do {
         ctx.font = `${realFontSize}px 'Sawarabi Gothic', sans-serif`;
@@ -185,12 +183,11 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
         const totalHeight = realLines.length * realLineHeight;
         
         if (totalHeight <= realMaxHeight || realFontSize <= 10) {
-            break; // 収まった、または小さくなりすぎたら終了
+            break; 
         }
-        realFontSize -= 1; // フォントを小さくしてリトライ
+        realFontSize -= 1; 
     } while (realFontSize > 10);
 
-    // 描画
     realLines.forEach((line, i) => {
         ctx.fillText(line, realX, realY + (i * realLineHeight));
     });
