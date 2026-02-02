@@ -1,4 +1,4 @@
-// --- js/card-generator.js (v348.1: 座標・サイズ微調整版) ---
+// --- js/card-generator.js (v349.0: レイヤー順序変更・テキスト位置修正版) ---
 
 window.CardGenerator = {};
 
@@ -44,54 +44,52 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     canvas.height = CANVAS_H;
     const ctx = canvas.getContext('2d');
 
-    // 1. 背景
+    // 1. 背景（クリーム色）
     ctx.fillStyle = "#fffbe6"; 
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-    // 2. 枠画像の読み込み
-    try {
-        const frameImg = await loadImage('assets/images/ui/card_frame.png');
-        ctx.drawImage(frameImg, 0, 0, CANVAS_W, CANVAS_H);
-    } catch (e) {
-        console.error("枠画像の読み込み失敗", e);
-        ctx.strokeStyle = "orange";
-        ctx.lineWidth = 10;
-        ctx.strokeRect(0, 0, CANVAS_W, CANVAS_H);
-    }
-
-    // 3. 写真の描画（位置とサイズを微調整）
+    // 2. 写真の描画 (★修正: フレームの下に敷く)
     try {
         const photoImg = await loadImage("data:image/jpeg;base64," + photoBase64);
         
-        // ★調整: 写真を枠の円の中に収める
-        const photoCenterX = 300; 
-        const photoCenterY = 230; // 少し下げて円の中心に合わせる
-        const photoRadius = 135;  // 半径を小さくして枠内に収める
+        // 写真の配置ターゲット（フレームの透明窓の位置に合わせる）
+        // 中心Y座標を下げて調整 (Y=300付近)
+        const targetCenterX = 300;
+        const targetCenterY = 300; 
+        const targetSize = 340; // 円窓をカバーできる十分なサイズ
 
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(photoCenterX, photoCenterY, photoRadius, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip(); 
-
-        const scale = Math.max((photoRadius * 2) / photoImg.width, (photoRadius * 2) / photoImg.height);
+        // アスペクト比を維持して「cover」状態で描画するための計算
+        const scale = Math.max(targetSize / photoImg.width, targetSize / photoImg.height);
         const w = photoImg.width * scale;
         const h = photoImg.height * scale;
-        const x = photoCenterX - w / 2;
-        const y = photoCenterY - h / 2;
+        const x = targetCenterX - w / 2;
+        const y = targetCenterY - h / 2;
         
+        // クリッピング（切り抜き）は不要。そのまま描画。
         ctx.drawImage(photoImg, x, y, w, h);
-        ctx.restore();
 
     } catch (e) {
         console.warn("Card Photo Load Error", e);
     }
 
+    // 3. 枠画像の描画 (★修正: 写真の上から被せる)
+    try {
+        const frameImg = await loadImage('assets/images/ui/card_frame.png');
+        ctx.drawImage(frameImg, 0, 0, CANVAS_W, CANVAS_H);
+    } catch (e) {
+        console.error("枠画像の読み込み失敗", e);
+        // 画像がない場合のフォールバック（円形マスクで写真を切り抜く必要があるが今回は省略）
+        ctx.strokeStyle = "orange";
+        ctx.lineWidth = 20;
+        ctx.strokeRect(0, 0, CANVAS_W, CANVAS_H);
+    }
+
+    // --- ここから文字情報の描画 (枠画像の上に描く) ---
+
     // 4. No. 番号 (左上)
     ctx.fillStyle = "#aaa";
     ctx.font = "bold 24px 'M PLUS Rounded 1c', sans-serif";
     ctx.textAlign = "left";
-    // 枠画像に番号欄がある場合は位置を合わせる（必要なければコメントアウト）
     // ctx.fillText("No.???", 60, 65); 
 
     // 5. アイテム名
@@ -111,18 +109,19 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
         ctx.font = `900 ${nameFontSize}px 'M PLUS Rounded 1c', sans-serif`;
     }
     
-    // ★調整: 解説枠に被らないよう、Y座標を上に上げる
-    ctx.fillText(itemData.itemName, 300, 420); 
+    // アイテム名の位置 (写真の下、解説枠の上)
+    ctx.fillText(itemData.itemName, 300, 455); 
     
     ctx.shadowColor = "transparent";
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
 
     // 6. ネル先生の解説テキスト
-    // ★調整: 見出し帯（オレンジ）を避けて、本文エリアから書き始める
-    const descX = 55;   // 左端（アイコンを避けるため少し右へ）
-    const descY = 560;  // 開始Y座標（帯の下へ移動）
-    const descW = 490;  // 幅調整
+    const descX = 55;
+    const descW = 490;
+    // ★修正: テキスト開始位置を3行分(約80px)上げる
+    // 元: 560 -> 新: 480
+    const descY = 485;  
     
     ctx.fillStyle = "#5d4037"; 
     ctx.font = "17px 'M PLUS Rounded 1c', sans-serif";
@@ -134,10 +133,11 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     wrapText(ctx, descText, descX, descY, descW, 26);
 
     // 7. ほんとうのことテキスト
-    // ★調整: 見出し帯（青）を避けて、本文エリアから書き始める
     const realX = 55;
-    const realY = 765; // 開始Y座標（帯の下へ移動）
     const realW = 490;
+    // ★修正: テキスト開始位置を3行分(約80px)上げる
+    // 元: 765 -> 新: 685
+    const realY = 690;
 
     ctx.fillStyle = "#01579b";
     ctx.font = "16px 'Sawarabi Gothic', sans-serif";
