@@ -1,4 +1,4 @@
-// --- js/card-generator.js (v354.0: テキスト位置微調整版2) ---
+// --- js/card-generator.js (v355.0: iPhone/PC両対応・レイアウト調整版) ---
 
 window.CardGenerator = {};
 
@@ -13,7 +13,7 @@ function loadImage(src) {
     });
 }
 
-// テキストを分割して行の配列を返すヘルパー（描画はしない）
+// テキストを分割して行の配列を返すヘルパー
 function getWrappedLines(ctx, text, maxWidth) {
     const words = text.split('');
     let lines = [];
@@ -37,6 +37,9 @@ function getWrappedLines(ctx, text, maxWidth) {
 
 // ★カード生成メイン関数
 window.generateTradingCard = async function(photoBase64, itemData, userData) {
+    // ★重要: Webフォントの読み込み完了を待つ (iPhoneでのズレ防止)
+    await document.fonts.ready;
+
     const CANVAS_W = 600;
     const CANVAS_H = 880; 
     const canvas = document.createElement('canvas');
@@ -84,14 +87,16 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
         ctx.strokeRect(0, 0, CANVAS_W, CANVAS_H);
     }
 
-    // --- テキスト描画 ---
+    // --- テキスト描画 (基準線をmiddleにしてズレを軽減) ---
+    ctx.textBaseline = "middle"; 
 
-    // 4. 登録No.
+    // 4. 登録No. (左上)
+    // iPhoneで左端に寄りすぎていたので右へ移動 (40 -> 65)
     const regNo = "No.001"; 
     ctx.fillStyle = "#555"; 
     ctx.font = "bold 18px sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText(regNo, 40, 50); 
+    ctx.fillText(regNo, 65, 50); 
 
     // 5. 物体名 (2行対応)
     ctx.fillStyle = "#d32f2f"; 
@@ -101,19 +106,16 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     let titleFontSize = 32;
     ctx.font = `bold ${titleFontSize}px 'M PLUS Rounded 1c', sans-serif`;
     
-    // まず1行で入るかチェック
     let titleLines = getWrappedLines(ctx, itemData.itemName, titleMaxWidth);
     
     if (titleLines.length > 1) {
-        // 2行以上になるなら少しフォントを小さくして再計算
         titleFontSize = 28;
         ctx.font = `bold ${titleFontSize}px 'M PLUS Rounded 1c', sans-serif`;
         titleLines = getWrappedLines(ctx, itemData.itemName, titleMaxWidth);
         
-        // 2行で描画 (Y座標を調整)
-        const lineHeight = titleFontSize * 1.1;
-        // ★修正: 開始Y座標を少し下げて 75 ベースに
-        const startY = 75 - (lineHeight / 2) + (titleFontSize / 2) - 10; 
+        const lineHeight = titleFontSize * 1.2;
+        // 2行の場合の中心Y座標
+        const startY = 65 - (lineHeight / 2); 
         
         titleLines.forEach((line, i) => {
             if (i < 2) {
@@ -121,15 +123,15 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
             }
         });
     } else {
-        // 1行で収まる場合
-        // ★修正: Y座標を 60 -> 75 に変更（下へ）
-        ctx.fillText(itemData.itemName, 300, 75);
+        // 1行の場合 (Y=65付近が枠の中央)
+        ctx.fillText(itemData.itemName, 300, 65);
     }
 
-    // 6. レアリティ
+    // 6. レアリティ (左下)
+    // 画像の「レアリティ」文字と被らないよう右へ移動 (220 -> 260)
     const rarity = itemData.rarity || 1;
-    const pawX = 220; 
-    const pawY = 818; 
+    const pawX = 260; 
+    const pawY = 825; // 少し下げて枠内に
     ctx.font = "24px sans-serif";
     ctx.textAlign = "left";
     let paws = "";
@@ -137,17 +139,20 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     ctx.fillStyle = "#ff8a80"; 
     ctx.fillText(paws, pawX, pawY);
 
-    // 7. 発見日
+    // 7. 発見日 (右下)
+    // 枠からはみ出ないよう左へ移動 (540 -> 530)
     const today = new Date();
     const dateStr = `発見日: ${today.getFullYear()}/${today.getMonth()+1}/${today.getDate()}`;
     ctx.fillStyle = "#333";
     ctx.font = "16px sans-serif";
     ctx.textAlign = "right";
-    ctx.fillText(dateStr, 540, 818); 
+    ctx.fillText(dateStr, 530, 825); 
+
+    // 本文描画のためベースラインをtopに戻す
+    ctx.textBaseline = "top";
 
     // 8. ネル先生の解説
     const descX = 60;
-    // ★修正: Y座標を 440 -> 455 に変更（下へ）
     const descY = 455;
     const descW = 480;
     
@@ -160,13 +165,14 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     
     const descLines = getWrappedLines(ctx, descText, descW);
     descLines.forEach((line, i) => {
-        ctx.fillText(line, descX, descY + (i * 28));
+        // 行間を少し詰める (28 -> 26)
+        ctx.fillText(line, descX, descY + (i * 26));
     });
 
     // 9. ほんとうのこと (自動縮小処理)
     const realX = 60;
-    const realY = 640;
-    const realMaxHeight = 150; 
+    const realY = 645;
+    const realMaxHeight = 145; // 許容高さを少し厳しめに
     
     ctx.fillStyle = "#0d47a1"; 
     let realFontSize = 16;
@@ -177,7 +183,8 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     let realLines = [];
     do {
         ctx.font = `${realFontSize}px 'Sawarabi Gothic', sans-serif`;
-        realLineHeight = realFontSize * 1.5;
+        // 行間係数を少し詰める (1.5 -> 1.4)
+        realLineHeight = realFontSize * 1.4;
         realLines = getWrappedLines(ctx, realText, descW);
         
         const totalHeight = realLines.length * realLineHeight;
