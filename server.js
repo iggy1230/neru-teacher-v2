@@ -1,4 +1,4 @@
-// --- server.js (完全版 v365.0: クイズ対話・漢字ドリル強化版) ---
+// --- server.js (完全版 v366.0: 漢字ドリル・クイズ生成修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -108,18 +108,19 @@ app.post('/generate-quiz', async (req, res) => {
         
         const prompt = `
         小学${grade}年生向けのクイズまたはなぞなぞを1問作成してください。
-        教科は問いません（国語、算数、理科、社会、一般常識）。
         
         【出力JSONフォーマット】
         {
-            "question": "問題文（子供に分かりやすく、ネル先生の口調で『～だにゃ？』等）",
-            "answer": "正解の単語（ひらがな推奨）",
+            "question": "問題文（子供に分かりやすく、ネル先生の口調で）",
+            "answer": "正解の単語（ひらがな）",
             "accepted_answers": ["正解1", "正解2", "漢字表記", "別名"] 
         }
         `;
 
         const result = await model.generateContent(prompt);
-        res.json(JSON.parse(result.response.text()));
+        // ★修正: マークダウン記号を除去してパース
+        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        res.json(JSON.parse(text));
     } catch (e) {
         console.error("Quiz Gen Error:", e);
         res.status(500).json({ error: "クイズが作れなかったにゃ…" });
@@ -147,7 +148,9 @@ app.post('/generate-kanji', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        res.json(JSON.parse(result.response.text()));
+        // ★修正: マークダウン記号を除去してパース
+        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        res.json(JSON.parse(text));
     } catch (e) {
         console.error("Kanji Gen Error:", e);
         res.status(500).json({ error: "漢字が見つからないにゃ…" });
@@ -177,7 +180,9 @@ app.post('/check-kanji', async (req, res) => {
             { inlineData: { mime_type: "image/png", data: image } }
         ]);
         
-        res.json(JSON.parse(result.response.text()));
+        // ★修正: マークダウン記号を除去してパース
+        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        res.json(JSON.parse(text));
     } catch (e) {
         console.error("Kanji Check Error:", e);
         res.status(500).json({ is_correct: false, comment: "よく見えなかったにゃ…もう一回書いてみてにゃ？" });
@@ -215,7 +220,7 @@ app.post('/chat-dialogue', async (req, res) => {
             - **絶対に自分から正解を言ってはいけません。**
             `;
         } else {
-            // 通常会話のプロンプト
+            // 通常会話のプロンプト（既存）
             systemPrompt += `
             【生徒についての記憶】
             ${memoryContext || "（まだ情報はありません）"}
@@ -231,18 +236,13 @@ app.post('/chat-dialogue', async (req, res) => {
             contextPrompt = "【直近の会話】\n" + history.map(h => `${h.role === 'user' ? name : 'ネル'}: ${h.text}`).join("\n");
         }
 
-        // ★修正: 呼び方ルールを強化
-        let prompt = `
+        const prompt = `
         ${systemPrompt}
         ${contextPrompt}
         
         ユーザー: ${text}
         ネル先生: 
         `;
-        
-        if (image) {
-             prompt += `\n（画像が添付されています。画像の内容について解説してください）`;
-        }
 
         let result;
         let responseText;
@@ -287,12 +287,7 @@ app.post('/chat-dialogue', async (req, res) => {
             return !/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(line);
         }).join(' ');
 
-        const jsonResponse = { 
-            speech: cleanText, 
-            board: "" 
-        };
-        
-        res.json(jsonResponse);
+        res.json({ speech: cleanText });
 
     } catch (error) {
         console.error("Chat API Fatal Error:", error);
@@ -327,7 +322,7 @@ app.post('/synthesize', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
-// --- Memory Update ---
+// (update-memory, analyze, identify-item, lunch-reaction, game-reaction は変更なし)
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
@@ -341,7 +336,6 @@ app.post('/update-memory', async (req, res) => {
     } catch (error) { res.status(200).json({ profile: req.body.currentProfile || {}, summary_text: "" }); }
 });
 
-// --- Analyze (宿題分析) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
@@ -354,7 +348,6 @@ app.post('/analyze', async (req, res) => {
     } catch (error) { res.status(500).json({ error: "解析に失敗したにゃ: " + error.message }); }
 });
 
-// --- お宝図鑑用 画像解析 ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location, address } = req.body;
@@ -368,7 +361,6 @@ app.post('/identify-item', async (req, res) => {
     } catch (error) { res.status(500).json({ error: "解析失敗", speechText: "よく見えなかったにゃ…", itemName: null }); }
 });
 
-// --- 反応系 ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
