@@ -1,4 +1,4 @@
-// --- js/card-generator.js (v357.0: 通し番号対応版) ---
+// --- js/card-generator.js (v359.0: レアリティ別フレーム対応版) ---
 
 window.CardGenerator = {};
 
@@ -35,7 +35,7 @@ function getWrappedLines(ctx, text, maxWidth) {
     return lines;
 }
 
-// ★カード生成メイン関数 (collectionNo引数を追加)
+// ★カード生成メイン関数
 window.generateTradingCard = async function(photoBase64, itemData, userData, collectionNo = 1) {
     // Webフォントの読み込み完了を待つ (iPhoneでのズレ防止)
     await document.fonts.ready;
@@ -77,11 +77,21 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
         console.warn("Card Photo Load Error", e);
     }
 
-    // 3. 枠画像の描画
+    // 3. 枠画像の描画 (レアリティ別切り替え)
     try {
-        const frameImg = await loadImage('assets/images/ui/card_frame.png');
+        // レアリティを取得 (1~5の範囲に収める)
+        let r = itemData.rarity || 1;
+        if (r < 1) r = 1;
+        if (r > 5) r = 5;
+
+        // レアリティに応じたファイルパスを生成
+        const framePath = `assets/images/ui/card_frame${r}.png`;
+        
+        const frameImg = await loadImage(framePath);
         ctx.drawImage(frameImg, 0, 0, CANVAS_W, CANVAS_H);
     } catch (e) {
+        console.error("枠画像の読み込み失敗", e);
+        // フォールバック描画
         ctx.strokeStyle = "gold";
         ctx.lineWidth = 10;
         ctx.strokeRect(0, 0, CANVAS_W, CANVAS_H);
@@ -90,7 +100,7 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
     // --- テキスト描画 ---
     ctx.textBaseline = "middle"; 
 
-    // 4. 登録No. (動的に変更)
+    // 4. 登録No.
     const regNo = "No." + String(collectionNo).padStart(3, '0');
     ctx.fillStyle = "#555"; 
     ctx.font = "bold 18px sans-serif";
@@ -113,7 +123,6 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
         titleLines = getWrappedLines(ctx, itemData.itemName, titleMaxWidth);
         
         const lineHeight = titleFontSize * 1.2;
-        // 2行の場合の中心Y座標
         const startY = 65 - (lineHeight / 2); 
         
         titleLines.forEach((line, i) => {
@@ -122,7 +131,6 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
             }
         });
     } else {
-        // 1行の場合
         ctx.fillText(itemData.itemName, 300, 65);
     }
 
@@ -154,7 +162,6 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
     const descW = 480;
     
     ctx.fillStyle = "#5d4037"; 
-    // フォント統一 (16px Sawarabi)
     ctx.font = "16px 'Sawarabi Gothic', sans-serif";
     ctx.textAlign = "left";
     
