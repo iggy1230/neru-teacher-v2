@@ -1,4 +1,4 @@
-// --- js/card-generator.js (v355.0: iPhone/PC両対応・レイアウト調整版) ---
+// --- js/card-generator.js (v356.0: レイアウト微調整版) ---
 
 window.CardGenerator = {};
 
@@ -91,12 +91,12 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     ctx.textBaseline = "middle"; 
 
     // 4. 登録No. (左上)
-    // iPhoneで左端に寄りすぎていたので右へ移動 (40 -> 65)
+    // 修正: 若干左上へ移動 (65, 50 -> 50, 45)
     const regNo = "No.001"; 
     ctx.fillStyle = "#555"; 
     ctx.font = "bold 18px sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText(regNo, 65, 50); 
+    ctx.fillText(regNo, 50, 45); 
 
     // 5. 物体名 (2行対応)
     ctx.fillStyle = "#d32f2f"; 
@@ -128,7 +128,7 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     }
 
     // 6. レアリティ (左下)
-    // 画像の「レアリティ」文字と被らないよう右へ移動 (220 -> 260)
+    // 画像の「レアリティ」文字と被らないよう右へ移動
     const rarity = itemData.rarity || 1;
     const pawX = 260; 
     const pawY = 825; // 少し下げて枠内に
@@ -140,24 +140,26 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     ctx.fillText(paws, pawX, pawY);
 
     // 7. 発見日 (右下)
-    // 枠からはみ出ないよう左へ移動 (540 -> 530)
     const today = new Date();
     const dateStr = `発見日: ${today.getFullYear()}/${today.getMonth()+1}/${today.getDate()}`;
     ctx.fillStyle = "#333";
     ctx.font = "16px sans-serif";
     ctx.textAlign = "right";
-    ctx.fillText(dateStr, 530, 825); 
+    // 修正: 若干上へ (825 -> 815)
+    ctx.fillText(dateStr, 530, 815); 
 
     // 本文描画のためベースラインをtopに戻す
     ctx.textBaseline = "top";
 
     // 8. ネル先生の解説
     const descX = 60;
-    const descY = 455;
+    // 修正: 2行分(約45px)上へ移動 (455 -> 410)
+    const descY = 410;
     const descW = 480;
     
     ctx.fillStyle = "#5d4037"; 
-    ctx.font = "18px 'M PLUS Rounded 1c', sans-serif";
+    // 修正: フォントを「ほんとうのこと」と統一 (18px Rounded -> 16px Sawarabi)
+    ctx.font = "16px 'Sawarabi Gothic', sans-serif";
     ctx.textAlign = "left";
     
     let descText = itemData.description || "";
@@ -165,8 +167,8 @@ window.generateTradingCard = async function(photoBase64, itemData, userData) {
     
     const descLines = getWrappedLines(ctx, descText, descW);
     descLines.forEach((line, i) => {
-        // 行間を少し詰める (28 -> 26)
-        ctx.fillText(line, descX, descY + (i * 26));
+        // 行間も少し調整 (26 -> 24)
+        ctx.fillText(line, descX, descY + (i * 24));
     });
 
     // 9. ほんとうのこと (自動縮小処理)
