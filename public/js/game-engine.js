@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v366.0: 全ゲーム統合・完全版) ---
+// --- js/game-engine.js (v367.0: 読み問題判定修正版) ---
 
 // ==========================================
 // 既存ゲーム: カリカリキャッチ (ブロック崩し風)
@@ -589,11 +589,13 @@ window.showKanjiGame = function() {
     kanjiState.canvas = canvas;
     kanjiState.ctx = canvas.getContext('2d');
     
+    // Canvas初期化
     kanjiState.ctx.lineCap = 'round';
     kanjiState.ctx.lineJoin = 'round';
     kanjiState.ctx.lineWidth = 12; // 太めに
     kanjiState.ctx.strokeStyle = '#000000';
     
+    // イベント
     const startDraw = (e) => {
         kanjiState.isDrawing = true;
         const pos = getPos(e);
@@ -655,12 +657,14 @@ window.startKanji = async function() {
             const clearBtn = document.getElementById('clear-kanji-btn');
             
             if (data.type === 'writing') {
+                // 書き取りモード
                 cvs.classList.remove('hidden');
                 mic.classList.add('hidden');
                 checkBtn.style.display = 'inline-block'; 
                 clearBtn.style.display = 'inline-block';
                 window.clearKanjiCanvas();
             } else {
+                // 読みモード
                 cvs.classList.add('hidden');
                 mic.classList.remove('hidden');
                 checkBtn.style.display = 'none'; 
@@ -681,6 +685,7 @@ window.startKanji = async function() {
 window.clearKanjiCanvas = function() {
     if (!kanjiState.ctx) return;
     kanjiState.ctx.clearRect(0, 0, kanjiState.canvas.width, kanjiState.canvas.height);
+    // 補助線
     kanjiState.ctx.save();
     kanjiState.ctx.strokeStyle = '#eee';
     kanjiState.ctx.lineWidth = 2;
@@ -722,15 +727,23 @@ window.checkKanji = async function() {
     }
 };
 
+// ★修正: 漢字読み判定の緩和ロジック
 window.checkKanjiReading = function(text) {
     if (!kanjiState.data || kanjiState.data.type !== 'reading') return false;
     
-    const correct = kanjiState.data.reading;
+    const correctHiragana = kanjiState.data.reading; // やま
+    const correctKanji = kanjiState.data.kanji;      // 山
+    // カタカナ変換
+    const correctKatakana = correctHiragana.replace(/[\u3041-\u3096]/g, ch =>
+        String.fromCharCode(ch.charCodeAt(0) + 0x60)
+    );
+    
     const user = text.trim();
     
-    if (user.includes(correct)) {
+    // ひらがな、漢字、カタカナのいずれかが含まれていれば正解
+    if (user.includes(correctHiragana) || user.includes(correctKanji) || user.includes(correctKatakana)) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
-        window.updateNellMessage(`正解だにゃ！「${correct}」だにゃ！カリカリ10個あげるにゃ！`, "excited", false, true);
+        window.updateNellMessage(`正解だにゃ！「${correctHiragana}」だにゃ！カリカリ10個あげるにゃ！`, "excited", false, true);
         window.giveGameReward(10);
         window.finishKanji(true);
         return true;
