@@ -1,4 +1,4 @@
-// --- js/card-generator.js (v359.0: レアリティ別フレーム対応版) ---
+// --- js/card-generator.js (v360.0: 肉球描画削除版) ---
 
 window.CardGenerator = {};
 
@@ -135,15 +135,7 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
     }
 
     // 6. レアリティ
-    const rarity = itemData.rarity || 1;
-    const pawX = 260; 
-    const pawY = 825;
-    ctx.font = "24px sans-serif";
-    ctx.textAlign = "left";
-    let paws = "";
-    for(let i=0; i<rarity; i++) paws += "🐾";
-    ctx.fillStyle = "#ff8a80"; 
-    ctx.fillText(paws, pawX, pawY);
+    // ベース画像に描画済みのため削除
 
     // 7. 発見日
     const today = new Date();
