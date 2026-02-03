@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v312.0: カード生成スクリプト追加版) -->
+<!-- index.html (完全版 v361.0: 運動場・弾幕ゲーム追加版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -57,7 +57,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v312.0-CardGen</div>
+            <div class="version-tag">Build: v361.0-Playground</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -91,7 +91,7 @@
             <div id="loading-models" style="text-align:center; font-size:0.7rem; margin-top:5px;">AI準備中...</div>
         </section>
 
-        <!-- 3. ロビー (メニュー整理版) -->
+        <!-- 3. ロビー -->
         <section id="screen-lobby" class="screen hidden">
             <div class="lobby-top"><div class="id-card-wrap mini-id"><img id="current-student-avatar" class="id-base-img"><button onclick="startEditProfile()" class="edit-profile-btn"><img src="assets/images/items/enpitu.png"></button></div></div>
             <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
@@ -99,6 +99,7 @@
                 <button onclick="openTimerModal()" class="main-btn pink-btn" style="background:#ff7043; box-shadow: 0 4px 0 #d84315;">⏱️ ネル先生タイマー</button>
                 <button onclick="switchScreen('screen-classroom')" class="main-btn green-btn">🏫 教室</button>
                 <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
+                <button onclick="switchScreen('screen-playground')" class="main-btn yellow-btn" style="background:#fbc02d; box-shadow: 0 4px 0 #f57f17;">⚽ 運動場</button>
                 <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
                 <button onclick="showMap()" class="main-btn" style="background:#29b6f6; box-shadow: 0 4px 0 #0288d1;">🗺️ 足あとマップ</button>
@@ -106,7 +107,7 @@
             </div>
         </section>
 
-        <!-- 3-1. 教室サブメニュー (新設) -->
+        <!-- 3-1. 教室サブメニュー -->
         <section id="screen-classroom" class="screen hidden">
             <h2 class="section-title">🏫 教室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
@@ -119,7 +120,7 @@
             </div>
         </section>
 
-        <!-- 3-2. 給食室サブメニュー (新設) -->
+        <!-- 3-2. 給食室サブメニュー -->
         <section id="screen-lunchroom" class="screen hidden">
             <h2 class="section-title">🍽️ 給食室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
@@ -129,12 +130,21 @@
             </div>
         </section>
 
-        <!-- 3-3. 職員室サブメニュー (新設) -->
+        <!-- 3-3. 職員室サブメニュー -->
         <section id="screen-staffroom" class="screen hidden">
             <h2 class="section-title">👩‍🏫 職員室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
                 <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b; border:none; box-shadow:0 4px 0 #455a64;">📝 プロフィール</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
+                <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+            </div>
+        </section>
+
+        <!-- 3-4. 運動場サブメニュー (新規) -->
+        <section id="screen-playground" class="screen hidden">
+            <h2 class="section-title" style="color:#fbc02d; text-shadow: 2px 2px 0 #fff;">⚽ 運動場</h2>
+            <div class="lobby-menu" style="margin-top: 20px;">
+                <button onclick="showDanmakuGame()" class="main-btn red-btn" style="background:#d32f2f; box-shadow:0 4px 0 #b71c1c;">🤖 VS ロボット掃除機</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
         </section>
@@ -161,11 +171,26 @@
             </div>
         </section>
         
-        <!-- 5. ゲーム画面 -->
+        <!-- 5. ゲーム画面 (カリカリキャッチ) -->
         <section id="screen-game" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-game"></div><div class="chat-bubble"><p id="nell-text-game">カリカリキャッチで遊ぶにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px;">🍖 カリカリ・キャッチ</h2>
             <div class="game-container"><canvas id="game-canvas" width="320" height="400"></canvas><div class="game-ui"><p>スコア: <span id="game-score">0</span></p><button id="start-game-btn" class="main-btn pink-btn" style="width: auto;">スタート！</button></div></div>
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+        </section>
+
+        <!-- 8. 弾幕ゲーム画面 (新規) -->
+        <section id="screen-danmaku" class="screen hidden">
+            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-danmaku"></div><div class="chat-bubble"><p id="nell-text-danmaku">ロボット掃除機からカリカリを守るにゃ！</p></div></div>
+            <h2 class="section-title" style="margin-top:10px; color:#d32f2f;">🤖 VS ロボット掃除機</h2>
+            <div class="game-container">
+                <canvas id="danmaku-canvas" width="340" height="400" style="background:#e0e0e0; border:4px solid #555; border-radius:10px; box-shadow:0 4px 10px rgba(0,0,0,0.3); touch-action:none;"></canvas>
+                <div class="game-ui">
+                    <p>スコア: <span id="danmaku-score">0</span></p>
+                    <button id="start-danmaku-btn" onclick="startDanmakuGame()" class="main-btn red-btn" style="width: auto;">スタート！</button>
+                </div>
+            </div>
+            <p style="font-size:0.8rem; color:white; text-align:center; margin-top:5px;">※茶色のカリカリだけ取ってね！他はダメ！<br>画面をドラッグして移動</p>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
@@ -206,7 +231,7 @@
     <script src="js/config/firebase-config.js"></script>
     <script src="js/constants.js"></script>
     <script src="js/state/memory.js"></script> 
-    <script src="js/card-generator.js"></script> <!-- ★新規追加 -->
+    <script src="js/card-generator.js"></script>
     <script src="js/audio/audio.js"></script>
     <script src="js/ui/ui.js"></script>
     <script src="js/state/user.js"></script>
