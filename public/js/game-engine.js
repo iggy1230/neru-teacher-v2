@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v361.0: 弾幕ゲーム実装版) ---
+// --- js/game-engine.js (v362.0: エキゾ猫ドット絵・弾幕調整版) ---
 
 // 既存のゲーム(カリカリキャッチ)
 window.showGame = function() { 
@@ -151,7 +151,7 @@ window.drawGame = function() {
 };
 
 // ==========================================
-// ★新規: VS ロボット掃除機 (弾幕ゲーム)
+// ★ VS ロボット掃除機 (弾幕ゲーム)
 // ==========================================
 
 let danmakuState = {
@@ -162,11 +162,32 @@ let danmakuState = {
     height: 0,
     score: 0,
     frame: 0,
-    player: { x: 0, y: 0, r: 16 }, // エキゾ猫
-    boss: { x: 0, y: 0, r: 24, angle: 0 }, // ロボット掃除機
-    bullets: [], // 弾丸（カリカリ、ゴミなど）
+    player: { x: 0, y: 0, r: 16 }, 
+    boss: { x: 0, y: 0, r: 24, angle: 0 }, 
+    bullets: [], 
     touching: false
 };
+
+// エキゾ猫(ドット絵)定義
+// 0:透, 1:茶(毛), 2:白(口元), 3:黒(目/線), 4:焦茶(縞/ネクタイ), 5:黄(目)
+const catPixelArt = [
+    [0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0],
+    [0,0,0,1,1,1,1,0,0,0,0,1,1,1,1,0],
+    [0,0,1,1,1,1,1,1,0,0,1,1,1,1,1,1],
+    [0,1,1,1,1,4,4,1,1,1,1,4,4,1,1,1],
+    [1,1,1,1,4,4,4,4,1,1,4,4,4,4,1,1],
+    [1,1,1,3,5,5,3,1,1,1,3,5,5,3,1,1],
+    [1,1,1,5,3,3,5,1,1,1,5,3,3,5,1,1],
+    [1,1,1,3,5,5,3,1,1,1,3,5,5,3,1,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,1,1,1,2,2,2,3,3,2,2,2,1,1,1,1],
+    [0,1,1,2,2,2,3,4,4,3,2,2,2,1,1,0],
+    [0,0,1,2,2,2,4,4,4,4,2,2,2,1,0,0],
+    [0,0,0,1,1,2,2,2,2,2,2,1,1,0,0,0],
+    [0,0,0,0,0,4,4,4,4,4,4,0,0,0,0,0],
+    [0,0,0,0,4,4,4,4,4,4,4,4,0,0,0,0],
+    [0,0,0,0,4,0,0,4,4,0,0,4,0,0,0,0]
+];
 
 window.showDanmakuGame = function() {
     window.switchScreen('screen-danmaku');
@@ -179,7 +200,6 @@ window.showDanmakuGame = function() {
     danmakuState.width = canvas.width;
     danmakuState.height = canvas.height;
     
-    // 初期化
     danmakuState.running = false;
     danmakuState.score = 0;
     document.getElementById('danmaku-score').innerText = "0";
@@ -190,7 +210,6 @@ window.showDanmakuGame = function() {
     
     window.updateNellMessage("ロボット掃除機からカリカリを守るにゃ！茶色は取って、他は避けるにゃ！", "excited", false);
     
-    // イベントリスナー設定
     const moveHandler = (e) => {
         if (!danmakuState.running) return;
         e.preventDefault();
@@ -201,7 +220,6 @@ window.showDanmakuGame = function() {
         let x = clientX - rect.left;
         let y = clientY - rect.top;
         
-        // 画面外に出ないように制限
         x = Math.max(danmakuState.player.r, Math.min(danmakuState.width - danmakuState.player.r, x));
         y = Math.max(danmakuState.player.r, Math.min(danmakuState.height - danmakuState.player.r, y));
         
@@ -218,17 +236,14 @@ window.showDanmakuGame = function() {
     canvas.ontouchmove = moveHandler;
     canvas.ontouchend = () => { danmakuState.touching = false; };
     
-    // プレビュー描画
     initDanmakuEntities();
     drawDanmakuFrame();
 };
 
 function initDanmakuEntities() {
-    // プレイヤー初期位置: 下中央
     danmakuState.player.x = danmakuState.width / 2;
     danmakuState.player.y = danmakuState.height - 50;
     
-    // ボス初期位置: 画面中央
     danmakuState.boss.x = danmakuState.width / 2;
     danmakuState.boss.y = 100;
     
@@ -263,45 +278,37 @@ function loopDanmakuGame() {
 function updateDanmaku() {
     danmakuState.frame++;
     
-    // ボスの動き（左右に揺れる）
     danmakuState.boss.x = (danmakuState.width / 2) + Math.sin(danmakuState.frame * 0.02) * 100;
-    danmakuState.boss.angle += 0.05; // 回転演出用
+    danmakuState.boss.angle += 0.05; 
     
-    // 弾の発射 (一定間隔)
-    // 難易度調整: 時間経過で発射間隔を短くする
     let spawnRate = Math.max(10, 60 - Math.floor(danmakuState.score / 50));
     
     if (danmakuState.frame % spawnRate === 0) {
         spawnBullet();
     }
     
-    // 弾の更新
     for (let i = danmakuState.bullets.length - 1; i >= 0; i--) {
         let b = danmakuState.bullets[i];
         b.x += b.vx;
         b.y += b.vy;
         
-        // 画面外判定
         if (b.y > danmakuState.height + 20 || b.x < -20 || b.x > danmakuState.width + 20 || b.y < -20) {
             danmakuState.bullets.splice(i, 1);
             continue;
         }
         
-        // 当たり判定
         let dx = b.x - danmakuState.player.x;
         let dy = b.y - danmakuState.player.y;
         let dist = Math.sqrt(dx*dx + dy*dy);
         
-        if (dist < danmakuState.player.r + b.r) {
-            // ヒット！
+        // 当たり判定 (半径の合計より少し小さくして遊びを持たせる)
+        if (dist < danmakuState.player.r + b.r - 4) {
             if (b.type === 'good') {
-                // カリカリゲット
                 danmakuState.score += 10;
                 document.getElementById('danmaku-score').innerText = danmakuState.score;
                 if(window.safePlay) window.safePlay(window.sfxHit);
                 danmakuState.bullets.splice(i, 1);
             } else {
-                // 障害物に当たった -> ゲームオーバー
                 gameOverDanmaku();
                 return; 
             }
@@ -310,21 +317,19 @@ function updateDanmaku() {
 }
 
 function spawnBullet() {
-    // 弾の種類決定 (70% カリカリ, 30% お邪魔)
-    let type = Math.random() < 0.7 ? 'good' : 'bad';
+    // ★修正: お邪魔ボールの割合を増やす (50%ずつ)
+    let type = Math.random() < 0.5 ? 'good' : 'bad';
     
-    // お邪魔キャラの種類
     let content = '🍖';
     if (type === 'bad') {
         const bads = ['🐭', '⚽', '⚾'];
         content = bads[Math.floor(Math.random() * bads.length)];
     }
     
-    // 発射角度 (プレイヤーの方へ向ける + 多少のランダム)
     let angle = Math.atan2(danmakuState.player.y - danmakuState.boss.y, danmakuState.player.x - danmakuState.boss.x);
-    angle += (Math.random() - 0.5) * 1.0; // バラつき
+    angle += (Math.random() - 0.5) * 1.0; 
     
-    let speed = 2 + Math.random() * 2 + (danmakuState.score / 500); // スコアが上がると速くなる
+    let speed = 2 + Math.random() * 2 + (danmakuState.score / 500); 
     
     danmakuState.bullets.push({
         x: danmakuState.boss.x,
@@ -341,7 +346,6 @@ function gameOverDanmaku() {
     danmakuState.running = false;
     if(window.safePlay) window.safePlay(window.sfxOver);
     
-    // 報酬付与
     if (danmakuState.score > 0) {
         window.giveGameReward(danmakuState.score);
         window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${danmakuState.score}個ゲットだにゃ！`, "sad");
@@ -361,7 +365,7 @@ function drawDanmakuFrame() {
     
     ctx.clearRect(0, 0, w, h);
     
-    // 背景 (フローリングっぽく)
+    // 背景
     ctx.fillStyle = "#f5deb3";
     ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = "#deb887";
@@ -374,8 +378,6 @@ function drawDanmakuFrame() {
     ctx.save();
     ctx.translate(danmakuState.boss.x, danmakuState.boss.y);
     ctx.rotate(danmakuState.boss.angle);
-    
-    // 本体
     ctx.beginPath();
     ctx.arc(0, 0, 24, 0, Math.PI*2);
     ctx.fillStyle = "#333";
@@ -383,59 +385,47 @@ function drawDanmakuFrame() {
     ctx.strokeStyle = "#ccc";
     ctx.lineWidth = 3;
     ctx.stroke();
-    
-    // ランプ
     ctx.beginPath();
     ctx.arc(0, -10, 4, 0, Math.PI*2);
-    ctx.fillStyle = "#0f0"; // Green light
+    ctx.fillStyle = "#0f0";
     ctx.fill();
-    
     ctx.restore();
     
-    // プレイヤー (エキゾ猫ドット絵風)
+    // 自キャラ (エキゾ猫ドット絵)
     ctx.save();
-    ctx.translate(danmakuState.player.x, danmakuState.player.y);
-    
-    // 顔ベース
-    ctx.fillStyle = "#e0e0e0"; // 白/グレー
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 18, 14, 0, 0, Math.PI*2);
-    ctx.fill();
-    
-    // 耳
-    ctx.beginPath();
-    ctx.moveTo(-12, -8); ctx.lineTo(-18, -18); ctx.lineTo(-6, -12);
-    ctx.moveTo(12, -8); ctx.lineTo(18, -18); ctx.lineTo(6, -12);
-    ctx.fillStyle = "#e0e0e0";
-    ctx.fill();
-    
-    // エキゾチックな顔パーツ (平たい顔)
-    // 目
-    ctx.fillStyle = "#d4af37"; // 金色の目
-    ctx.beginPath(); ctx.arc(-6, -2, 4, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(6, -2, 4, 0, Math.PI*2); ctx.fill();
-    // 瞳孔
-    ctx.fillStyle = "#000";
-    ctx.beginPath(); ctx.arc(-6, -2, 1.5, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(6, -2, 1.5, 0, Math.PI*2); ctx.fill();
-    
-    // 鼻・口 (少し上の方にあるのがエキゾの特徴)
-    ctx.fillStyle = "#ffb7b2";
-    ctx.beginPath(); ctx.ellipse(0, 2, 2, 1.5, 0, 0, Math.PI*2); ctx.fill();
-    
-    ctx.strokeStyle = "#333";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, 3.5); ctx.lineTo(-3, 6);
-    ctx.moveTo(0, 3.5); ctx.lineTo(3, 6);
-    ctx.stroke();
-    
+    const pixelSize = 2; // ドットの大きさ
+    const catW = 16 * pixelSize;
+    const catH = 16 * pixelSize;
+    // 中心に描画するためのオフセット
+    const drawX = danmakuState.player.x - catW / 2;
+    const drawY = danmakuState.player.y - catH / 2;
+
+    const colors = [
+        null,        // 0: 透明
+        "#ffb74d",   // 1: 茶(毛)
+        "#ffffff",   // 2: 白(口元)
+        "#000000",   // 3: 黒(目/線)
+        "#5d4037",   // 4: 焦茶(縞/ネクタイ)
+        "#fdd835"    // 5: 黄(目)
+    ];
+
+    for (let r = 0; r < 16; r++) {
+        for (let c = 0; c < 16; c++) {
+            const colorIndex = catPixelArt[r][c];
+            if (colorIndex !== 0) {
+                ctx.fillStyle = colors[colorIndex];
+                ctx.fillRect(drawX + c * pixelSize, drawY + r * pixelSize, pixelSize, pixelSize);
+            }
+        }
+    }
     ctx.restore();
     
-    // 弾丸 (文字で表現)
+    // 弾丸 (文字)
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = "24px sans-serif";
+    // ★修正: 文字色を明示的に黒にする（背景色と同化して透明に見えるバグを修正）
+    ctx.fillStyle = "#000000"; 
     
     danmakuState.bullets.forEach(b => {
         ctx.fillText(b.content, b.x, b.y);
