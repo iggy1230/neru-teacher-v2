@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v363.0: 体育館名称変更・メニュー順序変更版) -->
+<!-- index.html (完全版 v364.0: 体育館ゲーム追加版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -25,6 +25,7 @@
     
     <style>
         .hidden { display: none !important; }
+        /* 既存スタイル... */
         .live-chat-video-wrapper { width: 100%; max-width: 320px; aspect-ratio: 4/3; border-radius: 10px; overflow: hidden; border: 4px solid #4a90e2; margin: 10px auto; background: #000; display: none; }
         .live-chat-video-elem { width: 100%; height: 100%; object-fit: cover; }
         .embedded-chat-box { margin-top: 20px; padding: 15px; border: 2px dashed #8bc34a; border-radius: 15px; background: #f1f8e9; }
@@ -38,6 +39,9 @@
         .log-role { font-weight: bold; margin-right: 5px; }
         .log-user .log-role { color: #2196f3; }
         .log-nell .log-role { color: #ff85a1; }
+        
+        /* 漢字ドリル用Canvas */
+        #kanji-canvas { border: 4px solid #8d6e63; border-radius: 10px; background: white; touch-action: none; cursor: crosshair; }
     </style>
 </head>
 <body>
@@ -57,11 +61,12 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v363.0-GymUpdate</div>
+            <div class="version-tag">Build: v364.0-GymGames</div>
         </section>
 
         <!-- 1. 校門 -->
         <section id="screen-gate" class="screen hidden">
+            <!-- (変更なし) -->
             <h2 class="section-title">登校する生徒を選んでにゃ</h2>
             <div class="gate-layout"><div id="user-list" class="right-user-list"></div></div>
             <button onclick="showEnrollment()" class="main-btn pink-btn">🐾 新しく入学するにゃ(ゲスト)</button>
@@ -71,6 +76,7 @@
 
         <!-- 2. 入学手続き -->
         <section id="screen-enrollment" class="screen hidden">
+            <!-- (変更なし) -->
             <h2 id="enroll-title" class="section-title">🎒 入学手続き</h2>
             <div class="id-card-wrap">
                 <img src="assets/images/items/student-id-base.png" class="id-base-img" id="id-base-preview">
@@ -96,7 +102,6 @@
             <div class="lobby-top"><div class="id-card-wrap mini-id"><img id="current-student-avatar" class="id-base-img"><button onclick="startEditProfile()" class="edit-profile-btn"><img src="assets/images/items/enpitu.png"></button></div></div>
             <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
             <div class="lobby-menu">
-                <!-- 並び順変更: タイマー -> 教室 -> 体育館 -> 給食室 -> 職員室 -->
                 <button onclick="openTimerModal()" class="main-btn pink-btn" style="background:#ff7043; box-shadow: 0 4px 0 #d84315;">⏱️ ネル先生タイマー</button>
                 <button onclick="switchScreen('screen-classroom')" class="main-btn green-btn">🏫 教室</button>
                 <button onclick="switchScreen('screen-playground')" class="main-btn yellow-btn" style="background:#fbc02d; box-shadow: 0 4px 0 #f57f17;">🏀 体育館</button>
@@ -122,11 +127,10 @@
             </div>
         </section>
 
-        <!-- 3-2. 給食室サブメニュー -->
+        <!-- 3-2. 給食室サブメニュー (カリカリキャッチ削除) -->
         <section id="screen-lunchroom" class="screen hidden">
             <h2 class="section-title">🍽️ 給食室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
-                <button onclick="showGame()" class="main-btn yellow-btn">🎮 カリカリ・キャッチ</button>
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
@@ -142,17 +146,21 @@
             </div>
         </section>
 
-        <!-- 3-4. 体育館サブメニュー (名称変更) -->
+        <!-- 3-4. 体育館サブメニュー (ゲーム集約) -->
         <section id="screen-playground" class="screen hidden">
             <h2 class="section-title" style="color:#fbc02d; text-shadow: 2px 2px 0 #fff;">🏀 体育館</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
                 <button onclick="showDanmakuGame()" class="main-btn red-btn" style="background:#d32f2f; box-shadow:0 4px 0 #b71c1c;">🤖 VS ロボット掃除機</button>
+                <button onclick="showGame()" class="main-btn yellow-btn">🍖 カリカリ・キャッチ</button>
+                <button onclick="showQuizGame()" class="main-btn blue-btn" style="background:#42a5f5; box-shadow:0 4px 0 #1e88e5;">🎤 ネル先生ウルトラクイズ</button>
+                <button onclick="showKanjiGame()" class="main-btn purple-btn" style="background:#ab47bc; box-shadow:0 4px 0 #7b1fa2;">✍️ ネル先生の漢字ドリル</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
         </section>
 
         <!-- 4. メイン画面 -->
         <section id="screen-main" class="screen hidden">
+            <!-- (変更なし) -->
             <header><button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button></header>
             <div class="operation-layout">
                 <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face"><div id="heart-container" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></div></div><div class="chat-bubble"><p id="nell-text"></p></div></div>
@@ -196,6 +204,36 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
+        <!-- 9. クイズ画面 (新規) -->
+        <section id="screen-quiz" class="screen hidden">
+            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-quiz"></div><div class="chat-bubble"><p id="nell-text-quiz">ウルトラクイズに挑戦だにゃ！</p></div></div>
+            <h2 class="section-title" style="margin-top:10px; color:#42a5f5;">🎤 ウルトラクイズ</h2>
+            <div class="glass-card" style="text-align:center; padding:20px;">
+                <p id="quiz-question-text" style="font-size:1.2rem; font-weight:bold; color:#333; min-height:80px; display:flex; align-items:center; justify-content:center;">スタートボタンを押してにゃ！</p>
+                <button id="start-quiz-btn" onclick="startQuiz()" class="main-btn blue-btn">問題スタート！</button>
+                <div id="quiz-mic-status" style="margin-top:10px; font-weight:bold; color:#e91e63;"></div>
+                <p style="font-size:0.9rem; color:#666; margin-top:10px;">マイクに向かって答えを言ってね！</p>
+            </div>
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+        </section>
+
+        <!-- 10. 漢字ドリル画面 (新規) -->
+        <section id="screen-kanji" class="screen hidden">
+            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-kanji"></div><div class="chat-bubble"><p id="nell-text-kanji">漢字の練習だにゃ！</p></div></div>
+            <h2 class="section-title" style="margin-top:10px; color:#ab47bc;">✍️ 漢字ドリル</h2>
+            <div class="glass-card" style="text-align:center; padding:15px;">
+                <p id="kanji-question-text" style="font-size:1.5rem; font-weight:900; color:#4a148c; margin-bottom:10px;">読み込み中...</p>
+                <canvas id="kanji-canvas" width="300" height="300"></canvas>
+                <div style="display:flex; gap:10px; margin-top:10px;">
+                    <button onclick="clearKanjiCanvas()" class="main-btn gray-btn" style="flex:1;">消す</button>
+                    <button id="check-kanji-btn" onclick="checkKanji()" class="main-btn purple-btn" style="flex:1;">採点！</button>
+                </div>
+                <button id="next-kanji-btn" onclick="startKanji()" class="main-btn" style="background:#ec407a; margin-top:10px; display:none;">次の問題</button>
+            </div>
+            <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+        </section>
+        
+        <!-- (既存の出席簿・マップ画面はそのまま) -->
         <!-- 6. 出席簿画面 -->
         <section id="screen-attendance" class="screen hidden">
             <h2 class="section-title">📅 出席簿</h2>
@@ -211,8 +249,8 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:10px;">廊下（ロビー）に戻る</button>
         </section>
     </div>
-
-    <!-- モーダル類 -->
+    
+    <!-- (モーダル類はそのまま) -->
     <div id="inline-whiteboard" class="hidden whiteboard-overlay"><div class="whiteboard-board"><p style="margin:0 0 10px 0; color:#8d6e63; font-weight:bold;">ネル先生のメモ</p><div id="whiteboard-content" class="whiteboard-text"></div><button onclick="document.getElementById('inline-whiteboard').classList.add('hidden')" class="close-board-btn">✖ 閉じる</button></div></div>
     <div id="camera-modal" class="camera-modal hidden"><div class="camera-container"><video id="camera-video" autoplay playsinline></video><div class="camera-guide-box"><p>枠に合わせてにゃ</p></div></div><div class="camera-controls"><button id="camera-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="camera-shutter-btn" class="camera-shutter-btn"></button></div><canvas id="camera-canvas" style="display:none;"></canvas></div>
     <div id="cropper-modal" class="camera-modal hidden"><div class="cropper-wrapper"><canvas id="crop-canvas"></canvas><svg id="crop-lines" style="position:absolute; top:0; left:0; pointer-events:none; width:100%; height:100%;"></svg><div id="handle-tl" class="crop-handle" style="top:0; left:0;"></div><div id="handle-tr" class="crop-handle" style="top:0; right:0;"></div><div id="handle-br" class="crop-handle" style="bottom:0; right:0;"></div><div id="handle-bl" class="crop-handle" style="bottom:0; left:0;"></div></div><div class="camera-controls"><button id="cropper-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="cropper-ok-btn" class="main-btn pink-btn" style="width:120px;">決定！</button></div></div>
