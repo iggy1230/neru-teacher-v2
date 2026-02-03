@@ -1,4 +1,4 @@
-// --- server.js (完全版 v364.0: クイズ・漢字ドリルAPI追加版) ---
+// --- server.js (完全版 v365.0: クイズ対話・漢字ドリル強化版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -100,7 +100,7 @@ function fixPronunciation(text) {
 // API Endpoints
 // ==========================================
 
-// --- ★新規: クイズ生成 API ---
+// --- クイズ生成 API ---
 app.post('/generate-quiz', async (req, res) => {
     try {
         const { grade } = req.body;
@@ -114,61 +114,61 @@ app.post('/generate-quiz', async (req, res) => {
         {
             "question": "問題文（子供に分かりやすく、ネル先生の口調で『～だにゃ？』等）",
             "answer": "正解の単語（ひらがな推奨）",
-            "accepted_answers": ["正解1", "正解2"] 
+            "accepted_answers": ["正解1", "正解2", "漢字表記", "別名"] 
         }
-        ※ accepted_answers には、想定される別解（漢字表記、カタカナ表記など）も含めてください。
         `;
 
         const result = await model.generateContent(prompt);
-        const text = result.response.text();
-        res.json(JSON.parse(text));
+        res.json(JSON.parse(result.response.text()));
     } catch (e) {
         console.error("Quiz Gen Error:", e);
         res.status(500).json({ error: "クイズが作れなかったにゃ…" });
     }
 });
 
-// --- ★新規: 漢字ドリル生成 API ---
+// --- 漢字ドリル生成 API (強化版) ---
 app.post('/generate-kanji', async (req, res) => {
     try {
         const { grade } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
         const prompt = `
-        小学${grade}年生で習う漢字の中から、ランダムに1つ選んで問題を作成してください。
-        
+        小学${grade}年生で習う漢字の問題をランダムに1問作成してください。
+        「書き取り（文章の穴埋め）」か「読み（漢字の読み仮名）」のどちらかにしてください。
+
         【出力JSONフォーマット】
         {
-            "kanji": "対象の漢字1文字",
-            "reading": "その漢字の読み方",
-            "question": "『（読み方）』の漢字を書いてにゃ！"
+            "type": "writing" または "reading",
+            "kanji": "正解となる漢字（書き取りの場合はこれ判定、読みの場合は問題文の一部）",
+            "reading": "正解となる読み仮名（ひらがな）",
+            "question_display": "画面に表示する問題文（例: 『□□(しょうぶ)をする』 または 『『勝負』の読み方は？』）",
+            "question_speech": "ネル先生が読み上げる問題文（例: 『このカッコに入る漢字を書いてにゃ！』）"
         }
         `;
 
         const result = await model.generateContent(prompt);
-        const text = result.response.text();
-        res.json(JSON.parse(text));
+        res.json(JSON.parse(result.response.text()));
     } catch (e) {
         console.error("Kanji Gen Error:", e);
         res.status(500).json({ error: "漢字が見つからないにゃ…" });
     }
 });
 
-// --- ★新規: 漢字採点 API (画像認識) ---
+// --- 漢字採点 API (画像認識) ---
 app.post('/check-kanji', async (req, res) => {
     try {
         const { image, targetKanji } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
 
         const prompt = `
-        この画像は子供が手書きした漢字です。
-        書かれている文字が「${targetKanji}」として正しく読めるか判定してください。
-        多少の崩れや下手さは許容してください。
+        子供が書いた手書き文字の画像です。
+        これが「${targetKanji}」と読めるか判定してください。
+        多少下手でも、字形が合っていれば正解としてください。
 
         【出力JSONフォーマット】
         {
             "is_correct": true,
-            "comment": "ネル先生としてのコメント（正解なら褒める、不正解なら励ます）。語尾は『にゃ』。"
+            "comment": "ネル先生としてのコメント。正解なら褒める、不正解ならどこが違うか優しく教える。"
         }
         `;
 
@@ -177,381 +177,69 @@ app.post('/check-kanji', async (req, res) => {
             { inlineData: { mime_type: "image/png", data: image } }
         ]);
         
-        const text = result.response.text();
-        res.json(JSON.parse(text));
+        res.json(JSON.parse(result.response.text()));
     } catch (e) {
         console.error("Kanji Check Error:", e);
         res.status(500).json({ is_correct: false, comment: "よく見えなかったにゃ…もう一回書いてみてにゃ？" });
     }
 });
 
-// --- TTS ---
-app.post('/synthesize', async (req, res) => {
-    try {
-        if (!ttsClient) throw new Error("TTS Not Ready");
-        const { text, mood } = req.body;
-        
-        let speakText = text;
-        speakText = speakText.replace(/[\*#_`~]/g, "");
-        speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
-        speakText = fixPronunciation(speakText);
-
-        let rate = "1.1"; let pitch = "+2st";
-        if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
-        if (mood === "gentle") { rate = "0.95"; pitch = "+1st"; }
-        if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
-        
-        const ssml = `<speak><prosody rate="${rate}" pitch="${pitch}">${speakText}</prosody></speak>`;
-        
-        const [response] = await ttsClient.synthesizeSpeech({
-            input: { ssml },
-            voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
-            audioConfig: { audioEncoding: 'MP3' },
-        });
-        res.json({ audioContent: response.audioContent.toString('base64') });
-    } catch (err) { res.status(500).send(err.message); }
-});
-
-// --- Memory Update ---
-app.post('/update-memory', async (req, res) => {
-    try {
-        const { currentProfile, chatLog } = req.body;
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_FAST,
-            generationConfig: { responseMimeType: "application/json" }
-        });
-
-        const prompt = `
-        あなたは生徒の長期記憶を管理するAIです。
-        以下の「現在のプロフィール」と「直近の会話ログ」を分析し、最新のプロフィールJSONを作成してください。
-
-        【重要指示】
-        1. **情報の抽出**: 会話ログから誕生日、好きなもの、苦手なもの、趣味等の情報を抽出し、プロフィールを更新してください。
-        2. **誕生日**: 会話内で日付（〇月〇日）が言及され、それがユーザーの誕生日であれば、必ず \`birthday\` を更新してください。
-        3. **維持**: 会話ログに新しい情報がない項目は、現在の内容をそのまま維持してください。
-
-        【★重要: 好きなものの判定ルール (厳守)】
-        - **ユーザーが画像を見せただけ、または「これは何？」と質問しただけの対象は、絶対に「好きなもの」に追加しないでください。**
-        - ユーザーが明確に「～が好き」「～にハマっている」「～が気に入っている」と言葉で発言した場合のみ、「好きなもの」に追加してください。
-
-        【タスク2: 会話の要約】
-        今回の会話の内容を、「○○について話した」のように一文で要約し、\`summary_text\` として出力してください。
-
-        【現在のプロフィール】
-        ${JSON.stringify(currentProfile)}
-
-        【直近の会話ログ】
-        ${chatLog}
-
-        【出力フォーマット (JSON)】
-        {
-            "profile": {
-                "nickname": "...",
-                "birthday": "...",
-                "likes": ["..."],
-                "weaknesses": ["..."],
-                "achievements": ["..."],
-                "last_topic": "..."
-            },
-            "summary_text": "会話の要約文"
-        }
-        `;
-
-        const result = await model.generateContent(prompt);
-        const responseText = result.response.text();
-        
-        let output;
-        try {
-            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                cleanText = cleanText.substring(firstBrace, lastBrace + 1);
-            }
-            output = JSON.parse(cleanText);
-        } catch (e) {
-            console.warn("Memory JSON Parse Error. Using fallback.");
-            return res.json({ profile: currentProfile, summary_text: "（更新なし）" });
-        }
-
-        if (Array.isArray(output)) output = output[0];
-        if (!output.profile) {
-            output = { profile: output, summary_text: "（会話終了）" };
-        }
-
-        res.json(output);
-
-    } catch (error) {
-        res.status(200).json({ profile: req.body.currentProfile || {}, summary_text: "" });
-    }
-});
-
-// --- Analyze (宿題分析) ---
-app.post('/analyze', async (req, res) => {
-    try {
-        const { image, mode, grade, subject, name } = req.body;
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_HOMEWORK, 
-            generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
-        });
-
-        const subjectSpecificInstructions = getSubjectInstructions(subject);
-
-        const prompt = `
-        あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
-        提供された画像（生徒のノートやドリル）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。
-
-        【重要: 教科別の解析ルール (${subject})】
-        ${subjectSpecificInstructions}
-        - **表記ルール**: 解説文の中に読み間違いやすい人名、地名、難読漢字が出てくる場合は、『漢字(ふりがな)』の形式で記述してください（例: 筑後市(ちくごし)）。**一般的な簡単な漢字にはふりがなを振らないでください。**
-
-        【重要: 子供向け解説】
-        - **解説やヒントは、必ず小学${grade}年生が理解できる言葉遣い、漢字（習っていない漢字はひらがなにする）、概念で記述してください。**
-        - 専門用語は使わず、噛み砕いて説明してください。
-        - 難しい言い回しは禁止です。優しく語りかけてください。
-
-        【タスク1: 問題文の書き起こし】
-        - 設問文、選択肢を正確に書き起こす。
-
-        【タスク2: 正解データの作成 (配列形式)】
-        - 答えは必ず「文字列のリスト（配列）」にする。
-
-        【タスク3: 採点 & ヒント】
-        - 手書きの答え(student_answer)を読み取り、正誤判定(is_correct)を行う。
-        - student_answer が空文字 "" の場合は、is_correct は false にする。
-        - 3段階のヒント(hints)を作成する。ヒントも小学${grade}年生向けに平易にすること。
-
-        【出力JSONフォーマット】
-        [
-          {
-            "id": 1,
-            "label": "①",
-            "question": "問題文",
-            "correct_answer": ["正解"], 
-            "student_answer": ["手書きの答え"],
-            "is_correct": true,
-            "hints": ["ヒント1", "ヒント2", "ヒント3"]
-          }
-        ]
-        `;
-
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { mime_type: "image/jpeg", data: image } }
-        ]);
-
-        const responseText = result.response.text();
-        let problems = [];
-        try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const jsonStart = cleanText.indexOf('[');
-            const jsonEnd = cleanText.lastIndexOf(']');
-            if (jsonStart !== -1 && jsonEnd !== -1) {
-                problems = JSON.parse(cleanText.substring(jsonStart, jsonEnd + 1));
-            } else {
-                throw new Error("Valid JSON array not found");
-            }
-        } catch (e) {
-            console.error("JSON Parse Error:", responseText);
-            throw new Error("AIからの応答を読み取れませんでした。");
-        }
-
-        res.json(problems);
-
-    } catch (error) {
-        console.error("解析エラー:", error);
-        res.status(500).json({ error: "解析に失敗したにゃ: " + error.message });
-    }
-});
-
-// --- ★ お宝図鑑用 画像解析API (レアリティ厳格化 + 店舗名特定) ---
-app.post('/identify-item', async (req, res) => {
-    try {
-        const { image, name, location, address } = req.body;
-        
-        const tools = [{ google_search: {} }];
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_FAST,
-            tools: tools
-        });
-
-        let locationInfo = "";
-        if (address) {
-            locationInfo = `
-            【最優先情報：現在地】
-            クライアント特定住所: **${address}**
-            
-            指示:
-            1. **広域の確定**: ユーザーは「${address}」にいます。
-            2. **詳細スポットの特定**: この住所（${address}）の中にある、画像に写っているようなものをGoogle検索で特定してください。
-            3. 解説の冒頭で「ここは${address}の〇〇（詳細スポット名）だにゃ！」と明言してください。
-            `;
-        } else if (location && location.lat && location.lon) {
-            locationInfo = `
-            【位置情報】
-            GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
-            
-            指示:
-            1. Google検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**を確定してください。
-            2. その市町村の中で、画像に写っているものを検索して特定してください。
-            `;
-        }
-
-        const prompt = `
-        あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。
-        送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
-        
-        ${locationInfo}
-
-        【特定と命名のルール】
-        1. **店舗・建物の場合 (最優先)**: 画像が「お店の外観」「看板」「建物」で、位置情報が利用可能な場合は、Google検索を駆使して**必ず「チェーン名 + 支店名」まで特定して** \`itemName\` に設定してください（例: 「セブン-イレブン」ではなく「セブン-イレブン 世田谷猫屋敷店」、「マクドナルド」ではなく「マクドナルド 国道1号店」）。
-        2. **商品・小物の場合**: 画像が「商品（お菓子、飲み物）」「植物」「生き物」などの場合は、撮影場所の店名は含めず、その**モノの正式名称**を \`itemName\` にしてください。
-        3. **観光地・公共施設**: その場所の正式名称を特定してください。
-
-        【★レアリティ判定基準 (肉球ランク 1〜5)】
-        - **1 (★)**: どこでも買える市販の商品（お菓子、飲み物、文房具、おもちゃ、スマホ、家電）、どこにでも生えている植物（雑草）、日常的な風景。**※スーパーやコンビニで買えるものは必ず「1」にしてください。**
-        - **2 (★★)**: ちょっとだけ珍しいもの。**建物・建造物（学校、駅、公民館、橋など）は最低でも「2」以上にする。**
-        - **3 (★★★)**: その場所に行かないと見られないもの。**動物（犬、猫、鳥、虫など）は最低でも「3」以上にする。** **入手困難な人気商品（最新ゲーム機など）は「3」以上にする。**
-        - **4 (★★★★)**: かなり珍しいもの。**特別な種類の動物や、歴史的建造物、有名なテーマパークは「4」以上にする。**
-        - **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
-
-        【解説のルール】
-        1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。
-        2. **呼び方ルール**: **相手を呼ぶときは必ず『${name}さん』とさん付けで呼びかけてください。呼び捨ては厳禁です。解説の最後に「知ってたにゃ？」などの定型的な問いかけは入れないでください。**
-        3. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
-        4. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
-        5. **場所の言及ルール**: 撮影されたものが「建物」や「風景」ではなく、持ち運び可能な「商品」や「小物」の場合、解説文の中で**「ここは〇〇市〇〇町〜」のような撮影場所への言及は絶対にしないでください**。違和感があります。
-        6. **禁止事項**: 座標の数値をそのままユーザーへの返答に入れないでください。
-
-        【出力フォーマット (JSON)】
-        \`\`\`json
-        {
-            "itemName": "正式名称",
-            "rarity": 1, 
-            "description": "ネル先生の面白い解説",
-            "realDescription": "本当の解説",
-            "speechText": "『これは（itemName）だにゃ！（description）』"
-        }
-        \`\`\`
-        `;
-
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { mime_type: "image/jpeg", data: image } }
-        ]);
-
-        const responseText = result.response.text();
-        
-        let json;
-        try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                json = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
-            } else {
-                throw new Error("JSON parse failed");
-            }
-        } catch (e) {
-            console.warn("JSON Parse Fallback (Item):", responseText);
-            let fallbackText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            json = {
-                itemName: "なぞの物体",
-                rarity: 1, // Fallback
-                description: fallbackText,
-                realDescription: "AIの解析結果を直接表示しています。",
-                speechText: fallbackText
-            };
-        }
-        
-        res.json(json);
-
-    } catch (error) {
-        console.error("Identify Error:", error);
-        res.status(500).json({ error: "解析失敗", speechText: "よく見えなかったにゃ…もう一回見せてにゃ？", itemName: null });
-    }
-});
-
-// --- HTTPチャット会話 ---
+// --- HTTPチャット会話 (クイズ/漢字ヒント対応) ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
-        let { text, name, image, history, location, address, missingInfo, memoryContext } = req.body;
+        let { text, name, image, history, location, address, missingInfo, memoryContext, currentQuizData } = req.body;
         
         const now = new Date();
-        const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' };
-        const currentDateTime = now.toLocaleString('ja-JP', dateOptions);
+        const currentDateTime = now.toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+        // コンテキストの構築
+        let systemPrompt = `
+        あなたは猫の「ネル先生」です。相手は「${name}」さん。
+        現在は ${currentDateTime} です。
+        相手を呼ぶときは必ず「${name}さん」と呼んでください。
+        `;
+
+        // ★ゲーム中の特例処理
+        if (currentQuizData) {
+            systemPrompt += `
+            【現在、ユーザーは以下の問題に挑戦中です】
+            問題: ${currentQuizData.question}
+            正解: ${currentQuizData.answer}
+            
+            ユーザーの発言: 「${text}」
+            
+            指示:
+            - もしユーザーが答えを間違えた場合は、**正解は教えずに**、面白いヒントを出してください。
+            - もしユーザーがヒントを求めている場合は、分かりやすいヒントを出してください。
+            - ユーザーが雑談をした場合は、クイズの内容に関連付けながら楽しく返してください。
+            - **絶対に自分から正解を言ってはいけません。**
+            `;
+        } else {
+            // 通常会話のプロンプト
+            systemPrompt += `
+            【生徒についての記憶】
+            ${memoryContext || "（まだ情報はありません）"}
+            `;
+            if (location) {
+               systemPrompt += `\n現在地座標: ${location.lat}, ${location.lon}`;
+               if(address) systemPrompt += `\n住所: ${address}`;
+            }
+        }
 
         let contextPrompt = "";
-        if (history && Array.isArray(history) && history.length > 0) {
-            contextPrompt = "【これまでの会話の流れ（直近）】\n";
-            history.forEach(h => {
-                const speaker = h.role === 'user' ? `${name}` : 'ネル先生';
-                contextPrompt += `${speaker}: ${h.text}\n`;
-            });
-            contextPrompt += "\nユーザーの言葉に主語がなくても、この流れを汲んで自然に返答してください。\n";
+        if (history && history.length > 0) {
+            contextPrompt = "【直近の会話】\n" + history.map(h => `${h.role === 'user' ? name : 'ネル'}: ${h.text}`).join("\n");
         }
 
-        let activeQuestionPrompt = "";
-        if (missingInfo && missingInfo.length > 0) {
-            const targetInfo = missingInfo[Math.floor(Math.random() * missingInfo.length)];
-            let specificQuestion = "";
-            switch(targetInfo) {
-                case "誕生日": specificQuestion = "そういえば、誕生日はいつにゃ？お祝いしたいにゃ！"; break;
-                case "好きなもの": specificQuestion = "ねえねえ、好きな漫画やキャラクターはあるにゃ？"; break;
-                case "苦手なもの": specificQuestion = "実は苦手な教科とか、嫌いな食べ物ってあるにゃ？"; break;
-                default: specificQuestion = "もっとキミのことを教えてほしいにゃ！趣味とかあるにゃ？"; break;
-            }
-
-            activeQuestionPrompt = `
-            【重要ミッション：プロフィールの穴埋め】
-            現在、ユーザーの「${targetInfo}」の情報がまだ登録されていません。
-            **今回の会話の最後に、自然な流れで以下のような質問をして情報を引き出してください。**
-            質問例: 「${specificQuestion}」
-            `;
-        }
-
-        const profileUsagePrompt = `
-        【記憶の活用】
-        もし会話が途切れそうなら、これまでの会話履歴やプロフィールにある「好きなもの」や「最近の話題」に関連した話を振ってください。
-        `;
-
-        let locationPrompt = "";
-        if (address) {
-            locationPrompt = `
-            【最優先情報：現在地】
-            クライアント特定住所: **${address}**
-            禁止事項: 座標の数値（${location.lat}など）はセリフに入れないでください。
-            `;
-            text += `\n（システム情報：現在地は「${address}」です。）`;
-        } else if (location && location.lat) {
-            locationPrompt = `GPS座標: ${location.lat}, ${location.lon}`;
-            text += `\n（システム情報：現在の座標は ${location.lat}, ${location.lon} です。）`;
-        }
-
+        // ★修正: 呼び方ルールを強化
         let prompt = `
-        あなたは猫の「ネル先生」です。相手は「${name}」さん。
-        以下のユーザーの発言（または画像）に対して、子供にもわかるように答えてください。
-
-        【重要：現在の状況】
-        - **現在は ${currentDateTime} です。**
-        - **呼び方ルール**: **相手を呼ぶときは必ず「${name}さん」と呼んでください。絶対に呼び捨てにしないでください。**
-        - **表記ルール**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
-        
-        【生徒についての記憶 (プロフィール)】
-        ${memoryContext || "（まだ情報はありません）"}
-
-        ${activeQuestionPrompt}
-        ${profileUsagePrompt}
-        ${locationPrompt}
+        ${systemPrompt}
         ${contextPrompt}
-
-        【出力について】
-        **形式は自由なテキストで構いません。JSONにする必要はありません。**
-        ネル先生として、親しみやすく「にゃ」をつけて話してください。
         
-        ユーザー発言: ${text}
+        ユーザー: ${text}
+        ネル先生: 
         `;
-
+        
         if (image) {
              prompt += `\n（画像が添付されています。画像の内容について解説してください）`;
         }
@@ -608,8 +296,76 @@ app.post('/chat-dialogue', async (req, res) => {
 
     } catch (error) {
         console.error("Chat API Fatal Error:", error);
-        res.status(200).json({ speech: "ごめんにゃ、今ちょっと混み合ってて頭が回らないにゃ…。少し待ってから話しかけてにゃ。", board: "（通信混雑中）" });
+        res.status(200).json({ speech: "ごめんにゃ、頭が回らないにゃ…。" });
     }
+});
+
+// --- TTS ---
+app.post('/synthesize', async (req, res) => {
+    try {
+        if (!ttsClient) throw new Error("TTS Not Ready");
+        const { text, mood } = req.body;
+        
+        let speakText = text;
+        speakText = speakText.replace(/[\*#_`~]/g, "");
+        speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
+        speakText = fixPronunciation(speakText);
+
+        let rate = "1.1"; let pitch = "+2st";
+        if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
+        if (mood === "gentle") { rate = "0.95"; pitch = "+1st"; }
+        if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
+        
+        const ssml = `<speak><prosody rate="${rate}" pitch="${pitch}">${speakText}</prosody></speak>`;
+        
+        const [response] = await ttsClient.synthesizeSpeech({
+            input: { ssml },
+            voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
+            audioConfig: { audioEncoding: 'MP3' },
+        });
+        res.json({ audioContent: response.audioContent.toString('base64') });
+    } catch (err) { res.status(500).send(err.message); }
+});
+
+// --- Memory Update ---
+app.post('/update-memory', async (req, res) => {
+    try {
+        const { currentProfile, chatLog } = req.body;
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+        const prompt = `あなたは生徒の長期記憶を管理するAIです。以下の「現在のプロフィール」と「直近の会話ログ」を分析し、最新のプロフィールJSONを作成してください。【重要指示】1. **情報の抽出**: 会話ログから誕生日、好きなもの、苦手なもの、趣味等の情報を抽出し、プロフィールを更新してください。2. **誕生日**: 会話内で日付（〇月〇日）が言及され、それがユーザーの誕生日であれば、必ず \`birthday\` を更新してください。3. **維持**: 会話ログに新しい情報がない項目は、現在の内容をそのまま維持してください。【★重要: 好きなものの判定ルール (厳守)】- **ユーザーが画像を見せただけ、または「これは何？」と質問しただけの対象は、絶対に「好きなもの」に追加しないでください。**- ユーザーが明確に「～が好き」「～にハマっている」「～が気に入っている」と言葉で発言した場合のみ、「好きなもの」に追加してください。【タスク2: 会話の要約】今回の会話の内容を、「○○について話した」のように一文で要約し、\`summary_text\` として出力してください。【現在のプロフィール】${JSON.stringify(currentProfile)}【直近の会話ログ】${chatLog}【出力フォーマット (JSON)】{ "profile": { "nickname": "...", "birthday": "...", "likes": ["..."], "weaknesses": ["..."], "achievements": ["..."], "last_topic": "..." }, "summary_text": "会話の要約文" }`;
+        const result = await model.generateContent(prompt);
+        let output = JSON.parse(result.response.text().replace(/```json/g, '').replace(/```/g, '').trim());
+        if (Array.isArray(output)) output = output[0];
+        if (!output.profile) output = { profile: output, summary_text: "（会話終了）" };
+        res.json(output);
+    } catch (error) { res.status(200).json({ profile: req.body.currentProfile || {}, summary_text: "" }); }
+});
+
+// --- Analyze (宿題分析) ---
+app.post('/analyze', async (req, res) => {
+    try {
+        const { image, mode, grade, subject, name } = req.body;
+        const model = genAI.getGenerativeModel({ model: MODEL_HOMEWORK, generationConfig: { responseMimeType: "application/json", temperature: 0.0 } });
+        const prompt = `あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。提供された画像（生徒のノートやドリル）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。【重要: 子供向け解説】- **解説やヒントは、必ず小学${grade}年生が理解できる言葉遣い、漢字（習っていない漢字はひらがなにする）、概念で記述してください。**- 専門用語は使わず、噛み砕いて説明してください。【出力JSONフォーマット】[ { "id": 1, "label": "①", "question": "問題文", "correct_answer": ["正解"], "student_answer": ["手書きの答え"], "is_correct": true, "hints": ["ヒント1", "ヒント2", "ヒント3"] } ]`;
+        const result = await model.generateContent([ prompt, { inlineData: { mime_type: "image/jpeg", data: image } } ]);
+        let problems = JSON.parse(result.response.text().replace(/```json/g, '').replace(/```/g, '').trim());
+        if (!Array.isArray(problems)) problems = [problems];
+        res.json(problems);
+    } catch (error) { res.status(500).json({ error: "解析に失敗したにゃ: " + error.message }); }
+});
+
+// --- お宝図鑑用 画像解析 ---
+app.post('/identify-item', async (req, res) => {
+    try {
+        const { image, name, location, address } = req.body;
+        const tools = [{ google_search: {} }];
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, tools: tools });
+        let locationInfo = address ? `クライアント特定住所: **${address}**` : (location ? `GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}` : "");
+        const prompt = `あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。送られてきた画像を解析し、JSON形式で応答してください。${locationInfo}【特定と命名のルール】1. **店舗・建物の場合 (最優先)**: 画像が「お店の外観」「看板」「建物」で、位置情報が利用可能な場合は、Google検索を駆使して**必ず「チェーン名 + 支店名」まで特定して** \`itemName\` に設定してください。2. **商品・小物の場合**: その**モノの正式名称**を \`itemName\` にしてください。【★レアリティ判定基準 (1〜5)】- **1 (★)**: どこでも買える市販品。- **2 (★★)**: ちょっと珍しいもの。建物・建造物は最低「2」。- **3 (★★★)**: その場所限定のもの。動物、人気商品は最低「3」。- **4 (★★★★)**: かなり珍しいもの。- **5 (★★★★★)**: 奇跡レベル。【出力フォーマット (JSON)】\`\`\`json{ "itemName": "正式名称", "rarity": 1, "description": "ネル先生の面白い解説", "realDescription": "本当の解説", "speechText": "『これは（itemName）だにゃ！（description）』" }\`\`\``;
+        const result = await model.generateContent([ prompt, { inlineData: { mime_type: "image/jpeg", data: image } } ]);
+        let json = JSON.parse(result.response.text().replace(/```json/g, '').replace(/```/g, '').trim());
+        res.json(json);
+    } catch (error) { res.status(500).json({ error: "解析失敗", speechText: "よく見えなかったにゃ…", itemName: null }); }
 });
 
 // --- 反応系 ---
@@ -617,57 +373,20 @@ app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
-        const isSpecial = (count % 10 === 0);
-        
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_FAST,
-            safetySettings: [
-                { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-                { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-                { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-                { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
-            ]
-        });
-        
-        let prompt = isSpecial 
-            ? `あなたは猫の「ネル先生」。生徒の「${name}さん」から記念すべき${count}個目の給食（カリカリ）をもらいました！
-               【ルール】
-               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
-               2. テンションMAXで、思わず笑ってしまうような大げさな感謝と喜びを50文字以内で叫んでください。
-               3. 語尾は「にゃ」。`
-            : `あなたは猫の「ネル先生」。生徒の「${name}さん」から給食（カリカリ）をもらって食べました。
-               【ルール】
-               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
-               2. 思わずクスッと笑ってしまうような、独特な食レポや、猫ならではの感想を30文字以内で言ってください。
-               3. 語尾は「にゃ」。`;
-
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST });
+        let prompt = `あなたは猫の「ネル先生」。生徒の「${name}さん」から${count}個目の給食（カリカリ）をもらいました。面白い感謝の言葉を30文字以内で。`;
         const result = await model.generateContent(prompt);
-        res.json({ reply: result.response.text().trim(), isSpecial });
-    } catch (error) { 
-        console.error("Lunch Reaction Error:", error); 
-        const fallbacks = ["おいしいにゃ！", "うまうまにゃ！", "カリカリ最高にゃ！", "ありがとにゃ！", "元気が出たにゃ！"];
-        const randomFallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-        res.json({ reply: randomFallback, isSpecial: false }); 
-    }
+        res.json({ reply: result.response.text().trim(), isSpecial: (count % 10 === 0) });
+    } catch { res.json({ reply: "おいしいにゃ！", isSpecial: false }); }
 });
 
 app.post('/game-reaction', async (req, res) => {
     try {
         const { type, name, score } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST });
-        let prompt = "";
-        let mood = "excited";
-
-        if (type === 'start') {
-            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。語尾は「にゃ」。`;
-        } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。語尾は「にゃ」。`;
-        } else {
-            return res.json({ reply: "ナイスにゃ！", mood: "excited" });
-        }
-
+        let prompt = type === 'start' ? `「${name}さん」がゲーム開始。応援して。` : `ゲーム終了。「${name}さん」のスコアは${score}点。コメントして。`;
         const result = await model.generateContent(prompt);
-        res.json({ reply: result.response.text().trim(), mood });
+        res.json({ reply: result.response.text().trim(), mood: "excited" });
     } catch { res.json({ reply: "おつかれさまにゃ！", mood: "happy" }); }
 });
 
@@ -680,8 +399,6 @@ const server = app.listen(PORT, () => console.log(`Server running on port ${PORT
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', async (clientWs, req) => {
-    // ... (WebSocket logic remains mostly the same, ensuring compatibility)
-    // 既存のコードをそのまま使用
     const params = parse(req.url, true).query;
     let grade = params.grade || "1";
     let name = decodeURIComponent(params.name || "生徒");
@@ -695,7 +412,6 @@ wss.on('connection', async (clientWs, req) => {
     let geminiWs = null;
 
     const connectToGemini = (statusContext) => {
-        // ... (Gemini connection logic)
         const now = new Date();
         const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Tokyo' };
         const timeOptions = { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' };
