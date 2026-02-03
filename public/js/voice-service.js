@@ -1,6 +1,5 @@
-// --- js/voice-service.js (v364.0: クイズ対応版) ---
+// --- js/voice-service.js (v365.0: 全機能網羅・完全版) ---
 
-// ... (stopAudioPlayback, shouldInterrupt は既存のまま) ...
 // ==========================================
 // 音声再生・停止
 // ==========================================
@@ -33,8 +32,18 @@ function shouldInterrupt(text) {
 window.startAlwaysOnListening = function() {
     if (!('webkitSpeechRecognition' in window)) {
         console.warn("Speech Recognition not supported.");
+        // iPhone警告 (一度だけ)
+        if (window.currentMode === 'simple-chat' || window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
+             if (!window.isNellSpeaking && !window.iosAlertShown) {
+                 window.iosAlertShown = true; 
+                 if(typeof window.updateNellMessage === 'function') {
+                     window.updateNellMessage("iPhoneの人は、キーボードのマイクボタンを使って話しかけてにゃ！", "normal", false, true);
+                 }
+             }
+        }
         return;
     }
+
     if (window.continuousRecognition) {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
@@ -69,13 +78,20 @@ window.startAlwaysOnListening = function() {
             const text = finalTranscript;
             console.log(`[User Said] ${text}`);
 
-            // ★新規: クイズモードなら回答として処理
+            // 1. クイズモードの場合の回答判定
             if (window.currentMode === 'quiz' && typeof window.checkQuizAnswer === 'function') {
-                window.checkQuizAnswer(text);
-                return; // チャットには送らない
+                const isAnswer = window.checkQuizAnswer(text);
+                if (isAnswer) return; 
             }
             
-            // 通常の会話処理
+            // 2. 漢字ドリル（読み問題）の判定
+            if (window.currentMode === 'kanji' && typeof window.checkKanjiReading === 'function') {
+                const isCorrect = window.checkKanjiReading(text);
+                if (isCorrect) return; 
+            }
+
+            // --- 通常の会話・チャット処理 ---
+            
             let targetId = 'user-speech-text-embedded';
             if (window.currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
             
@@ -96,9 +112,15 @@ window.startAlwaysOnListening = function() {
                     memoryContext = await window.NellMemory.generateContextString(currentUser.id);
                 } catch(e) {}
             }
+            
+            // クイズ中のコンテキスト
+            let currentQuizData = null;
+            if (window.currentMode === 'quiz' && window.currentQuiz) {
+                currentQuizData = window.currentQuiz;
+            }
 
             try {
-                window.continuousRecognition.stop(); // 二重送信防止
+                window.continuousRecognition.stop(); 
 
                 const res = await fetch('/chat-dialogue', {
                     method: 'POST',
@@ -110,18 +132,22 @@ window.startAlwaysOnListening = function() {
                         location: window.currentLocation,
                         address: window.currentAddress,
                         missingInfo: missingInfo,
-                        memoryContext: memoryContext
+                        memoryContext: memoryContext,
+                        currentQuizData: currentQuizData // ★追加
                     })
                 });
                 
                 if(res.ok) {
                     const data = await res.json();
                     const speechText = data.speech || data.reply || "ごめんにゃ、よくわからなかったにゃ"; 
+                    
                     if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText);
                     if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
+                    
                     if(typeof window.updateNellMessage === 'function') {
                         await window.updateNellMessage(speechText, "normal", true, true);
                     }
+                    
                     let boardId = 'embedded-chalkboard';
                     if (window.currentMode === 'simple-chat') boardId = 'chalkboard-simple';
                     const embedBoard = document.getElementById(boardId);
@@ -133,7 +159,6 @@ window.startAlwaysOnListening = function() {
             } catch(e) {
                 console.error("Chat Error:", e);
             } finally {
-                // 復帰処理 (クイズ中でも復帰させる)
                 if (window.isAlwaysListening) {
                     try { window.continuousRecognition.start(); } catch(e){}
                 }
@@ -167,7 +192,10 @@ window.stopAlwaysOnListening = function() {
     }
 };
 
-// ... (リアルタイムチャットなどのコードはそのまま維持) ...
+// ==========================================
+// リアルタイムチャット (WebSocket)
+// ==========================================
+
 window.stopLiveChat = function() {
     if (window.NellMemory && window.chatTranscript && window.chatTranscript.length > 10 && typeof currentUser !== 'undefined') {
         window.NellMemory.updateProfileFromChat(currentUser.id, window.chatTranscript);
