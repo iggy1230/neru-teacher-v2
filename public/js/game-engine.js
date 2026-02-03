@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v365.0: 全ゲーム統合・完全版) ---
+// --- js/game-engine.js (v366.0: 全ゲーム統合・完全版) ---
 
 // ==========================================
 // 既存ゲーム: カリカリキャッチ (ブロック崩し風)
@@ -591,7 +591,7 @@ window.showKanjiGame = function() {
     
     kanjiState.ctx.lineCap = 'round';
     kanjiState.ctx.lineJoin = 'round';
-    kanjiState.ctx.lineWidth = 12;
+    kanjiState.ctx.lineWidth = 12; // 太めに
     kanjiState.ctx.strokeStyle = '#000000';
     
     const startDraw = (e) => {
@@ -626,6 +626,7 @@ window.showKanjiGame = function() {
 };
 
 window.startKanji = async function() {
+    // UI初期化
     document.getElementById('kanji-controls').style.display = 'none';
     document.getElementById('next-kanji-btn').style.display = 'none';
     document.getElementById('kanji-answer-display').classList.add('hidden');
@@ -642,7 +643,7 @@ window.startKanji = async function() {
         });
         const data = await res.json();
         
-        if (data.kanji) {
+        if (data && data.kanji) {
             kanjiState.data = data;
             
             qText.innerText = data.question_display;
@@ -667,10 +668,13 @@ window.startKanji = async function() {
             }
             
             document.getElementById('kanji-controls').style.display = 'flex';
+        } else {
+            throw new Error("Invalid Kanji Data");
         }
     } catch (e) {
         console.error(e);
         qText.innerText = "問題が出せないにゃ…";
+        window.updateNellMessage("ごめん、問題が出せないにゃ…もう一回試して？", "sad");
     }
 };
 
@@ -757,9 +761,6 @@ window.finishKanji = function(isWin) {
 };
 
 window.sendHttpTextInternal = function(text) {
-    let memoryContext = ""; 
-    // ※NellMemoryやcurrentUserが使える前提
-    
     fetch('/chat-dialogue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
