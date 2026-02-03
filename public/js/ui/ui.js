@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v353.0: カード表示完全修正版) ---
+// --- js/ui/ui.js (v361.0: 弾幕ゲームナビ追加版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -61,7 +61,6 @@ window.applyVolumeToAll = function() {
 // ★ Helper Functions
 // ==========================================
 
-// 表示用テキストクリーニング
 window.cleanDisplayString = function(text) {
     if (!text) return "";
     let clean = text;
@@ -70,7 +69,6 @@ window.cleanDisplayString = function(text) {
     return clean;
 };
 
-// レアリティ表示用文字列生成 (画像を使用)
 window.generateRarityString = function(rarity) {
     const r = rarity || 1;
     const imgPath = "assets/images/effects/nikukyurea.png";
@@ -81,7 +79,6 @@ window.generateRarityString = function(rarity) {
     return `<div class="rarity-mark rarity-${r}">${images}</div>`;
 };
 
-// 通し番号フォーマット (No.001)
 window.formatCollectionNumber = function(num) {
     return "No." + String(num).padStart(3, '0');
 };
@@ -96,6 +93,11 @@ window.switchScreen = function(to) {
     if (target) {
         target.classList.remove('hidden');
         window.scrollTo({ top: 0, behavior: 'instant' });
+        
+        // 運動場なら初期化
+        if (to === 'screen-playground') {
+            window.updateNellMessage("運動の時間だにゃ！", "excited", false);
+        }
     } else {
         console.error(`Screen not found: ${to}`);
     }
@@ -130,6 +132,9 @@ window.backToLobby = function(suppressGreeting = false) {
     if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
     if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
     if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+
+    // ★追加: 弾幕ゲーム停止
+    if (typeof window.stopDanmakuGame === 'function') window.stopDanmakuGame();
 
     if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
 
@@ -226,7 +231,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection) - カード化対応
+// 図鑑 (Collection)
 // ==========================================
 
 window.openCollectionDetailByIndex = function(originalIndex) {
@@ -326,7 +331,6 @@ window.renderCollectionList = async function() {
 
     items.forEach(item => {
         const div = document.createElement('div');
-        // 縦横比をカード（約2:3）に合わせる
         div.style.cssText = "background:white; border-radius:8px; padding:4px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:1px solid #ddd; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; aspect-ratio: 0.68; transition:transform 0.1s; overflow:hidden;";
         
         div.onclick = () => window.showCollectionDetail(item, item.originalIndex, item.number); 
@@ -335,10 +339,8 @@ window.renderCollectionList = async function() {
 
         const img = document.createElement('img');
         img.src = item.image;
-        // 画像を枠いっぱいに表示
         img.style.cssText = "width:100%; height:100%; object-fit:cover; border-radius:4px;";
         
-        // オーバーレイ情報（番号のみ控えめに）
         const infoDiv = document.createElement('div');
         infoDiv.style.cssText = "position:absolute; bottom:0; left:0; width:100%; background:rgba(255,255,255,0.8); padding:2px; font-size:0.7rem; font-weight:bold; color:#555;";
         infoDiv.innerText = window.formatCollectionNumber(item.number);
@@ -360,7 +362,6 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
-    // ★カード画像のみを表示するレイアウト (余計なHTML装飾を排除)
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -372,7 +373,6 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
             </div>
             
             <div style="flex:1; overflow-y:auto; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px;">
-                <!-- 画像そのものを表示 (影付き) -->
                 <img src="${item.image}" style="width:auto; max-width:100%; height:auto; max-height:100%; object-fit:contain; border-radius:15px; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
             </div>
             
