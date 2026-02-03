@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v357.0: 通し番号連携版) ---
+// --- js/camera-service.js (v361.0: iPhoneメモリ対策・軽量化版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -110,7 +110,8 @@ window.toggleTreasureCamera = function() {
 };
 
 window.createTreasureImage = function(sourceCanvas) {
-    const OUTPUT_SIZE = 400; 
+    // 図鑑用サムネイルは小さくて良い
+    const OUTPUT_SIZE = 300; 
     const canvas = document.createElement('canvas');
     canvas.width = OUTPUT_SIZE;
     canvas.height = OUTPUT_SIZE;
@@ -120,29 +121,15 @@ window.createTreasureImage = function(sourceCanvas) {
     const sx = (sourceCanvas.width - size) / 2;
     const sy = (sourceCanvas.height - size) / 2;
     
-    ctx.fillStyle = "#ffffff";
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(OUTPUT_SIZE/2, OUTPUT_SIZE/2, OUTPUT_SIZE/2, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
     ctx.drawImage(sourceCanvas, sx, sy, size, size, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
-    ctx.restore();
-    
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(OUTPUT_SIZE/2, OUTPUT_SIZE/2, OUTPUT_SIZE/2 - 5, 0, Math.PI * 2);
-    ctx.strokeStyle = '#ffd700'; 
-    ctx.lineWidth = 8;
-    ctx.stroke();
-    ctx.restore();
     
     return canvas.toDataURL('image/jpeg', 0.7);
 };
 
 window.processImageForAI = function(sourceCanvas) { 
-    const MAX_WIDTH = 1024; 
-    const QUALITY = 0.7;
+    // ★修正: iPhoneでのクラッシュを防ぐため、解像度と画質を下げる
+    const MAX_WIDTH = 800; // 1024 -> 800
+    const QUALITY = 0.6;   // 0.7 -> 0.6
 
     let w = sourceCanvas.width; 
     let h = sourceCanvas.height; 
@@ -161,7 +148,7 @@ const getLocation = () => {
         const timeoutId = setTimeout(() => {
             console.warn("GPS Timeout (Fallback)");
             resolve(null);
-        }, 8000); 
+        }, 5000); // タイムアウト短縮
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -177,7 +164,7 @@ const getLocation = () => {
                 console.warn("GPS Error (Fallback):", err); 
                 resolve(null); 
             },
-            { timeout: 8000, enableHighAccuracy: true }
+            { timeout: 5000, enableHighAccuracy: false } // HighAccuracyオフで高速化
         );
     });
 };
@@ -246,24 +233,9 @@ window.captureAndIdentifyItem = async function() {
             window.updateNellMessage("詳しい場所を調べてるにゃ…", "thinking", false, true);
         }
 
-        // GPS精度待ち
-        if (!locationData || locationData.accuracy > 1000) {
-            for (let i = 0; i < 4; i++) {
-                await new Promise(r => setTimeout(r, 500));
-                if (window.currentLocation && window.currentLocation.accuracy <= 1000) {
-                    locationData = window.currentLocation;
-                    break;
-                }
-            }
-        }
-        
+        // GPS簡易取得
         if (!locationData) {
-            console.log("Using fallback GPS...");
-            try {
-                locationData = await getLocation();
-            } catch(e) {
-                console.warn("Fallback GPS failed");
-            }
+            try { locationData = await getLocation(); } catch(e) {}
         }
 
         if(typeof window.updateNellMessage === 'function') {
@@ -303,21 +275,30 @@ window.captureAndIdentifyItem = async function() {
         }
 
         if (data.itemName && window.NellMemory && window.generateTradingCard) {
-            // ★追加: 現在のコレクション数を取得して通し番号を決定
+            // 通し番号決定
             let collectionCount = 0;
             try {
                 const profile = await window.NellMemory.getUserProfile(currentUser.id);
                 if (profile && Array.isArray(profile.collection)) {
                     collectionCount = profile.collection.length;
                 }
-            } catch (e) {
-                console.warn("Collection count fetch failed", e);
-            }
+            } catch (e) {}
             const nextNo = collectionCount + 1;
 
-            // ★カード画像の生成 (第4引数に通し番号を渡す)
-            const cardDataUrl = await window.generateTradingCard(base64Data, data, currentUser, nextNo);
+            // ★カード生成 (ここでエラーが出ると困るのでtryで囲む)
+            let cardDataUrl = null;
+            try {
+                cardDataUrl = await window.generateTradingCard(base64Data, data, currentUser, nextNo);
+            } catch (genErr) {
+                console.error("Card Gen Error:", genErr);
+                // カード生成失敗時は元の画像を使う
+                cardDataUrl = compressedDataUrl;
+            }
             
+            // ★メモリ解放: 大きな文字列を解放する
+            base64Data = null; 
+            compressedDataUrl = null;
+
             // 図鑑に登録
             await window.NellMemory.addToCollection(
                 currentUser.id, 
