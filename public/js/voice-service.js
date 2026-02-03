@@ -1,5 +1,6 @@
-// --- js/voice-service.js (v361.0: 割り込み会話機能強化版) ---
+// --- js/voice-service.js (v364.0: クイズ対応版) ---
 
+// ... (stopAudioPlayback, shouldInterrupt は既存のまま) ...
 // ==========================================
 // 音声再生・停止
 // ==========================================
@@ -13,45 +14,27 @@ window.stopAudioPlayback = function() {
     if (window.cancelNellSpeech) window.cancelNellSpeech();
 };
 
-// 割り込み判定用ヘルパー関数
 function shouldInterrupt(text) {
     if (!text) return false;
     const cleanText = text.trim();
     if (cleanText.length === 0) return false;
-
-    // 制止キーワード・呼びかけ
     const stopKeywords = [
         "違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか",
         "ねえ", "ちょっと", "あの", "先生", "せんせい", "あのね", "stop", "wait"
     ];
-    
     const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
-    
-    // ある程度まとまった発言（6文字以上）があれば割り込みとみなす
-    // ※短すぎると環境音の誤認識で止まってしまうため6文字程度が妥当
     const isLongEnough = cleanText.length >= 6;
-
     return isStopCommand || isLongEnough;
 }
 
 // ==========================================
-// 常時聞き取り (Speech Recognition) - 個別指導用
+// 常時聞き取り (Speech Recognition)
 // ==========================================
 window.startAlwaysOnListening = function() {
-    // ブラウザが音声認識に対応しているかチェック
     if (!('webkitSpeechRecognition' in window)) {
-        console.warn("Speech Recognition not supported on this browser/device.");
-        if (window.currentMode === 'simple-chat' || window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
-             if (!window.isNellSpeaking && !window.iosAlertShown) {
-                 window.iosAlertShown = true; 
-                 if(typeof window.updateNellMessage === 'function') {
-                     window.updateNellMessage("iPhoneの人は、キーボードのマイクボタンを使って話しかけてにゃ！", "normal", false, true);
-                 }
-             }
-        }
+        console.warn("Speech Recognition not supported.");
         return;
     }
-
     if (window.continuousRecognition) {
         try { window.continuousRecognition.stop(); } catch(e){}
     }
@@ -59,7 +42,7 @@ window.startAlwaysOnListening = function() {
     window.isAlwaysListening = true;
     window.continuousRecognition = new webkitSpeechRecognition();
     window.continuousRecognition.lang = 'ja-JP';
-    window.continuousRecognition.interimResults = true; // 途中経過も取得して素早く反応する
+    window.continuousRecognition.interimResults = true;
     window.continuousRecognition.maxAlternatives = 1;
 
     window.continuousRecognition.onresult = async (event) => {
@@ -74,28 +57,25 @@ window.startAlwaysOnListening = function() {
             }
         }
 
-        // ★修正: 途中経過(interim)でも割り込み判定を行う
         if (window.isNellSpeaking) {
             if (shouldInterrupt(interimTranscript) || shouldInterrupt(finalTranscript)) {
                 console.log("[Interruption] Stopping audio.");
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
                 window.stopAudioPlayback();
-                
-                // 確定前でも割り込み条件を満たしたら認識をリセットしてユーザーの話を聞くモードへ
-                // ただし、finalまで待たないと中途半端なテキストが送信される恐れがあるため
-                // ここでは「音声停止」のみ行い、送信はfinalTranscriptまで待つ
             }
         }
 
         if (finalTranscript && finalTranscript.trim() !== "") {
             const text = finalTranscript;
             console.log(`[User Said] ${text}`);
+
+            // ★新規: クイズモードなら回答として処理
+            if (window.currentMode === 'quiz' && typeof window.checkQuizAnswer === 'function') {
+                window.checkQuizAnswer(text);
+                return; // チャットには送らない
+            }
             
-            // ユーザーが話し終わったので認識を一時停止して処理へ
-            // (continuousがtrueでも、一度止めて処理完了後に再開するのが安全)
-            // ただし、単なる相槌やノイズの場合は無視したいが、ここでは全て送る
-            
-            // 音声認識結果を表示
+            // 通常の会話処理
             let targetId = 'user-speech-text-embedded';
             if (window.currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
             
@@ -105,7 +85,6 @@ window.startAlwaysOnListening = function() {
             if(typeof window.addLogItem === 'function') window.addLogItem('user', text);
             if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('user', text);
 
-            // 記憶データ取得
             let missingInfo = [];
             let memoryContext = "";
             if (window.NellMemory && currentUser) {
@@ -119,8 +98,7 @@ window.startAlwaysOnListening = function() {
             }
 
             try {
-                // 一時的に認識を止める（二重送信防止）
-                window.continuousRecognition.stop();
+                window.continuousRecognition.stop(); // 二重送信防止
 
                 const res = await fetch('/chat-dialogue', {
                     method: 'POST',
@@ -139,18 +117,14 @@ window.startAlwaysOnListening = function() {
                 if(res.ok) {
                     const data = await res.json();
                     const speechText = data.speech || data.reply || "ごめんにゃ、よくわからなかったにゃ"; 
-                    
                     if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText);
                     if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
-                    
                     if(typeof window.updateNellMessage === 'function') {
                         await window.updateNellMessage(speechText, "normal", true, true);
                     }
-                    
                     let boardId = 'embedded-chalkboard';
                     if (window.currentMode === 'simple-chat') boardId = 'chalkboard-simple';
                     const embedBoard = document.getElementById(boardId);
-                    
                     if (embedBoard && data.board && data.board.trim() !== "") {
                         embedBoard.innerText = data.board;
                         embedBoard.classList.remove('hidden');
@@ -159,8 +133,8 @@ window.startAlwaysOnListening = function() {
             } catch(e) {
                 console.error("Chat Error:", e);
             } finally {
-                // 処理完了後に認識再開
-                if (window.isAlwaysListening && (window.currentMode === 'chat' || window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review' || window.currentMode === 'simple-chat')) {
+                // 復帰処理 (クイズ中でも復帰させる)
+                if (window.isAlwaysListening) {
                     try { window.continuousRecognition.start(); } catch(e){}
                 }
             }
@@ -168,10 +142,7 @@ window.startAlwaysOnListening = function() {
     };
 
     window.continuousRecognition.onend = () => {
-        // 意図せず止まった場合の再開処理
-        if (window.isAlwaysListening && (window.currentMode === 'chat' || window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review' || window.currentMode === 'simple-chat')) {
-            // 発話中は自分の声を拾わないように少し待つ手もあるが、
-            // 「割り込み」を実現するためには発話中も認識を回す必要がある
+        if (window.isAlwaysListening) {
             setTimeout(() => { 
                 try { window.continuousRecognition.start(); } catch(e){} 
             }, 500);
@@ -196,10 +167,7 @@ window.stopAlwaysOnListening = function() {
     }
 };
 
-// ==========================================
-// リアルタイムチャット (WebSocket) - 放課後おしゃべり用
-// ==========================================
-
+// ... (リアルタイムチャットなどのコードはそのまま維持) ...
 window.stopLiveChat = function() {
     if (window.NellMemory && window.chatTranscript && window.chatTranscript.length > 10 && typeof currentUser !== 'undefined') {
         window.NellMemory.updateProfileFromChat(currentUser.id, window.chatTranscript);
@@ -423,14 +391,10 @@ window.startMicrophone = async function() {
                     currentText += event.results[i][0].transcript;
                 }
                 
-                // ★修正: 割り込み判定
                 if (window.isNellSpeaking) {
                     if (shouldInterrupt(currentText)) {
                         console.log("[LiveChat Interruption]", currentText);
                         window.stopAudioPlayback();
-                        // サーバーへ「割り込み」を通知しても良いが、まずは音声停止のみで対応
-                        // 必要ならWebSocketで {"clientContent": ...} を送ってAIの生成を止めることも可能だが
-                        // GeminiのAPI仕様上、stopを送る方法は確立されていないためクライアント側で無視する
                     }
                 }
 

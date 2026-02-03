@@ -1,6 +1,8 @@
-// --- js/game-engine.js (v362.0: エキゾ猫ドット絵・弾幕調整版) ---
+// --- js/game-engine.js (v364.0: クイズ・漢字ドリル実装版) ---
 
-// 既存のゲーム(カリカリキャッチ)
+// ==========================================
+// 既存ゲーム: カリカリキャッチ
+// ==========================================
 window.showGame = function() { 
     if (typeof window.switchScreen === 'function') {
         window.switchScreen('screen-game'); 
@@ -26,7 +28,7 @@ window.showGame = function() {
         }; 
     } 
 };
-
+// ... (fetchGameComment, initGame, giveGameReward, drawGame は変更なし) ...
 window.fetchGameComment = function(type, score=0) { 
     if (!currentUser) return;
     fetch('/game-reaction', { 
@@ -151,9 +153,9 @@ window.drawGame = function() {
 };
 
 // ==========================================
-// ★ VS ロボット掃除機 (弾幕ゲーム)
+// VS ロボット掃除機 (弾幕ゲーム)
 // ==========================================
-
+// ... (danmakuState, catPixelArt など既存のコード) ...
 let danmakuState = {
     running: false,
     ctx: null,
@@ -168,8 +170,6 @@ let danmakuState = {
     touching: false
 };
 
-// エキゾ猫(ドット絵)定義
-// 0:透, 1:茶(毛), 2:白(口元), 3:黒(目/線), 4:焦茶(縞/ネクタイ), 5:黄(目)
 const catPixelArt = [
     [0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0],
     [0,0,0,1,1,1,1,0,0,0,0,1,1,1,1,0],
@@ -231,7 +231,6 @@ window.showDanmakuGame = function() {
     canvas.onmousemove = (e) => { if(danmakuState.touching) moveHandler(e); };
     canvas.onmouseup = () => { danmakuState.touching = false; };
     canvas.onmouseleave = () => { danmakuState.touching = false; };
-    
     canvas.ontouchstart = (e) => { danmakuState.touching = true; moveHandler(e); };
     canvas.ontouchmove = moveHandler;
     canvas.ontouchend = () => { danmakuState.touching = false; };
@@ -239,7 +238,7 @@ window.showDanmakuGame = function() {
     initDanmakuEntities();
     drawDanmakuFrame();
 };
-
+// ... (initDanmakuEntities, startDanmakuGame, stopDanmakuGame, loopDanmakuGame, updateDanmaku, spawnBullet, gameOverDanmaku, drawDanmakuFrame は変更なし) ...
 function initDanmakuEntities() {
     danmakuState.player.x = danmakuState.width / 2;
     danmakuState.player.y = danmakuState.height - 50;
@@ -268,24 +267,17 @@ window.stopDanmakuGame = function() {
 
 function loopDanmakuGame() {
     if (!danmakuState.running) return;
-    
     updateDanmaku();
     drawDanmakuFrame();
-    
     requestAnimationFrame(loopDanmakuGame);
 }
 
 function updateDanmaku() {
     danmakuState.frame++;
-    
     danmakuState.boss.x = (danmakuState.width / 2) + Math.sin(danmakuState.frame * 0.02) * 100;
     danmakuState.boss.angle += 0.05; 
-    
     let spawnRate = Math.max(10, 60 - Math.floor(danmakuState.score / 50));
-    
-    if (danmakuState.frame % spawnRate === 0) {
-        spawnBullet();
-    }
+    if (danmakuState.frame % spawnRate === 0) spawnBullet();
     
     for (let i = danmakuState.bullets.length - 1; i >= 0; i--) {
         let b = danmakuState.bullets[i];
@@ -301,7 +293,6 @@ function updateDanmaku() {
         let dy = b.y - danmakuState.player.y;
         let dist = Math.sqrt(dx*dx + dy*dy);
         
-        // 当たり判定 (半径の合計より少し小さくして遊びを持たせる)
         if (dist < danmakuState.player.r + b.r - 4) {
             if (b.type === 'good') {
                 danmakuState.score += 10;
@@ -317,18 +308,14 @@ function updateDanmaku() {
 }
 
 function spawnBullet() {
-    // ★修正: お邪魔ボールの割合を増やす (50%ずつ)
     let type = Math.random() < 0.5 ? 'good' : 'bad';
-    
     let content = '🍖';
     if (type === 'bad') {
         const bads = ['🐭', '⚽', '⚾'];
         content = bads[Math.floor(Math.random() * bads.length)];
     }
-    
     let angle = Math.atan2(danmakuState.player.y - danmakuState.boss.y, danmakuState.player.x - danmakuState.boss.x);
     angle += (Math.random() - 0.5) * 1.0; 
-    
     let speed = 2 + Math.random() * 2 + (danmakuState.score / 500); 
     
     danmakuState.bullets.push({
@@ -345,14 +332,12 @@ function spawnBullet() {
 function gameOverDanmaku() {
     danmakuState.running = false;
     if(window.safePlay) window.safePlay(window.sfxOver);
-    
     if (danmakuState.score > 0) {
         window.giveGameReward(danmakuState.score);
         window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${danmakuState.score}個ゲットだにゃ！`, "sad");
     } else {
         window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad");
     }
-    
     const startBtn = document.getElementById('start-danmaku-btn');
     startBtn.disabled = false;
     startBtn.innerText = "もう一回！";
@@ -362,10 +347,8 @@ function drawDanmakuFrame() {
     const ctx = danmakuState.ctx;
     const w = danmakuState.width;
     const h = danmakuState.height;
-    
     ctx.clearRect(0, 0, w, h);
     
-    // 背景
     ctx.fillStyle = "#f5deb3";
     ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = "#deb887";
@@ -374,41 +357,19 @@ function drawDanmakuFrame() {
         ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke();
     }
     
-    // ボス (ロボット掃除機)
     ctx.save();
     ctx.translate(danmakuState.boss.x, danmakuState.boss.y);
     ctx.rotate(danmakuState.boss.angle);
-    ctx.beginPath();
-    ctx.arc(0, 0, 24, 0, Math.PI*2);
-    ctx.fillStyle = "#333";
-    ctx.fill();
-    ctx.strokeStyle = "#ccc";
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(0, -10, 4, 0, Math.PI*2);
-    ctx.fillStyle = "#0f0";
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI*2); ctx.fillStyle = "#333"; ctx.fill();
+    ctx.strokeStyle = "#ccc"; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, -10, 4, 0, Math.PI*2); ctx.fillStyle = "#0f0"; ctx.fill();
     ctx.restore();
     
-    // 自キャラ (エキゾ猫ドット絵)
     ctx.save();
-    const pixelSize = 2; // ドットの大きさ
-    const catW = 16 * pixelSize;
-    const catH = 16 * pixelSize;
-    // 中心に描画するためのオフセット
-    const drawX = danmakuState.player.x - catW / 2;
-    const drawY = danmakuState.player.y - catH / 2;
-
-    const colors = [
-        null,        // 0: 透明
-        "#ffb74d",   // 1: 茶(毛)
-        "#ffffff",   // 2: 白(口元)
-        "#000000",   // 3: 黒(目/線)
-        "#5d4037",   // 4: 焦茶(縞/ネクタイ)
-        "#fdd835"    // 5: 黄(目)
-    ];
-
+    ctx.translate(danmakuState.player.x, danmakuState.player.y);
+    const pixelSize = 2; const catW = 16 * pixelSize; const catH = 16 * pixelSize;
+    const drawX = -catW / 2; const drawY = -catH / 2; // 中央揃え修正
+    const colors = [null, "#ffb74d", "#ffffff", "#000000", "#5d4037", "#fdd835"];
     for (let r = 0; r < 16; r++) {
         for (let c = 0; c < 16; c++) {
             const colorIndex = catPixelArt[r][c];
@@ -420,14 +381,212 @@ function drawDanmakuFrame() {
     }
     ctx.restore();
     
-    // 弾丸 (文字)
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = "24px sans-serif";
-    // ★修正: 文字色を明示的に黒にする（背景色と同化して透明に見えるバグを修正）
     ctx.fillStyle = "#000000"; 
-    
-    danmakuState.bullets.forEach(b => {
-        ctx.fillText(b.content, b.x, b.y);
-    });
+    danmakuState.bullets.forEach(b => { ctx.fillText(b.content, b.x, b.y); });
 }
+
+// ==========================================
+// ★新規: ネル先生ウルトラクイズ
+// ==========================================
+
+window.currentQuiz = null;
+
+window.showQuizGame = function() {
+    window.switchScreen('screen-quiz');
+    window.currentMode = 'quiz';
+    window.currentQuiz = null;
+    document.getElementById('quiz-question-text').innerText = "スタートボタンを押してにゃ！";
+    document.getElementById('quiz-mic-status').innerText = "";
+    
+    // 音声入力を許可
+    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+};
+
+window.startQuiz = async function() {
+    const btn = document.getElementById('start-quiz-btn');
+    const qText = document.getElementById('quiz-question-text');
+    btn.disabled = true;
+    qText.innerText = "問題を作ってるにゃ…";
+    window.updateNellMessage("問題を作ってるにゃ…", "thinking");
+
+    try {
+        const res = await fetch('/generate-quiz', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ grade: currentUser ? currentUser.grade : "1" })
+        });
+        const data = await res.json();
+        
+        if (data.question) {
+            window.currentQuiz = data;
+            qText.innerText = data.question;
+            window.updateNellMessage(data.question, "normal", false, true);
+            btn.innerText = "別の問題";
+            btn.disabled = false;
+        } else {
+            throw new Error("Quiz data invalid");
+        }
+    } catch (e) {
+        console.error(e);
+        qText.innerText = "問題が作れなかったにゃ…";
+        btn.disabled = false;
+    }
+};
+
+window.checkQuizAnswer = function(userSpeech) {
+    if (!window.currentQuiz || window.currentMode !== 'quiz') return;
+    
+    const correct = window.currentQuiz.answer;
+    const accepted = window.currentQuiz.accepted_answers || [];
+    const userAnswer = userSpeech.trim();
+    
+    // 簡易判定: 正解が含まれているか
+    const isCorrect = userAnswer.includes(correct) || accepted.some(a => userAnswer.includes(a));
+    
+    const status = document.getElementById('quiz-mic-status');
+    status.innerText = `「${userAnswer}」？`;
+
+    if (isCorrect) {
+        if(window.safePlay) window.safePlay(window.sfxMaru);
+        window.updateNellMessage(`ピンポン！正解だにゃ！答えは「${correct}」！カリカリ30個あげるにゃ！`, "excited", false, true);
+        window.giveGameReward(30);
+        window.currentQuiz = null; // 重複回答防止
+        document.getElementById('quiz-question-text').innerText = "正解！";
+    } else {
+        // 間違いの場合はリアクションするが、まだ回答権は残す
+        // window.updateNellMessage(`ブッブー！違うにゃ〜。「${userAnswer}」じゃないにゃ。`, "sad", false, true);
+    }
+};
+
+// ==========================================
+// ★新規: ネル先生の漢字ドリル
+// ==========================================
+
+let kanjiState = {
+    target: null,
+    canvas: null,
+    ctx: null,
+    isDrawing: false
+};
+
+window.showKanjiGame = function() {
+    window.switchScreen('screen-kanji');
+    window.currentMode = 'kanji';
+    
+    const canvas = document.getElementById('kanji-canvas');
+    kanjiState.canvas = canvas;
+    kanjiState.ctx = canvas.getContext('2d');
+    
+    // Canvas初期化
+    kanjiState.ctx.lineCap = 'round';
+    kanjiState.ctx.lineJoin = 'round';
+    kanjiState.ctx.lineWidth = 8;
+    kanjiState.ctx.strokeStyle = '#000000';
+    window.clearKanjiCanvas();
+    
+    // イベント
+    const startDraw = (e) => {
+        kanjiState.isDrawing = true;
+        const pos = getPos(e);
+        kanjiState.ctx.beginPath();
+        kanjiState.ctx.moveTo(pos.x, pos.y);
+        e.preventDefault();
+    };
+    const draw = (e) => {
+        if (!kanjiState.isDrawing) return;
+        const pos = getPos(e);
+        kanjiState.ctx.lineTo(pos.x, pos.y);
+        kanjiState.ctx.stroke();
+        e.preventDefault();
+    };
+    const endDraw = () => { kanjiState.isDrawing = false; };
+    
+    const getPos = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return { x: clientX - rect.left, y: clientY - rect.top };
+    };
+
+    canvas.onmousedown = startDraw; canvas.onmousemove = draw; canvas.onmouseup = endDraw;
+    canvas.ontouchstart = startDraw; canvas.ontouchmove = draw; canvas.ontouchend = endDraw;
+    
+    window.startKanji();
+};
+
+window.startKanji = async function() {
+    document.getElementById('check-kanji-btn').style.display = 'inline-block';
+    document.getElementById('next-kanji-btn').style.display = 'none';
+    window.clearKanjiCanvas();
+    
+    const qText = document.getElementById('kanji-question-text');
+    qText.innerText = "問題を探してるにゃ…";
+    
+    try {
+        const res = await fetch('/generate-kanji', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ grade: currentUser ? currentUser.grade : "1" })
+        });
+        const data = await res.json();
+        if (data.kanji) {
+            kanjiState.target = data.kanji;
+            qText.innerText = data.question; // 「『やま』の漢字を書いて！」
+            window.updateNellMessage(data.question, "normal", false, true);
+        }
+    } catch (e) {
+        console.error(e);
+        qText.innerText = "問題が出せないにゃ…";
+    }
+};
+
+window.clearKanjiCanvas = function() {
+    if (!kanjiState.ctx) return;
+    kanjiState.ctx.clearRect(0, 0, kanjiState.canvas.width, kanjiState.canvas.height);
+    // 補助線
+    kanjiState.ctx.save();
+    kanjiState.ctx.strokeStyle = '#ddd';
+    kanjiState.ctx.lineWidth = 1;
+    kanjiState.ctx.setLineDash([5, 5]);
+    kanjiState.ctx.beginPath();
+    kanjiState.ctx.moveTo(150, 0); kanjiState.ctx.lineTo(150, 300);
+    kanjiState.ctx.moveTo(0, 150); kanjiState.ctx.lineTo(300, 150);
+    kanjiState.ctx.stroke();
+    kanjiState.ctx.restore();
+};
+
+window.checkKanji = async function() {
+    if (!kanjiState.target) return;
+    
+    window.updateNellMessage("採点するにゃ…じーっ…", "thinking");
+    const dataUrl = kanjiState.canvas.toDataURL('image/png');
+    const base64 = dataUrl.split(',')[1];
+    
+    try {
+        const res = await fetch('/check-kanji', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64, targetKanji: kanjiState.target })
+        });
+        const data = await res.json();
+        
+        window.updateNellMessage(data.comment, data.is_correct ? "happy" : "gentle", false, true);
+        
+        if (data.is_correct) {
+            if(window.safePlay) window.safePlay(window.sfxMaru);
+            // 報酬10個
+            window.giveGameReward(10);
+            
+            document.getElementById('check-kanji-btn').style.display = 'none';
+            document.getElementById('next-kanji-btn').style.display = 'inline-block';
+        } else {
+            if(window.safePlay) window.safePlay(window.sfxBatu);
+        }
+        
+    } catch(e) {
+        window.updateNellMessage("よくわからなかったにゃ…", "thinking");
+    }
+};
