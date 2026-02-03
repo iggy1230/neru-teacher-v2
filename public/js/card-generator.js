@@ -1,4 +1,4 @@
-// --- js/card-generator.js (v360.0: 肉球描画削除版) ---
+// --- js/card-generator.js (v359.0: ほんとうのこと位置調整版) ---
 
 window.CardGenerator = {};
 
@@ -37,7 +37,7 @@ function getWrappedLines(ctx, text, maxWidth) {
 
 // ★カード生成メイン関数
 window.generateTradingCard = async function(photoBase64, itemData, userData, collectionNo = 1) {
-    // Webフォントの読み込み完了を待つ (iPhoneでのズレ防止)
+    // ★重要: Webフォントの読み込み完了を待つ (iPhoneでのズレ防止)
     await document.fonts.ready;
 
     const CANVAS_W = 600;
@@ -77,30 +77,20 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
         console.warn("Card Photo Load Error", e);
     }
 
-    // 3. 枠画像の描画 (レアリティ別切り替え)
+    // 3. 枠画像の描画
     try {
-        // レアリティを取得 (1~5の範囲に収める)
-        let r = itemData.rarity || 1;
-        if (r < 1) r = 1;
-        if (r > 5) r = 5;
-
-        // レアリティに応じたファイルパスを生成
-        const framePath = `assets/images/ui/card_frame${r}.png`;
-        
-        const frameImg = await loadImage(framePath);
+        const frameImg = await loadImage('assets/images/ui/card_frame.png');
         ctx.drawImage(frameImg, 0, 0, CANVAS_W, CANVAS_H);
     } catch (e) {
-        console.error("枠画像の読み込み失敗", e);
-        // フォールバック描画
         ctx.strokeStyle = "gold";
         ctx.lineWidth = 10;
         ctx.strokeRect(0, 0, CANVAS_W, CANVAS_H);
     }
 
-    // --- テキスト描画 ---
+    // --- テキスト描画 (基準線をmiddleにしてズレを軽減) ---
     ctx.textBaseline = "middle"; 
 
-    // 4. 登録No.
+    // 4. 登録No. (左上)
     const regNo = "No." + String(collectionNo).padStart(3, '0');
     ctx.fillStyle = "#555"; 
     ctx.font = "bold 18px sans-serif";
@@ -123,6 +113,7 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
         titleLines = getWrappedLines(ctx, itemData.itemName, titleMaxWidth);
         
         const lineHeight = titleFontSize * 1.2;
+        // 2行の場合の中心Y座標
         const startY = 65 - (lineHeight / 2); 
         
         titleLines.forEach((line, i) => {
@@ -131,13 +122,22 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
             }
         });
     } else {
+        // 1行の場合 (Y=65付近が枠の中央)
         ctx.fillText(itemData.itemName, 300, 65);
     }
 
-    // 6. レアリティ
-    // ベース画像に描画済みのため削除
+    // 6. レアリティ (左下)
+    const rarity = itemData.rarity || 1;
+    const pawX = 260; 
+    const pawY = 825; // 少し下げて枠内に
+    ctx.font = "24px sans-serif";
+    ctx.textAlign = "left";
+    let paws = "";
+    for(let i=0; i<rarity; i++) paws += "🐾";
+    ctx.fillStyle = "#ff8a80"; 
+    ctx.fillText(paws, pawX, pawY);
 
-    // 7. 発見日
+    // 7. 発見日 (右下)
     const today = new Date();
     const dateStr = `発見日: ${today.getFullYear()}/${today.getMonth()+1}/${today.getDate()}`;
     ctx.fillStyle = "#333";
@@ -145,7 +145,7 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
     ctx.textAlign = "right";
     ctx.fillText(dateStr, 530, 815); 
 
-    // ベースラインを戻す
+    // 本文描画のためベースラインをtopに戻す
     ctx.textBaseline = "top";
 
     // 8. ネル先生の解説
@@ -154,6 +154,7 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
     const descW = 480;
     
     ctx.fillStyle = "#5d4037"; 
+    // フォント統一 (16px Sawarabi)
     ctx.font = "16px 'Sawarabi Gothic', sans-serif";
     ctx.textAlign = "left";
     
@@ -167,8 +168,10 @@ window.generateTradingCard = async function(photoBase64, itemData, userData, col
 
     // 9. ほんとうのこと (自動縮小処理)
     const realX = 60;
-    const realY = 645;
-    const realMaxHeight = 145; 
+    // ★修正: 1行分(約25px)上へ移動 (645 -> 620)
+    const realY = 620;
+    // ★修正: 開始位置を上げた分、許容高さも増やす (145 -> 170)
+    const realMaxHeight = 170; 
     
     ctx.fillStyle = "#0d47a1"; 
     let realFontSize = 16;
