@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v361.0: 運動場・弾幕ゲーム追加版) -->
+<!-- index.html (完全版 v363.0: 体育館名称変更・メニュー順序変更版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -57,7 +57,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v361.0-Playground</div>
+            <div class="version-tag">Build: v363.0-GymUpdate</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -96,11 +96,13 @@
             <div class="lobby-top"><div class="id-card-wrap mini-id"><img id="current-student-avatar" class="id-base-img"><button onclick="startEditProfile()" class="edit-profile-btn"><img src="assets/images/items/enpitu.png"></button></div></div>
             <div class="karikari-counter">🍖 カリカリ: <span id="karikari-count">0</span></div>
             <div class="lobby-menu">
+                <!-- 並び順変更: タイマー -> 教室 -> 体育館 -> 給食室 -> 職員室 -->
                 <button onclick="openTimerModal()" class="main-btn pink-btn" style="background:#ff7043; box-shadow: 0 4px 0 #d84315;">⏱️ ネル先生タイマー</button>
                 <button onclick="switchScreen('screen-classroom')" class="main-btn green-btn">🏫 教室</button>
+                <button onclick="switchScreen('screen-playground')" class="main-btn yellow-btn" style="background:#fbc02d; box-shadow: 0 4px 0 #f57f17;">🏀 体育館</button>
                 <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
-                <button onclick="switchScreen('screen-playground')" class="main-btn yellow-btn" style="background:#fbc02d; box-shadow: 0 4px 0 #f57f17;">⚽ 運動場</button>
                 <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
+                
                 <button onclick="selectMode('chat')" class="main-btn" style="background:#5c6bc0; box-shadow: 0 4px 0 #3949ab;">💎 ネル先生のお宝図鑑</button>
                 <button onclick="showMap()" class="main-btn" style="background:#29b6f6; box-shadow: 0 4px 0 #0288d1;">🗺️ 足あとマップ</button>
                 <button onclick="backToTitle()" class="main-btn gray-btn">👋 帰宅する</button>
@@ -140,9 +142,9 @@
             </div>
         </section>
 
-        <!-- 3-4. 運動場サブメニュー (新規) -->
+        <!-- 3-4. 体育館サブメニュー (名称変更) -->
         <section id="screen-playground" class="screen hidden">
-            <h2 class="section-title" style="color:#fbc02d; text-shadow: 2px 2px 0 #fff;">⚽ 運動場</h2>
+            <h2 class="section-title" style="color:#fbc02d; text-shadow: 2px 2px 0 #fff;">🏀 体育館</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
                 <button onclick="showDanmakuGame()" class="main-btn red-btn" style="background:#d32f2f; box-shadow:0 4px 0 #b71c1c;">🤖 VS ロボット掃除機</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
@@ -179,7 +181,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 8. 弾幕ゲーム画面 (新規) -->
+        <!-- 8. 弾幕ゲーム画面 -->
         <section id="screen-danmaku" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-danmaku"></div><div class="chat-bubble"><p id="nell-text-danmaku">ロボット掃除機からカリカリを守るにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#d32f2f;">🤖 VS ロボット掃除機</h2>
