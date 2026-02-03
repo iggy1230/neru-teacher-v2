@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v346.0: カード生成連携版) ---
+// --- js/camera-service.js (v357.0: 通し番号連携版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -16,6 +16,7 @@ window.startPreviewCamera = async function(videoId = 'live-chat-video', containe
             window.previewStream.getTracks().forEach(t => t.stop());
         }
         try {
+            // iPhone負荷軽減: VGA 15fps
             window.previewStream = await navigator.mediaDevices.getUserMedia({ 
                 video: { 
                     facingMode: "environment", 
@@ -222,7 +223,6 @@ window.captureAndIdentifyItem = async function() {
     let locationData = window.currentLocation;
     
     try {
-        // 画像キャプチャと圧縮処理
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 480;
@@ -233,7 +233,6 @@ window.captureAndIdentifyItem = async function() {
         try {
             compressedDataUrl = window.processImageForAI(canvas);
             base64Data = compressedDataUrl.split(',')[1];
-            // treasureDataUrlは後でカード生成時に作るのでここでは不要
         } catch (imgErr) {
             throw new Error("画像の処理に失敗したにゃ。メモリ不足かもしれないにゃ。");
         }
@@ -258,7 +257,6 @@ window.captureAndIdentifyItem = async function() {
             }
         }
         
-        // フォールバックGPS
         if (!locationData) {
             console.log("Using fallback GPS...");
             try {
@@ -305,14 +303,26 @@ window.captureAndIdentifyItem = async function() {
         }
 
         if (data.itemName && window.NellMemory && window.generateTradingCard) {
-            // ★カード画像の生成
-            const cardDataUrl = await window.generateTradingCard(base64Data, data, currentUser);
+            // ★追加: 現在のコレクション数を取得して通し番号を決定
+            let collectionCount = 0;
+            try {
+                const profile = await window.NellMemory.getUserProfile(currentUser.id);
+                if (profile && Array.isArray(profile.collection)) {
+                    collectionCount = profile.collection.length;
+                }
+            } catch (e) {
+                console.warn("Collection count fetch failed", e);
+            }
+            const nextNo = collectionCount + 1;
+
+            // ★カード画像の生成 (第4引数に通し番号を渡す)
+            const cardDataUrl = await window.generateTradingCard(base64Data, data, currentUser, nextNo);
             
-            // 図鑑に登録 (カード画像を保存)
+            // 図鑑に登録
             await window.NellMemory.addToCollection(
                 currentUser.id, 
                 data.itemName, 
-                cardDataUrl, // ★ここが変わった！
+                cardDataUrl, 
                 data.description, 
                 data.realDescription, 
                 locationData, 
@@ -326,7 +336,6 @@ window.captureAndIdentifyItem = async function() {
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 4000);
             
-            // 分析完了音
             if(window.safePlay) window.safePlay(window.sfxHirameku);
         }
 
