@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v373.0: なぞなぞモード対応版) ---
+// --- js/ui/ui.js (完全版 v373.1: なぞなぞモード対応版・修正版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -283,9 +283,7 @@ window.showCollection = async function() {
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
             
-            <div style="text-align:center; margin-top:15px; flex-shrink: 0;">
-                <button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button>
-            </div>
+            <div style="text-align:center; margin-top:15px; flex-shrink: 0;"><button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div>
         </div>
     `;
     modal.classList.remove('hidden');
@@ -900,140 +898,8 @@ window.sendEmbeddedText = function() { window.sendHttpText('embedded'); };
 window.sendSimpleText = function() { window.sendHttpText('simple'); };
 
 // ==========================================
-// ★ モード選択ロジック追加 (ui.js内でselectModeを定義している場合)
+// ★ モード選択ロジック削除
 // ==========================================
-
-// もし js/analyze.js で selectMode が定義されている場合はそちらが優先されるため、
-// ここでは補助的な役割か、もしくは analyze.js 側を修正する必要がある。
-// 今回の要件では analyze.js も更新対象に含まれていないが、
-// 一般的に画面遷移ロジックは ui.js か analyze.js にある。
-// 既存の構成を見ると analyze.js に selectMode があるため、そちらをオーバーライドするか
-// ここで再定義して読み込み順で上書きする必要がある。
-// 安全のため、window.selectMode をここで拡張・再定義する。
-
-window._originalSelectMode = window.selectMode;
-
-window.selectMode = function(m) {
-    if (m === 'riddle') {
-        window.currentMode = 'riddle';
-        window.switchScreen('screen-riddle');
-        
-        // 他の画面の非表示などは switchScreen で行われるが、個別の初期化が必要
-        document.getElementById('conversation-log').classList.add('hidden');
-        
-        // なぞなぞ画面の初期化
-        document.getElementById('riddle-question-text').innerText = "スタートボタンを押してにゃ！";
-        document.getElementById('riddle-controls').style.display = 'none';
-        document.getElementById('start-riddle-btn').style.display = 'inline-block';
-        document.getElementById('riddle-answer-display').classList.add('hidden');
-        document.getElementById('riddle-mic-status').innerText = "";
-        
-        window.updateNellMessage("なぞなぞで遊ぶにゃ！", "excited", false);
-        
-        if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
-        
-        return;
-    }
-    
-    // 既存のモードなら元の関数を呼ぶ（もしくは analyze.js のロジックをここに書く）
-    // ここでは analyze.js の関数を呼ぶようにしたいが、
-    // analyze.js が後で読み込まれると上書きされる可能性がある。
-    // そのため、analyze.js の内容も含めてここで定義するのが確実だが、
-    // 今回は analyze.js を更新対象にしていないため、
-    // analyze.js 内の selectMode に 'riddle' ケースがないと動かない可能性がある。
-    // ★重要: analyze.js も更新対象に含めるべきだが、指示にはない。
-    // しかし ui.js で selectMode を上書き定義すれば動く。
-    
-    // 以下、analyze.js の selectMode をベースに riddle を追加したものを定義
-    try {
-        window.currentMode = m; 
-        window.chatSessionHistory = [];
-
-        if (typeof window.switchScreen === 'function') {
-            window.switchScreen('screen-main'); 
-        } else {
-            document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
-            document.getElementById('screen-main').classList.remove('hidden');
-        }
-
-        const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'chat-free-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
-        ids.forEach(id => { 
-            const el = document.getElementById(id); 
-            if (el) el.classList.add('hidden'); 
-        });
-        
-        document.getElementById('conversation-log').classList.add('hidden');
-        document.getElementById('log-content').innerHTML = "";
-        
-        ['embedded-chalkboard', 'chalkboard-simple'].forEach(bid => {
-            const embedBoard = document.getElementById(bid);
-            if (embedBoard) {
-                embedBoard.innerText = "";
-                embedBoard.classList.add('hidden');
-            }
-        });
-
-        ['embedded-text-input', 'simple-text-input'].forEach(iid => {
-            const embedInput = document.getElementById(iid);
-            if(embedInput) embedInput.value = "";
-        });
-
-        const backBtn = document.getElementById('main-back-btn');
-        if (backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; }
-        
-        if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
-        if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
-        if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); 
-        
-        window.gameRunning = false;
-        const icon = document.querySelector('.nell-avatar-wrap img'); 
-        if(icon) icon.src = "assets/images/characters/nell-normal.png";
-        
-        const miniKarikari = document.getElementById('mini-karikari-display');
-        if(miniKarikari) miniKarikari.classList.remove('hidden');
-        if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
-        
-        if (m === 'chat') { 
-            document.getElementById('chat-view').classList.remove('hidden'); 
-            window.updateNellMessage("お宝を見せてにゃ！お話もできるにゃ！", "excited", false); 
-            document.getElementById('conversation-log').classList.remove('hidden');
-            if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            window.startLocationWatch();
-        } 
-        else if (m === 'simple-chat') {
-            document.getElementById('simple-chat-view').classList.remove('hidden');
-            window.updateNellMessage("今日はお話だけするにゃ？", "gentle", false);
-            document.getElementById('conversation-log').classList.remove('hidden');
-            if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            window.startLocationWatch();
-        }
-        else if (m === 'chat-free') {
-            document.getElementById('chat-free-view').classList.remove('hidden');
-            window.updateNellMessage("何でも話していいにゃ！", "happy", false);
-            window.startLocationWatch();
-        }
-        else if (m === 'lunch') { 
-            document.getElementById('lunch-view').classList.remove('hidden'); 
-            window.updateNellMessage("お腹ペコペコだにゃ……", "thinking", false); 
-        } 
-        else if (m === 'review') { 
-            if(typeof window.renderMistakeSelection === 'function') window.renderMistakeSelection(); 
-            document.getElementById('embedded-chat-section').classList.remove('hidden'); 
-            document.getElementById('conversation-log').classList.remove('hidden');
-            if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-        } 
-        else { 
-            const subjectView = document.getElementById('subject-selection-view'); 
-            if (subjectView) subjectView.classList.remove('hidden'); 
-            window.updateNellMessage("どの教科にするのかにゃ？", "normal", false); 
-            if (m === 'explain' || m === 'grade') {
-                document.getElementById('embedded-chat-section').classList.remove('hidden');
-                document.getElementById('conversation-log').classList.remove('hidden');
-                if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-            }
-        }
-    } catch (e) {
-        console.error("selectMode Error:", e);
-        alert("エラーが発生したにゃ。再読み込みしてにゃ。");
-    }
-};
+// 前回の回答でここにあった selectMode の定義は、
+// バグの原因となるため削除しました。
+// riddleモードへの遷移は game-engine.js の showRiddleGame 内で完結させています。
