@@ -1,4 +1,57 @@
-// --- js/game-engine.js (完全版 v374.0: ウルトラクイズ4択ボタン対応版) ---
+// --- js/game-engine.js (完全版 v375.0: レベル対応・漢字判定緩和版) ---
+
+// ==========================================
+// 共通ヘルパー: レーベンシュタイン距離 (編集距離)
+// ==========================================
+// 2つの文字列の類似度を測る
+function levenshteinDistance(a, b) {
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1, // 置換
+                    Math.min(
+                        matrix[i][j - 1] + 1, // 挿入
+                        matrix[i - 1][j] + 1  // 削除
+                    )
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+// ユーザーの音声認識結果（長い文字列かもしれない）の中に、正解（短い文字列）に近いものが含まれているか判定
+function fuzzyContains(userText, targetText, maxDistance = 1) {
+    if (!userText || !targetText) return false;
+    const u = userText.replace(/\s+/g, ""); // 空白除去
+    const t = targetText.replace(/\s+/g, "");
+    
+    // 完全一致または単純な包含チェック
+    if (u.includes(t)) return true;
+    
+    // 正解の長さが短い場合、部分文字列との編集距離を見る
+    const len = t.length;
+    // ユーザー発話から、正解と同じ長さ（±1文字）の部分文字列を切り出して比較
+    for (let i = 0; i < u.length - len + 2; i++) {
+        // targetの長さ、長さ-1、長さ+1 の範囲で切り出す
+        for (let diff = -1; diff <= 1; diff++) {
+            const subLen = len + diff;
+            if (subLen < 1) continue;
+            const sub = u.substr(i, subLen);
+            if (levenshteinDistance(sub, t) <= maxDistance) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 // ==========================================
 // 1. カリカリキャッチ
@@ -197,12 +250,22 @@ let quizState = {
 };
 
 async function fetchQuizData(genre) {
+    // 現在のジャンルのレベルを取得
+    let currentLevel = 1;
+    if (currentUser && currentUser.quizLevels && currentUser.quizLevels[genre]) {
+        currentLevel = currentUser.quizLevels[genre];
+    } else if (currentUser && currentUser.quizLevels && currentUser.quizLevels["全ジャンル"]) {
+        // "全ジャンル"で代用する場合もあるが、基本は各ジャンルごと
+        currentLevel = currentUser.quizLevels["全ジャンル"];
+    }
+
     const res = await fetch('/generate-quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
             grade: currentUser ? currentUser.grade : "1",
-            genre: genre 
+            genre: genre,
+            level: currentLevel
         })
     });
     return await res.json();
@@ -212,7 +275,26 @@ window.showQuizGame = function() {
     window.switchScreen('screen-quiz');
     window.currentMode = 'quiz';
     
-    // UI初期化
+    // UI初期化: 各ボタンのテキストにレベルを表示
+    const levels = (currentUser && currentUser.quizLevels) ? currentUser.quizLevels : {};
+    const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
+    const idMap = {
+        "全ジャンル": "btn-quiz-all",
+        "一般知識": "btn-quiz-general",
+        "雑学": "btn-quiz-trivia",
+        "芸能・スポーツ": "btn-quiz-entertainment",
+        "歴史・地理・社会": "btn-quiz-history",
+        "ゲーム": "btn-quiz-game"
+    };
+
+    genres.forEach(g => {
+        const btn = document.getElementById(idMap[g]);
+        if (btn) {
+            const lv = levels[g] || 1;
+            btn.innerText = `${g} (Lv.${lv})`;
+        }
+    });
+
     document.getElementById('quiz-genre-select').classList.remove('hidden');
     document.getElementById('quiz-game-area').classList.add('hidden');
     window.updateNellMessage("どのジャンルに挑戦するにゃ？", "normal");
@@ -228,7 +310,9 @@ window.startQuizSet = async function(genre) {
 
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-game-area').classList.remove('hidden');
-    document.getElementById('quiz-genre-label').innerText = genre;
+    
+    const currentLevel = (currentUser && currentUser.quizLevels && currentUser.quizLevels[genre]) || 1;
+    document.getElementById('quiz-genre-label').innerText = `${genre} Lv.${currentLevel}`;
 
     // 音声認識開始
     if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
@@ -260,7 +344,7 @@ window.nextQuiz = async function() {
     ansDisplay.classList.add('hidden');
     controls.style.display = 'none';
     nextBtn.classList.add('hidden');
-    optionsContainer.innerHTML = ""; // ボタンをクリア
+    optionsContainer.innerHTML = ""; 
     
     // データ取得 (プリフェッチがあればそれを使う)
     let quizData = null;
@@ -287,13 +371,12 @@ window.nextQuiz = async function() {
         
         // ★選択肢ボタンの生成
         if (quizData.options && Array.isArray(quizData.options)) {
-            // シャッフル用
             const shuffledOptions = [...quizData.options].sort(() => Math.random() - 0.5);
             shuffledOptions.forEach(opt => {
                 const btn = document.createElement('button');
                 btn.className = "quiz-option-btn";
                 btn.innerText = opt;
-                btn.onclick = () => window.checkQuizAnswer(opt, true); // true: ボタンからの入力
+                btn.onclick = () => window.checkQuizAnswer(opt, true); 
                 optionsContainer.appendChild(btn);
             });
         }
@@ -314,7 +397,6 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
     const correct = window.currentQuiz.answer;
     const accepted = window.currentQuiz.accepted_answers || [];
     
-    // ボタンの無効化
     const buttons = document.querySelectorAll('.quiz-option-btn');
     if (isButton) {
         buttons.forEach(b => b.disabled = true);
@@ -331,13 +413,11 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
         window.updateNellMessage(`ピンポン！正解だにゃ！答えは「${correct}」！`, "excited", false, true);
         quizState.score += 20; 
         
-        // ボタンの色変更
         if (isButton) {
             buttons.forEach(b => {
                 if (b.innerText === cleanUserAnswer) b.classList.add('quiz-correct');
             });
         } else {
-            // 音声入力でも該当ボタンがあれば色を変える
             buttons.forEach(b => {
                 if (b.innerText === correct) b.classList.add('quiz-correct');
             });
@@ -346,7 +426,6 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
         window.showQuizResult(true);
         return true; 
     } else {
-        // 不正解の場合（ボタン入力時のみ即時判定、音声の場合は誤認識の可能性もあるのでスルーまたはフィードバック）
         if (isButton) {
             if(window.safePlay) window.safePlay(window.sfxBatu);
             window.updateNellMessage(`残念！正解は「${correct}」だったにゃ。`, "gentle", false, true);
@@ -397,8 +476,28 @@ window.finishQuizSet = function() {
 
     let msg = "";
     let mood = "normal";
+    
+    // レベルアップ判定
+    let isLevelUp = false;
+    let newLevel = 1;
+
     if (quizState.score === 100) {
-        msg = "全問正解！天才だにゃ！！カリカリ100個あげるにゃ！";
+        if (currentUser) {
+            if (!currentUser.quizLevels) currentUser.quizLevels = {};
+            const currentLv = currentUser.quizLevels[quizState.genre] || 1;
+            if (currentLv < 5) {
+                newLevel = currentLv + 1;
+                currentUser.quizLevels[quizState.genre] = newLevel;
+                isLevelUp = true;
+                if(typeof window.saveAndSync === 'function') window.saveAndSync();
+            }
+        }
+
+        if (isLevelUp) {
+            msg = `全問正解！すごいにゃ！${quizState.genre}レベルが${newLevel}に上がったにゃ！！カリカリ100個あげるにゃ！`;
+        } else {
+            msg = "全問正解！天才だにゃ！！カリカリ100個あげるにゃ！";
+        }
         mood = "excited";
         window.giveGameReward(100);
     } else if (quizState.score >= 60) {
@@ -531,17 +630,26 @@ window.nextRiddle = async function() {
 
 window.checkRiddleAnswer = function(userSpeech) {
     if (!riddleState.currentRiddle || window.currentMode !== 'riddle') return false; 
-    
     if (!document.getElementById('riddle-answer-display').classList.contains('hidden')) return false;
 
     const correct = riddleState.currentRiddle.answer;
     const accepted = riddleState.currentRiddle.accepted_answers || [];
     const userAnswer = userSpeech.trim();
     
-    const isCorrect = userAnswer.includes(correct) || accepted.some(a => userAnswer.includes(a));
-    
     const status = document.getElementById('riddle-mic-status');
     status.innerText = `「${userAnswer}」？`;
+    
+    // あいまい一致判定（部分一致 + 編集距離）
+    let isCorrect = false;
+    if (fuzzyContains(userAnswer, correct)) isCorrect = true;
+    else {
+        for (const ans of accepted) {
+            if (fuzzyContains(userAnswer, ans)) {
+                isCorrect = true;
+                break;
+            }
+        }
+    }
     
     if (isCorrect) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
@@ -693,7 +801,14 @@ window.checkKanjiReading = function(text) {
     const correctKanji = kanjiState.data.kanji;
     const correctKatakana = correctHiragana.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
     const user = text.trim();
-    if (user.includes(correctHiragana) || user.includes(correctKanji) || user.includes(correctKatakana)) {
+    
+    // あいまい一致判定 (★修正: 漢字読みも緩和判定対象へ)
+    let isCorrect = false;
+    if (fuzzyContains(user, correctHiragana) || fuzzyContains(user, correctKanji) || fuzzyContains(user, correctKatakana)) {
+        isCorrect = true;
+    }
+
+    if (isCorrect) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
         window.updateNellMessage(`正解だにゃ！「${correctHiragana}」だにゃ！カリカリ10個あげるにゃ！`, "excited", false, true);
         window.giveGameReward(10);
@@ -831,7 +946,7 @@ window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
     if (isCorrect) {
         btnElement.classList.add('minitest-correct');
         if(window.safePlay) window.safePlay(window.sfxMaru);
-        window.updateNellMessage("正解だにゃ！すごい！", "excited", false, true);
+        window.updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false, true);
         minitestState.score += 20; // 1問20点x5問=100点満点
         // 報酬
         window.giveGameReward(10);
