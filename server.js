@@ -1,4 +1,4 @@
-// --- server.js (完全版 v373.0: なぞなぞモード新設・図鑑文言修正版) ---
+// --- server.js (完全版 v373.1: なぞなぞモード新設・図鑑文言修正・バグ修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
