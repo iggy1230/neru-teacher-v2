@@ -1,9 +1,8 @@
-// --- js/game-engine.js (v369.0: ミニテスト実装版) ---
+// --- js/game-engine.js (v371.0: ウルトラクイズ改修版) ---
 
 // (既存のゲームコード群は省略なしで維持)
 // ... showGame, fetchGameComment, initGame, giveGameReward, drawGame ...
 // ... showDanmakuGame, initDanmakuEntities, startDanmakuGame ... 
-// ... showQuizGame, startQuiz, checkQuizAnswer ...
 // ... showKanjiGame, startKanji, checkKanji ...
 // (上記は既存のままなので省略せず記述します)
 
@@ -189,16 +188,27 @@ function drawDanmakuFrame() {
 }
 
 // ==========================================
-// ウルトラクイズ (先読み)
+// ウルトラクイズ (5問1セット・ジャンル対応版)
 // ==========================================
-window.currentQuiz = null;
-window.nextQuizData = null;
 
-async function fetchQuizData() {
+let quizState = {
+    currentQuestionIndex: 0,
+    maxQuestions: 5,
+    score: 0,
+    currentQuizData: null,
+    nextQuizData: null,
+    genre: "全ジャンル",
+    isFinished: false
+};
+
+async function fetchQuizData(genre) {
     const res = await fetch('/generate-quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ grade: currentUser ? currentUser.grade : "1" })
+        body: JSON.stringify({ 
+            grade: currentUser ? currentUser.grade : "1",
+            genre: genre 
+        })
     });
     return await res.json();
 }
@@ -206,62 +216,107 @@ async function fetchQuizData() {
 window.showQuizGame = function() {
     window.switchScreen('screen-quiz');
     window.currentMode = 'quiz';
-    window.currentQuiz = null;
-    window.nextQuizData = null; 
-    document.getElementById('quiz-question-text').innerText = "スタートボタンを押してにゃ！";
-    document.getElementById('quiz-mic-status').innerText = "";
-    document.getElementById('quiz-controls').style.display = 'none';
-    document.getElementById('start-quiz-btn').style.display = 'inline-block';
-    document.getElementById('start-quiz-btn').innerText = "問題スタート！";
-    document.getElementById('quiz-answer-display').classList.add('hidden');
-    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+    
+    // UI初期化
+    document.getElementById('quiz-genre-select').classList.remove('hidden');
+    document.getElementById('quiz-game-area').classList.add('hidden');
+    window.updateNellMessage("どのジャンルに挑戦するにゃ？", "normal");
 };
 
-window.startQuiz = async function() {
-    const btn = document.getElementById('start-quiz-btn');
+window.startQuizSet = async function(genre) {
+    quizState.genre = genre;
+    quizState.currentQuestionIndex = 0;
+    quizState.score = 0;
+    quizState.isFinished = false;
+    quizState.currentQuizData = null;
+    quizState.nextQuizData = null;
+
+    document.getElementById('quiz-genre-select').classList.add('hidden');
+    document.getElementById('quiz-game-area').classList.remove('hidden');
+    document.getElementById('quiz-genre-label').innerText = genre;
+
+    // 音声認識開始
+    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+
+    // 最初の問題へ
+    window.nextQuiz();
+};
+
+window.nextQuiz = async function() {
+    if (quizState.currentQuestionIndex >= quizState.maxQuestions) {
+        window.finishQuizSet();
+        return;
+    }
+
+    quizState.currentQuestionIndex++;
+    document.getElementById('quiz-progress').innerText = `${quizState.currentQuestionIndex}/${quizState.maxQuestions} 問目`;
+    
+    // UIリセット
     const qText = document.getElementById('quiz-question-text');
     const controls = document.getElementById('quiz-controls');
+    const nextBtn = document.getElementById('next-quiz-btn');
     const ansDisplay = document.getElementById('quiz-answer-display');
-    btn.disabled = true;
-    ansDisplay.classList.add('hidden');
+    const micStatus = document.getElementById('quiz-mic-status');
 
-    let quizData = null;
-    if (window.nextQuizData) {
-        quizData = window.nextQuizData;
-        window.nextQuizData = null;
-    } else {
-        qText.innerText = "問題を作ってるにゃ…";
-        window.updateNellMessage("問題を作ってるにゃ…", "thinking");
-        try { quizData = await fetchQuizData(); } catch (e) { console.error(e); qText.innerText = "問題が作れなかったにゃ…"; btn.disabled = false; return; }
-    }
+    qText.innerText = "問題を作ってるにゃ…";
+    window.updateNellMessage("問題を作ってるにゃ…", "thinking");
+    micStatus.innerText = "";
+    ansDisplay.classList.add('hidden');
+    controls.style.display = 'none';
+    nextBtn.classList.add('hidden');
     
+    // データ取得 (プリフェッチがあればそれを使う)
+    let quizData = null;
+    if (quizState.nextQuizData) {
+        quizData = quizState.nextQuizData;
+        quizState.nextQuizData = null;
+    } else {
+        try {
+            quizData = await fetchQuizData(quizState.genre);
+        } catch (e) {
+            console.error(e);
+            qText.innerText = "問題が作れなかったにゃ…";
+            // エラー時はリトライボタンなどを出すべきだが簡易的に戻る
+            setTimeout(() => window.showQuizGame(), 2000);
+            return;
+        }
+    }
+
     if (quizData && quizData.question) {
-        window.currentQuiz = quizData;
+        window.currentQuiz = quizData; // グローバル変数も更新(音声認識用)
+        quizState.currentQuizData = quizData;
+        
         qText.innerText = quizData.question;
         window.updateNellMessage(quizData.question, "normal", false, true);
-        btn.style.display = 'none'; 
-        controls.style.display = 'flex'; 
-        btn.disabled = false;
-        fetchQuizData().then(data => { window.nextQuizData = data; }).catch(err => console.warn("Pre-fetch failed", err));
+        
+        controls.style.display = 'flex';
+        
+        // 次の問題を裏で取得
+        fetchQuizData(quizState.genre).then(data => { quizState.nextQuizData = data; }).catch(err => console.warn("Pre-fetch failed", err));
     } else {
         qText.innerText = "エラーだにゃ…";
-        btn.disabled = false;
     }
 };
 
 window.checkQuizAnswer = function(userSpeech) {
     if (!window.currentQuiz || window.currentMode !== 'quiz') return false; 
+    
+    // すでに回答済みなら無視
+    if (!document.getElementById('quiz-answer-display').classList.contains('hidden')) return false;
+
     const correct = window.currentQuiz.answer;
     const accepted = window.currentQuiz.accepted_answers || [];
     const userAnswer = userSpeech.trim();
     const isCorrect = userAnswer.includes(correct) || accepted.some(a => userAnswer.includes(a));
+    
     const status = document.getElementById('quiz-mic-status');
     status.innerText = `「${userAnswer}」？`;
+    
     if (isCorrect) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
-        window.updateNellMessage(`ピンポン！正解だにゃ！答えは「${correct}」！カリカリ30個あげるにゃ！`, "excited", false, true);
-        window.giveGameReward(30);
-        window.finishQuiz(true);
+        window.updateNellMessage(`ピンポン！正解だにゃ！答えは「${correct}」！`, "excited", false, true);
+        quizState.score += 20; // 1問20点
+        window.showQuizResult(true);
         return true; 
     } 
     return false; 
@@ -274,24 +329,60 @@ window.requestQuizHint = function() {
 
 window.giveUpQuiz = function() {
     if (!window.currentQuiz) return;
-    window.updateNellMessage(`残念だにゃ～。正解は「${window.currentQuiz.answer}」だったにゃ！`, "gentle", false, true);
     if(window.safePlay) window.safePlay(window.sfxBatu);
-    window.finishQuiz(false);
+    window.updateNellMessage(`残念だにゃ～。正解は「${window.currentQuiz.answer}」だったにゃ！`, "gentle", false, true);
+    window.showQuizResult(false);
 };
 
-window.finishQuiz = function(isWin) {
+window.showQuizResult = function(isWin) {
     const controls = document.getElementById('quiz-controls');
-    const startBtn = document.getElementById('start-quiz-btn');
+    const nextBtn = document.getElementById('next-quiz-btn');
     const ansDisplay = document.getElementById('quiz-answer-display');
     const ansText = document.getElementById('quiz-answer-text');
-    controls.style.display = 'none';
-    startBtn.style.display = 'inline-block';
-    startBtn.innerText = "次の問題";
+
+    // UI更新
+    // ヒント・ギブアップボタンを隠し、「次の問題へ」を表示
+    // (CSSでcontrols内のボタンを操作するか、入れ替える)
+    const btns = controls.querySelectorAll('button:not(#next-quiz-btn)');
+    btns.forEach(b => b.classList.add('hidden'));
+    
+    nextBtn.classList.remove('hidden');
+    controls.style.display = 'flex';
+
     if (window.currentQuiz) {
         ansText.innerText = window.currentQuiz.answer;
         ansDisplay.classList.remove('hidden');
     }
+
+    // 自動遷移はせず、ボタンで次へ
+};
+
+window.finishQuizSet = function() {
+    quizState.isFinished = true;
     window.currentQuiz = null;
+
+    // 結果発表
+    let msg = "";
+    let mood = "normal";
+    if (quizState.score === 100) {
+        msg = "全問正解！天才だにゃ！！カリカリ100個あげるにゃ！";
+        mood = "excited";
+        window.giveGameReward(100);
+    } else if (quizState.score >= 60) {
+        msg = `${quizState.score}点！よくがんばったにゃ！カリカリ${quizState.score}個あげるにゃ！`;
+        mood = "happy";
+        window.giveGameReward(quizState.score);
+    } else {
+        msg = `${quizState.score}点だったにゃ。次はもっとがんばるにゃ！カリカリ10個あげるにゃ。`;
+        mood = "gentle";
+        window.giveGameReward(10);
+    }
+
+    window.updateNellMessage(msg, mood, false, true);
+    alert(msg);
+    
+    // 終了後はジャンル選択へ戻る
+    window.showQuizGame();
 };
 
 // ==========================================
