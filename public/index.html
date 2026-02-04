@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v375.0: レベル・ID対応版) -->
+<!-- index.html (完全版 v376.0: レベル選択・ID対応版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -68,7 +68,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v375.0-LevelUp</div>
+            <div class="version-tag">Build: v376.0-QuizLevelSel</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -237,7 +237,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 9. クイズ画面 (4択ボタン対応) -->
+        <!-- 9. クイズ画面 (4択ボタン対応・レベル選択対応) -->
         <section id="screen-quiz" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-quiz"></div><div class="chat-bubble"><p id="nell-text-quiz">ウルトラクイズに挑戦だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#42a5f5;">🎤 ウルトラクイズ</h2>
@@ -246,13 +246,22 @@
             <div id="quiz-genre-select" class="glass-card" style="text-align:center; padding:20px;">
                 <p style="font-weight:bold; margin-bottom:15px; font-size:1.1rem;">ジャンルを選んでにゃ！</p>
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-                    <button id="btn-quiz-all" onclick="startQuizSet('全ジャンル')" class="main-btn pink-btn" style="grid-column: span 2;">全ジャンル</button>
-                    <button id="btn-quiz-general" onclick="startQuizSet('一般知識')" class="main-btn blue-btn">一般知識</button>
-                    <button id="btn-quiz-trivia" onclick="startQuizSet('雑学')" class="main-btn orange-btn">雑学</button>
-                    <button id="btn-quiz-entertainment" onclick="startQuizSet('芸能・スポーツ')" class="main-btn green-btn">芸能・スポーツ</button>
-                    <button id="btn-quiz-history" onclick="startQuizSet('歴史・地理・社会')" class="main-btn purple-btn">歴史・地理・社会</button>
-                    <button id="btn-quiz-game" onclick="startQuizSet('ゲーム')" class="main-btn yellow-btn">ゲーム</button>
+                    <button id="btn-quiz-all" onclick="showLevelSelection('全ジャンル')" class="main-btn pink-btn" style="grid-column: span 2;">全ジャンル</button>
+                    <button id="btn-quiz-general" onclick="showLevelSelection('一般知識')" class="main-btn blue-btn">一般知識</button>
+                    <button id="btn-quiz-trivia" onclick="showLevelSelection('雑学')" class="main-btn orange-btn">雑学</button>
+                    <button id="btn-quiz-entertainment" onclick="showLevelSelection('芸能・スポーツ')" class="main-btn green-btn">芸能・スポーツ</button>
+                    <button id="btn-quiz-history" onclick="showLevelSelection('歴史・地理・社会')" class="main-btn purple-btn">歴史・地理・社会</button>
+                    <button id="btn-quiz-game" onclick="showLevelSelection('ゲーム')" class="main-btn yellow-btn">ゲーム</button>
                 </div>
+            </div>
+
+            <!-- ★新規: レベル選択エリア (デフォルト非表示) -->
+            <div id="quiz-level-select" class="glass-card hidden" style="text-align:center; padding:20px;">
+                <p style="font-weight:bold; margin-bottom:15px; font-size:1.1rem;">レベルを選ぶにゃ！</p>
+                <div id="level-buttons-container" style="display:flex; flex-direction:column; gap:10px;">
+                    <!-- JSでボタン生成 -->
+                </div>
+                <button onclick="backToQuizGenre()" class="main-btn gray-btn" style="margin-top:15px;">ジャンル選択に戻る</button>
             </div>
 
             <!-- クイズプレイエリア -->
@@ -264,7 +273,7 @@
                 
                 <p id="quiz-question-text" style="font-size:1.2rem; font-weight:bold; color:#333; min-height:80px; display:flex; align-items:center; justify-content:center;">読み込み中...</p>
                 
-                <!-- 選択肢ボタンエリア (新規追加) -->
+                <!-- 選択肢ボタンエリア -->
                 <div id="quiz-options-container" style="margin-top:10px;"></div>
 
                 <div id="quiz-mic-status" style="margin-top:10px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
