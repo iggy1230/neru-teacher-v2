@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v373.1: なぞなぞモード実装版) -->
+<!-- index.html (完全版 v374.0: ウルトラクイズ4択ボタン対応版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -40,16 +40,16 @@
         .log-nell .log-role { color: #ff85a1; }
         #kanji-canvas { border: 4px solid #8d6e63; border-radius: 10px; background: white; touch-action: none; cursor: crosshair; }
         
-        /* ミニテスト用 */
-        .minitest-option-btn {
+        /* ミニテスト・ウルトラクイズ用ボタン */
+        .minitest-option-btn, .quiz-option-btn {
             display: block; width: 100%; margin: 8px 0; padding: 15px;
             border: 2px solid #ddd; border-radius: 10px; background: white;
             font-size: 1rem; font-weight: bold; color: #333; cursor: pointer;
             box-shadow: 0 2px 0 #ccc; text-align: left;
         }
-        .minitest-option-btn:active { transform: translateY(2px); box-shadow: none; }
-        .minitest-correct { background: #e8f5e9 !important; border-color: #4caf50 !important; color: #2e7d32 !important; }
-        .minitest-wrong { background: #ffebee !important; border-color: #ef5350 !important; color: #c62828 !important; }
+        .minitest-option-btn:active, .quiz-option-btn:active { transform: translateY(2px); box-shadow: none; }
+        .minitest-correct, .quiz-correct { background: #e8f5e9 !important; border-color: #4caf50 !important; color: #2e7d32 !important; }
+        .minitest-wrong, .quiz-wrong { background: #ffebee !important; border-color: #ef5350 !important; color: #c62828 !important; }
     </style>
 </head>
 <body>
@@ -68,7 +68,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v373.1-RiddleMode</div>
+            <div class="version-tag">Build: v374.0-QuizBtn</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -237,7 +237,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 9. クイズ画面 -->
+        <!-- 9. クイズ画面 (4択ボタン対応) -->
         <section id="screen-quiz" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-quiz"></div><div class="chat-bubble"><p id="nell-text-quiz">ウルトラクイズに挑戦だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#42a5f5;">🎤 ウルトラクイズ</h2>
@@ -264,8 +264,11 @@
                 
                 <p id="quiz-question-text" style="font-size:1.2rem; font-weight:bold; color:#333; min-height:80px; display:flex; align-items:center; justify-content:center;">読み込み中...</p>
                 
+                <!-- 選択肢ボタンエリア (新規追加) -->
+                <div id="quiz-options-container" style="margin-top:10px;"></div>
+
                 <div id="quiz-mic-status" style="margin-top:10px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
-                <p style="font-size:0.9rem; color:#666; margin-top:5px;">マイクに向かって答えを言ってね！</p>
+                <p style="font-size:0.9rem; color:#666; margin-top:5px;">マイクで答えてもOKだにゃ！</p>
                 
                 <!-- 正解表示エリア -->
                 <div id="quiz-answer-display" class="hidden" style="margin-top:15px; padding:10px; background:#e3f2fd; border-radius:10px; border:2px solid #2196f3; color:#0d47a1; font-weight:bold;">
