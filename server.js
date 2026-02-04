@@ -1,4 +1,4 @@
-// --- server.js (完全版 v375.0: 漢字読み判定緩和・クイズレベル導入版) ---
+// --- server.js (完全版 v376.0: 漢字読み上げ修正・クイズレベル選択対応版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -213,7 +213,7 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API (文章問題対応) ---
+// --- 漢字ドリル生成 API (読み上げ問題のネタバレ防止) ---
 app.post('/generate-kanji', async (req, res) => {
     try {
         const { grade, mode } = req.body; // mode: 'reading' or 'writing'
@@ -234,10 +234,10 @@ app.post('/generate-kanji', async (req, res) => {
         小学${grade}年生で習う漢字の問題をランダムに1問作成してください。
         ${typeInstruction}
 
-        【重要：読み上げテキスト(question_speech)のルール】
-        - **「読み問題」の場合、正解の読み方を絶対に喋ってはいけません。**
-        - 「『山』の読み方は？」と聞くと、音声合成が「やま」と読んでしまいネタバレになります。
-        - **必ず「この漢字の読み方はなにかな？」のように、ターゲットの漢字自体を発音しない言い回しにしてください。**
+        【最重要：読み上げテキスト(question_speech)のルール】
+        - **「読み問題」の場合、出題対象の漢字そのものを絶対に発音してはいけません。**
+        - 例: 正解が「山(やま)」の場合、「『やま』へ行くの『やま』の読み方は？」と読み上げると、答えを言ってしまっています。
+        - **必ず「『画面の赤くなっている漢字』の読み方は？」や「『この漢字』の読み方はなにかな？」のように、指示語を使って漢字を指し示し、音読み・訓読みを含め一切の読み方を言わないでください。**
 
         【出力JSONフォーマット】
         {
@@ -245,7 +245,7 @@ app.post('/generate-kanji', async (req, res) => {
             "kanji": "正解となる漢字",
             "reading": "正解となる読み仮名（ひらがな）",
             "question_display": "画面に表示する問題文（例: 『『山』へ行く』 または 『□□(しょうぶ)をする』）",
-            "question_speech": "ネル先生が読み上げる問題文"
+            "question_speech": "ネル先生が読み上げる問題文（答えを含まないこと！）"
         }
         `;
 
