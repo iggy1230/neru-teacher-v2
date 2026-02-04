@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v369.0: ミニテストUI追加版) -->
+<!-- index.html (完全版 v371.0: ウルトラクイズ改修版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -68,7 +68,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v369.0-MiniTest</div>
+            <div class="version-tag">Build: v371.0-QuizUpdate</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -123,9 +123,7 @@
         <section id="screen-classroom" class="screen hidden">
             <h2 class="section-title">🏫 教室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
-                <!-- 新規: ミニテストボタン -->
                 <button onclick="showMinitestMenu()" class="main-btn orange-btn" style="background:#ff9800; box-shadow:0 4px 0 #e65100;">📝 ネル先生のミニテスト</button>
-                
                 <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
                 <button onclick="selectMode('grade')" class="main-btn red-btn">💯 採点ネル先生</button>
                 <button onclick="selectMode('simple-chat')" class="main-btn green-btn">👩‍🏫 ネル先生の個別指導</button>
@@ -135,12 +133,11 @@
             </div>
         </section>
 
-        <!-- 11. ミニテスト画面 (新規) -->
+        <!-- 11. ミニテスト画面 -->
         <section id="screen-minitest" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-minitest"></div><div class="chat-bubble"><p id="nell-text-minitest">ミニテストを始めるにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#ff9800;">📝 ミニテスト</h2>
             
-            <!-- 教科選択 -->
             <div id="minitest-subject-select" class="glass-card" style="text-align:center; padding:20px;">
                 <p style="font-weight:bold; margin-bottom:15px;">教科を選んでにゃ！</p>
                 <button onclick="startMinitest('こくご')" class="main-btn pink-btn">こくご</button>
@@ -149,15 +146,10 @@
                 <button onclick="startMinitest('しゃかい')" class="main-btn orange-btn">しゃかい</button>
             </div>
 
-            <!-- 問題エリア -->
             <div id="minitest-game-area" class="glass-card hidden" style="padding:15px;">
                 <p id="minitest-progress" style="text-align:right; font-size:0.9rem; color:#888;">1/5問目</p>
                 <p id="minitest-question" style="font-size:1.2rem; font-weight:bold; margin:10px 0; min-height:60px;">読み込み中...</p>
-                
-                <div id="minitest-options">
-                    <!-- 選択肢ボタンがここに入る -->
-                </div>
-
+                <div id="minitest-options"></div>
                 <div id="minitest-explanation-area" class="hidden" style="margin-top:15px; background:#fff3e0; padding:10px; border-radius:10px; border:2px solid #ffb74d;">
                     <p style="font-weight:bold; color:#e65100;">💡 解説</p>
                     <p id="minitest-explanation-text" style="font-size:0.95rem;">ここに解説が入ります</p>
@@ -199,7 +191,6 @@
             </div>
         </section>
 
-        <!-- (以下、既存画面) -->
         <!-- 4. メイン画面 -->
         <section id="screen-main" class="screen hidden">
             <header><button id="main-back-btn" onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; padding:10px 20px;">←</button></header>
@@ -245,29 +236,48 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 9. クイズ画面 -->
+        <!-- 9. クイズ画面 (改修版) -->
         <section id="screen-quiz" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-quiz"></div><div class="chat-bubble"><p id="nell-text-quiz">ウルトラクイズに挑戦だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#42a5f5;">🎤 ウルトラクイズ</h2>
-            <div class="glass-card" style="text-align:center; padding:20px;">
-                <p id="quiz-question-text" style="font-size:1.2rem; font-weight:bold; color:#333; min-height:80px; display:flex; align-items:center; justify-content:center;">スタートボタンを押してにゃ！</p>
-                
-                <div id="quiz-controls" style="display:none; margin-top:10px;">
-                    <div style="display:flex; gap:10px; justify-content:center; margin-bottom:10px;">
-                        <button onclick="requestQuizHint()" class="main-btn green-btn" style="flex:1;">💡 ヒント</button>
-                        <button onclick="giveUpQuiz()" class="main-btn gray-btn" style="flex:1;">🏳️ ギブアップ</button>
-                    </div>
+            
+            <!-- ジャンル選択エリア -->
+            <div id="quiz-genre-select" class="glass-card" style="text-align:center; padding:20px;">
+                <p style="font-weight:bold; margin-bottom:15px; font-size:1.1rem;">ジャンルを選んでにゃ！</p>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <button onclick="startQuizSet('全ジャンル')" class="main-btn pink-btn" style="grid-column: span 2;">全ジャンル</button>
+                    <button onclick="startQuizSet('一般知識')" class="main-btn blue-btn">一般知識</button>
+                    <button onclick="startQuizSet('雑学')" class="main-btn orange-btn">雑学</button>
+                    <button onclick="startQuizSet('芸能・スポーツ')" class="main-btn green-btn">芸能・スポーツ</button>
+                    <button onclick="startQuizSet('歴史・地理・社会')" class="main-btn purple-btn">歴史・地理・社会</button>
+                    <button onclick="startQuizSet('ゲーム')" class="main-btn yellow-btn">ゲーム</button>
+                </div>
+            </div>
+
+            <!-- クイズプレイエリア -->
+            <div id="quiz-game-area" class="glass-card hidden" style="text-align:center; padding:20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <span id="quiz-genre-label" style="background:#eee; padding:3px 8px; border-radius:10px; font-size:0.8rem; color:#666;">ジャンル</span>
+                    <span id="quiz-progress" style="font-weight:bold; color:#42a5f5;">1/5 問目</span>
                 </div>
                 
-                <button id="start-quiz-btn" onclick="startQuiz()" class="main-btn blue-btn">問題スタート！</button>
-                <div id="quiz-mic-status" style="margin-top:10px; font-weight:bold; color:#e91e63;"></div>
-                <p style="font-size:0.9rem; color:#666; margin-top:10px;">マイクに向かって答えを言ってね！</p>
+                <p id="quiz-question-text" style="font-size:1.2rem; font-weight:bold; color:#333; min-height:80px; display:flex; align-items:center; justify-content:center;">読み込み中...</p>
+                
+                <div id="quiz-mic-status" style="margin-top:10px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
+                <p style="font-size:0.9rem; color:#666; margin-top:5px;">マイクに向かって答えを言ってね！</p>
                 
                 <!-- 正解表示エリア -->
                 <div id="quiz-answer-display" class="hidden" style="margin-top:15px; padding:10px; background:#e3f2fd; border-radius:10px; border:2px solid #2196f3; color:#0d47a1; font-weight:bold;">
                     正解は... <span id="quiz-answer-text" style="font-size:1.5rem; display:block;"></span>
                 </div>
+
+                <div id="quiz-controls" style="display:flex; gap:10px; justify-content:center; margin-top:15px;">
+                    <button onclick="requestQuizHint()" class="main-btn green-btn" style="flex:1;">💡 ヒント</button>
+                    <button onclick="giveUpQuiz()" class="main-btn gray-btn" style="flex:1;">🏳️ ギブアップ</button>
+                    <button id="next-quiz-btn" onclick="nextQuiz()" class="main-btn blue-btn hidden" style="flex:1;">次の問題へ</button>
+                </div>
             </div>
+
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
