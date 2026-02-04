@@ -1,4 +1,4 @@
-// --- server.js (完全版 v374.0: ウルトラクイズ4択ボタン対応版) ---
+// --- server.js (完全版 v375.0: 漢字読み判定緩和・クイズレベル導入版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -100,10 +100,10 @@ function fixPronunciation(text) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (4択ボタン対応版) ---
+// --- クイズ生成 API (レベル対応版) ---
 app.post('/generate-quiz', async (req, res) => {
     try {
-        const { grade, genre } = req.body;
+        const { grade, genre, level } = req.body; // level: 1~5
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
         let targetGenre = genre;
@@ -112,8 +112,22 @@ app.post('/generate-quiz', async (req, res) => {
             targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
         }
 
+        const currentLevel = level || 1;
+        let difficultyDesc = "";
+        switch(parseInt(currentLevel)) {
+            case 1: difficultyDesc = `小学${grade}年生でも簡単にわかる、基礎的な問題`; break;
+            case 2: difficultyDesc = `小学${grade}年生が少し考えればわかる問題`; break;
+            case 3: difficultyDesc = `高学年～中学生レベルの知識が必要な問題`; break;
+            case 4: difficultyDesc = `大人でも間違えるかもしれない難しい問題`; break;
+            case 5: difficultyDesc = `非常にマニアック、または高度な知識が必要な超難問（クイズ王レベル）`; break;
+            default: difficultyDesc = `標準的な問題`;
+        }
+
         const prompt = `
-        小学${grade}年生向けの「${targetGenre}」に関する4択クイズを1問作成してください。
+        「${targetGenre}」に関する4択クイズを1問作成してください。
+        
+        【難易度設定: レベル${currentLevel}】
+        - ${difficultyDesc}
         
         【重要：禁止事項】
         - **挨拶不要。すぐに問題文から始めてください。**
@@ -199,7 +213,7 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API ---
+// --- 漢字ドリル生成 API (文章問題対応) ---
 app.post('/generate-kanji', async (req, res) => {
     try {
         const { grade, mode } = req.body; // mode: 'reading' or 'writing'
@@ -207,7 +221,11 @@ app.post('/generate-kanji', async (req, res) => {
         
         let typeInstruction = "";
         if (mode === 'reading') {
-            typeInstruction = "「読み（漢字の読み仮名を答える）」問題を作成してください。";
+            typeInstruction = `
+            「読み（漢字の読み仮名を答える）」問題を作成してください。
+            **重要: 単体の漢字ではなく、短い文章やフレーズの中で使われている漢字の読みを問う形式にしてください。**
+            例: 「山へ行く」の「山」の読み方は？
+            `;
         } else {
             typeInstruction = "「書き取り（文章の穴埋めで漢字を書く）」問題を作成してください。";
         }
@@ -219,14 +237,14 @@ app.post('/generate-kanji', async (req, res) => {
         【重要：読み上げテキスト(question_speech)のルール】
         - **「読み問題」の場合、正解の読み方を絶対に喋ってはいけません。**
         - 「『山』の読み方は？」と聞くと、音声合成が「やま」と読んでしまいネタバレになります。
-        - **必ず「画面の漢字、読めるかにゃ？」や「この漢字の読み方はなにかな？」のように、漢字そのものを発音しない言い回しにしてください。**
+        - **必ず「この漢字の読み方はなにかな？」のように、ターゲットの漢字自体を発音しない言い回しにしてください。**
 
         【出力JSONフォーマット】
         {
             "type": "${mode}",
-            "kanji": "正解となる漢字（書き取りの場合はこれ判定、読みの場合は問題文の一部）",
+            "kanji": "正解となる漢字",
             "reading": "正解となる読み仮名（ひらがな）",
-            "question_display": "画面に表示する問題文（例: 『□□(しょうぶ)をする』 または 『『勝負』の読み方は？』）",
+            "question_display": "画面に表示する問題文（例: 『『山』へ行く』 または 『□□(しょうぶ)をする』）",
             "question_speech": "ネル先生が読み上げる問題文"
         }
         `;
