@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v365.0: 全機能網羅・完全版) ---
+// --- js/voice-service.js (v367.1: 全機能網羅・完全版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -45,7 +45,7 @@ window.startAlwaysOnListening = function() {
     }
 
     if (window.continuousRecognition) {
-        try { window.continuousRecognition.stop(); } catch(e){}
+        return;
     }
 
     window.isAlwaysListening = true;
@@ -133,7 +133,7 @@ window.startAlwaysOnListening = function() {
                         address: window.currentAddress,
                         missingInfo: missingInfo,
                         memoryContext: memoryContext,
-                        currentQuizData: currentQuizData // ★追加
+                        currentQuizData: currentQuizData 
                     })
                 });
                 
@@ -170,7 +170,9 @@ window.startAlwaysOnListening = function() {
         if (window.isAlwaysListening) {
             setTimeout(() => { 
                 try { window.continuousRecognition.start(); } catch(e){} 
-            }, 500);
+            }, 300);
+        } else {
+            window.continuousRecognition = null;
         }
     };
 

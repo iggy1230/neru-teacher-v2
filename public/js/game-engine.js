@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v367.0: 読み問題判定修正版) ---
+// --- js/game-engine.js (v367.1: 全ゲーム統合・完全版) ---
 
 // ==========================================
 // 既存ゲーム: カリカリキャッチ (ブロック崩し風)
@@ -595,7 +595,6 @@ window.showKanjiGame = function() {
     kanjiState.ctx.lineWidth = 12; // 太めに
     kanjiState.ctx.strokeStyle = '#000000';
     
-    // イベント
     const startDraw = (e) => {
         kanjiState.isDrawing = true;
         const pos = getPos(e);
@@ -628,7 +627,6 @@ window.showKanjiGame = function() {
 };
 
 window.startKanji = async function() {
-    // UI初期化
     document.getElementById('kanji-controls').style.display = 'none';
     document.getElementById('next-kanji-btn').style.display = 'none';
     document.getElementById('kanji-answer-display').classList.add('hidden');
@@ -701,7 +699,20 @@ window.checkKanji = async function() {
     if (!kanjiState.data || kanjiState.data.type !== 'writing') return;
     
     window.updateNellMessage("採点するにゃ…じーっ…", "thinking");
-    const dataUrl = kanjiState.canvas.toDataURL('image/png');
+    
+    // ★修正: 白背景の画像を生成して送信 (AI認識精度向上)
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = kanjiState.canvas.width;
+    tempCanvas.height = kanjiState.canvas.height;
+    const tCtx = tempCanvas.getContext('2d');
+    
+    // 白で塗りつぶす
+    tCtx.fillStyle = '#ffffff';
+    tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    // 元の描画を重ねる
+    tCtx.drawImage(kanjiState.canvas, 0, 0);
+    
+    const dataUrl = tempCanvas.toDataURL('image/png');
     const base64 = dataUrl.split(',')[1];
     
     try {
@@ -727,12 +738,11 @@ window.checkKanji = async function() {
     }
 };
 
-// ★修正: 漢字読み判定の緩和ロジック
 window.checkKanjiReading = function(text) {
     if (!kanjiState.data || kanjiState.data.type !== 'reading') return false;
     
-    const correctHiragana = kanjiState.data.reading; // やま
-    const correctKanji = kanjiState.data.kanji;      // 山
+    const correctHiragana = kanjiState.data.reading;
+    const correctKanji = kanjiState.data.kanji;
     // カタカナ変換
     const correctKatakana = correctHiragana.replace(/[\u3041-\u3096]/g, ch =>
         String.fromCharCode(ch.charCodeAt(0) + 0x60)
