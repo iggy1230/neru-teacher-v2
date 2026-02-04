@@ -1,13 +1,7 @@
-// --- js/game-engine.js (v371.0: ウルトラクイズ改修版) ---
-
-// (既存のゲームコード群は省略なしで維持)
-// ... showGame, fetchGameComment, initGame, giveGameReward, drawGame ...
-// ... showDanmakuGame, initDanmakuEntities, startDanmakuGame ... 
-// ... showKanjiGame, startKanji, checkKanji ...
-// (上記は既存のままなので省略せず記述します)
+// --- js/game-engine.js (完全版 v373.0: なぞなぞモード実装版) ---
 
 // ==========================================
-// 既存ゲーム: カリカリキャッチ (ブロック崩し風)
+// 1. カリカリキャッチ
 // ==========================================
 window.showGame = function() { 
     if (typeof window.switchScreen === 'function') {
@@ -126,8 +120,9 @@ window.drawGame = function() {
     }
     window.gameAnimId = requestAnimationFrame(window.drawGame);
 };
+
 // ==========================================
-// VS ロボット掃除機
+// 2. VS ロボット掃除機
 // ==========================================
 let danmakuState = { running: false, ctx: null, canvas: null, width: 0, height: 0, score: 0, frame: 0, player: { x: 0, y: 0, r: 16 }, boss: { x: 0, y: 0, r: 24, angle: 0 }, bullets: [], touching: false };
 const catPixelArt = [ [0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0], [0,0,0,1,1,1,1,0,0,0,0,1,1,1,1,0], [0,0,1,1,1,1,1,1,0,0,1,1,1,1,1,1], [0,1,1,1,1,4,4,1,1,1,1,4,4,1,1,1], [1,1,1,1,4,4,4,4,1,1,4,4,4,4,1,1], [1,1,1,3,5,5,3,1,1,1,3,5,5,3,1,1], [1,1,1,5,3,3,5,1,1,1,5,3,3,5,1,1], [1,1,1,3,5,5,3,1,1,1,3,5,5,3,1,1], [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], [1,1,1,1,2,2,2,3,3,2,2,2,1,1,1,1], [0,1,1,2,2,2,3,4,4,3,2,2,2,1,1,0], [0,0,1,2,2,2,4,4,4,4,2,2,2,1,0,0], [0,0,0,1,1,2,2,2,2,2,2,1,1,0,0,0], [0,0,0,0,0,4,4,4,4,4,4,0,0,0,0,0], [0,0,0,0,4,4,4,4,4,4,4,4,0,0,0,0], [0,0,0,0,4,0,0,4,4,0,0,4,0,0,0,0] ];
@@ -188,7 +183,7 @@ function drawDanmakuFrame() {
 }
 
 // ==========================================
-// ウルトラクイズ (5問1セット・ジャンル対応版)
+// 3. ウルトラクイズ
 // ==========================================
 
 let quizState = {
@@ -276,14 +271,13 @@ window.nextQuiz = async function() {
         } catch (e) {
             console.error(e);
             qText.innerText = "問題が作れなかったにゃ…";
-            // エラー時はリトライボタンなどを出すべきだが簡易的に戻る
             setTimeout(() => window.showQuizGame(), 2000);
             return;
         }
     }
 
     if (quizData && quizData.question) {
-        window.currentQuiz = quizData; // グローバル変数も更新(音声認識用)
+        window.currentQuiz = quizData; 
         quizState.currentQuizData = quizData;
         
         qText.innerText = quizData.question;
@@ -300,8 +294,6 @@ window.nextQuiz = async function() {
 
 window.checkQuizAnswer = function(userSpeech) {
     if (!window.currentQuiz || window.currentMode !== 'quiz') return false; 
-    
-    // すでに回答済みなら無視
     if (!document.getElementById('quiz-answer-display').classList.contains('hidden')) return false;
 
     const correct = window.currentQuiz.answer;
@@ -315,7 +307,7 @@ window.checkQuizAnswer = function(userSpeech) {
     if (isCorrect) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
         window.updateNellMessage(`ピンポン！正解だにゃ！答えは「${correct}」！`, "excited", false, true);
-        quizState.score += 20; // 1問20点
+        quizState.score += 20; 
         window.showQuizResult(true);
         return true; 
     } 
@@ -340,9 +332,6 @@ window.showQuizResult = function(isWin) {
     const ansDisplay = document.getElementById('quiz-answer-display');
     const ansText = document.getElementById('quiz-answer-text');
 
-    // UI更新
-    // ヒント・ギブアップボタンを隠し、「次の問題へ」を表示
-    // (CSSでcontrols内のボタンを操作するか、入れ替える)
     const btns = controls.querySelectorAll('button:not(#next-quiz-btn)');
     btns.forEach(b => b.classList.add('hidden'));
     
@@ -353,15 +342,12 @@ window.showQuizResult = function(isWin) {
         ansText.innerText = window.currentQuiz.answer;
         ansDisplay.classList.remove('hidden');
     }
-
-    // 自動遷移はせず、ボタンで次へ
 };
 
 window.finishQuizSet = function() {
     quizState.isFinished = true;
     window.currentQuiz = null;
 
-    // 結果発表
     let msg = "";
     let mood = "normal";
     if (quizState.score === 100) {
@@ -381,12 +367,152 @@ window.finishQuizSet = function() {
     window.updateNellMessage(msg, mood, false, true);
     alert(msg);
     
-    // 終了後はジャンル選択へ戻る
     window.showQuizGame();
 };
 
 // ==========================================
-// ネル先生の漢字ドリル
+// 4. ★新規: ネル先生のなぞなぞ
+// ==========================================
+
+let riddleState = {
+    currentRiddle: null,
+    nextRiddle: null,
+    isFinished: false
+};
+
+async function fetchRiddleData() {
+    const res = await fetch('/generate-riddle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            grade: currentUser ? currentUser.grade : "1"
+        })
+    });
+    return await res.json();
+}
+
+window.showRiddleGame = function() {
+    if(typeof window.selectMode === 'function') window.selectMode('riddle');
+    else {
+        // フォールバック
+        window.switchScreen('screen-riddle');
+        window.currentMode = 'riddle';
+    }
+};
+
+window.startRiddle = async function() {
+    const startBtn = document.getElementById('start-riddle-btn');
+    startBtn.style.display = 'none';
+    
+    document.getElementById('riddle-controls').style.display = 'flex';
+    document.getElementById('riddle-answer-display').classList.add('hidden');
+    
+    // 音声認識開始
+    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+    
+    window.nextRiddle();
+};
+
+window.nextRiddle = async function() {
+    // UIリセット
+    const qText = document.getElementById('riddle-question-text');
+    const controls = document.getElementById('riddle-controls');
+    const nextBtn = document.getElementById('next-riddle-btn');
+    const ansDisplay = document.getElementById('riddle-answer-display');
+    const micStatus = document.getElementById('riddle-mic-status');
+    const giveUpBtn = controls.querySelector('button.gray-btn'); // 答えを見るボタン
+
+    qText.innerText = "なぞなぞを考えてるにゃ…";
+    window.updateNellMessage("なぞなぞを考えてるにゃ…", "thinking");
+    micStatus.innerText = "";
+    ansDisplay.classList.add('hidden');
+    nextBtn.classList.add('hidden');
+    if(giveUpBtn) giveUpBtn.classList.remove('hidden');
+    
+    let riddleData = null;
+    if (riddleState.nextRiddle) {
+        riddleData = riddleState.nextRiddle;
+        riddleState.nextRiddle = null;
+    } else {
+        try {
+            riddleData = await fetchRiddleData();
+        } catch (e) {
+            console.error(e);
+            qText.innerText = "なぞなぞが作れなかったにゃ…";
+            setTimeout(() => {
+                document.getElementById('start-riddle-btn').style.display = 'inline-block';
+                controls.style.display = 'none';
+            }, 2000);
+            return;
+        }
+    }
+
+    if (riddleData && riddleData.question) {
+        riddleState.currentRiddle = riddleData;
+        // グローバル変数にも入れる（音声認識用）
+        window.currentRiddle = riddleData; 
+        
+        qText.innerText = riddleData.question;
+        window.updateNellMessage(riddleData.question, "normal", false, true);
+        
+        // 次のなぞなぞを裏で取得
+        fetchRiddleData().then(data => { riddleState.nextRiddle = data; }).catch(err => console.warn("Pre-fetch failed", err));
+    } else {
+        qText.innerText = "エラーだにゃ…";
+    }
+};
+
+window.checkRiddleAnswer = function(userSpeech) {
+    if (!riddleState.currentRiddle || window.currentMode !== 'riddle') return false; 
+    
+    // すでに回答済みなら無視
+    if (!document.getElementById('riddle-answer-display').classList.contains('hidden')) return false;
+
+    const correct = riddleState.currentRiddle.answer;
+    const accepted = riddleState.currentRiddle.accepted_answers || [];
+    const userAnswer = userSpeech.trim();
+    
+    // 部分一致で判定（なぞなぞは言い回しが多様なため）
+    const isCorrect = userAnswer.includes(correct) || accepted.some(a => userAnswer.includes(a));
+    
+    const status = document.getElementById('riddle-mic-status');
+    status.innerText = `「${userAnswer}」？`;
+    
+    if (isCorrect) {
+        if(window.safePlay) window.safePlay(window.sfxMaru);
+        window.updateNellMessage(`大正解だにゃ！答えは「${correct}」！カリカリ20個あげるにゃ！`, "excited", false, true);
+        window.giveGameReward(20);
+        window.showRiddleResult(true);
+        return true; 
+    } 
+    return false; 
+};
+
+window.giveUpRiddle = function() {
+    if (!riddleState.currentRiddle) return;
+    if(window.safePlay) window.safePlay(window.sfxBatu);
+    window.updateNellMessage(`答えは「${riddleState.currentRiddle.answer}」だったにゃ！`, "gentle", false, true);
+    window.showRiddleResult(false);
+};
+
+window.showRiddleResult = function(isWin) {
+    const controls = document.getElementById('riddle-controls');
+    const nextBtn = document.getElementById('next-riddle-btn');
+    const ansDisplay = document.getElementById('riddle-answer-display');
+    const ansText = document.getElementById('riddle-answer-text');
+    const giveUpBtn = controls.querySelector('button.gray-btn');
+
+    if(giveUpBtn) giveUpBtn.classList.add('hidden');
+    nextBtn.classList.remove('hidden');
+
+    if (riddleState.currentRiddle) {
+        ansText.innerText = riddleState.currentRiddle.answer;
+        ansDisplay.classList.remove('hidden');
+    }
+};
+
+// ==========================================
+// 5. ネル先生の漢字ドリル
 // ==========================================
 let kanjiState = { data: null, canvas: null, ctx: null, isDrawing: false, mode: 'writing', questionCount: 0, maxQuestions: 5 };
 
@@ -537,7 +663,7 @@ window.sendHttpTextInternal = function(text) {
 };
 
 // ==========================================
-// ★新規: ネル先生のミニテスト
+// 6. ネル先生のミニテスト
 // ==========================================
 
 let minitestState = {

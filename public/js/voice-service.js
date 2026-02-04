@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v367.1: 全機能網羅・完全版) ---
+// --- js/voice-service.js (完全版 v373.0: なぞなぞモード対応版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -88,6 +88,12 @@ window.startAlwaysOnListening = function() {
             if (window.currentMode === 'kanji' && typeof window.checkKanjiReading === 'function') {
                 const isCorrect = window.checkKanjiReading(text);
                 if (isCorrect) return; 
+            }
+
+            // 3. なぞなぞモードの判定 (★新規)
+            if (window.currentMode === 'riddle' && typeof window.checkRiddleAnswer === 'function') {
+                const isCorrect = window.checkRiddleAnswer(text);
+                if (isCorrect) return;
             }
 
             // --- 通常の会話・チャット処理 ---
