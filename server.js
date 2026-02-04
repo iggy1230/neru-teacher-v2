@@ -1,4 +1,4 @@
-// --- server.js (完全版 v371.0: ウルトラクイズ改修版) ---
+// --- server.js (完全版 v373.0: なぞなぞモード新設・図鑑文言修正版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -100,16 +100,15 @@ function fixPronunciation(text) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (改修版: ジャンル指定対応) ---
+// --- クイズ生成 API (ジャンル指定対応) ---
 app.post('/generate-quiz', async (req, res) => {
     try {
         const { grade, genre } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
-        // ジャンル決定ロジック
         let targetGenre = genre;
+        // 「全ジャンル」または指定なしの場合は、なぞなぞ以外のジャンルからランダム
         if (!targetGenre || targetGenre === "全ジャンル") {
-            // ウルトラクイズ用: なぞなぞは含めない
             const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
             targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
         }
@@ -120,11 +119,12 @@ app.post('/generate-quiz', async (req, res) => {
         【重要：禁止事項】
         - **「みんなこんにちは！」「ネル先生だよ！」などの冒頭の挨拶は一切不要です。**
         - **すぐに問題文から始めてください。**
+        - **なぞなぞは作成しないでください。**
 
-        【作成ルール】
-        - 問題は読み上げやすい文章にしてください。
-        - 4択クイズ形式推奨ですが、一問一答でも構いません。
+        【${targetGenre}クイズの作成ルール】
+        - 4択クイズ形式推奨ですが、子供が声で答えやすい一問一答でも構いません。
         - 4択の場合は「問題文。1番〇〇、2番〇〇...」のように続けて読んでください。
+        - 芸能・アニメ・ゲームの場合: 子供に人気のある話題を選ぶ。
 
         【出力JSONフォーマット】
         {
@@ -143,7 +143,38 @@ app.post('/generate-quiz', async (req, res) => {
     }
 });
 
-// --- ★新規: ミニテスト生成 API ---
+// --- ★新規: なぞなぞ生成 API ---
+app.post('/generate-riddle', async (req, res) => {
+    try {
+        const { grade } = req.body;
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+
+        const prompt = `
+        小学${grade}年生向けの「なぞなぞ」を1問作成してください。
+        
+        【ルール】
+        - **4択ではありません。** 考えて答える形式の問題にしてください。
+        - 「パンはパンでも食べられないパンは？」のような古典的なものから、少しひねったものまで。
+        - 答えは子供が知っている単語で。
+
+        【出力JSONフォーマット】
+        {
+            "question": "問題文（挨拶なし。すぐに問題を読み上げる）",
+            "answer": "正解の単語（ひらがな）",
+            "accepted_answers": ["正解の別名", "漢字表記", "カタカナ表記"] 
+        }
+        `;
+
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        res.json(JSON.parse(text));
+    } catch (e) {
+        console.error("Riddle Gen Error:", e);
+        res.status(500).json({ error: "なぞなぞが思いつかないにゃ…" });
+    }
+});
+
+// --- ミニテスト生成 API ---
 app.post('/generate-minitest', async (req, res) => {
     try {
         const { grade, subject } = req.body;
@@ -558,7 +589,7 @@ app.post('/identify-item', async (req, res) => {
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。
-        2. **呼び方ルール**: **解説の最後に、「${name}さんはこれ知ってたにゃ？」のように、必ず『${name}さん』とさん付けで呼びかけてください。呼び捨ては厳禁です。**
+        2. **呼び方ルール**: **解説の最後に、「${name}さんはこれ知ってたにゃ？」のように、名前を呼びかけて質問するフレーズは絶対に含めないでください。** 説明だけで完結させてください。
         3. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
         4. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
         5. **場所の言及ルール**: 撮影されたものが「建物」や「風景」ではなく、持ち運び可能な「商品」や「小物」の場合、解説文の中で**「ここは〇〇市〇〇町〜」のような撮影場所への言及は絶対にしないでください**。違和感があります。
