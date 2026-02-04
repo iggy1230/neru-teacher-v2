@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v373.1: なぞなぞモード実装・修正版) ---
+// --- js/game-engine.js (完全版 v374.0: ウルトラクイズ4択ボタン対応版) ---
 
 // ==========================================
 // 1. カリカリキャッチ
@@ -252,6 +252,7 @@ window.nextQuiz = async function() {
     const nextBtn = document.getElementById('next-quiz-btn');
     const ansDisplay = document.getElementById('quiz-answer-display');
     const micStatus = document.getElementById('quiz-mic-status');
+    const optionsContainer = document.getElementById('quiz-options-container');
 
     qText.innerText = "問題を作ってるにゃ…";
     window.updateNellMessage("問題を作ってるにゃ…", "thinking");
@@ -259,6 +260,7 @@ window.nextQuiz = async function() {
     ansDisplay.classList.add('hidden');
     controls.style.display = 'none';
     nextBtn.classList.add('hidden');
+    optionsContainer.innerHTML = ""; // ボタンをクリア
     
     // データ取得 (プリフェッチがあればそれを使う)
     let quizData = null;
@@ -283,6 +285,19 @@ window.nextQuiz = async function() {
         qText.innerText = quizData.question;
         window.updateNellMessage(quizData.question, "normal", false, true);
         
+        // ★選択肢ボタンの生成
+        if (quizData.options && Array.isArray(quizData.options)) {
+            // シャッフル用
+            const shuffledOptions = [...quizData.options].sort(() => Math.random() - 0.5);
+            shuffledOptions.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = "quiz-option-btn";
+                btn.innerText = opt;
+                btn.onclick = () => window.checkQuizAnswer(opt, true); // true: ボタンからの入力
+                optionsContainer.appendChild(btn);
+            });
+        }
+
         controls.style.display = 'flex';
         
         // 次の問題を裏で取得
@@ -292,25 +307,57 @@ window.nextQuiz = async function() {
     }
 };
 
-window.checkQuizAnswer = function(userSpeech) {
+window.checkQuizAnswer = function(userAnswer, isButton = false) {
     if (!window.currentQuiz || window.currentMode !== 'quiz') return false; 
     if (!document.getElementById('quiz-answer-display').classList.contains('hidden')) return false;
 
     const correct = window.currentQuiz.answer;
     const accepted = window.currentQuiz.accepted_answers || [];
-    const userAnswer = userSpeech.trim();
-    const isCorrect = userAnswer.includes(correct) || accepted.some(a => userAnswer.includes(a));
+    
+    // ボタンの無効化
+    const buttons = document.querySelectorAll('.quiz-option-btn');
+    if (isButton) {
+        buttons.forEach(b => b.disabled = true);
+    }
+
+    const cleanUserAnswer = userAnswer.trim();
+    const isCorrect = cleanUserAnswer.includes(correct) || accepted.some(a => cleanUserAnswer.includes(a));
     
     const status = document.getElementById('quiz-mic-status');
-    status.innerText = `「${userAnswer}」？`;
+    status.innerText = `「${cleanUserAnswer}」？`;
     
     if (isCorrect) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
         window.updateNellMessage(`ピンポン！正解だにゃ！答えは「${correct}」！`, "excited", false, true);
         quizState.score += 20; 
+        
+        // ボタンの色変更
+        if (isButton) {
+            buttons.forEach(b => {
+                if (b.innerText === cleanUserAnswer) b.classList.add('quiz-correct');
+            });
+        } else {
+            // 音声入力でも該当ボタンがあれば色を変える
+            buttons.forEach(b => {
+                if (b.innerText === correct) b.classList.add('quiz-correct');
+            });
+        }
+
         window.showQuizResult(true);
         return true; 
-    } 
+    } else {
+        // 不正解の場合（ボタン入力時のみ即時判定、音声の場合は誤認識の可能性もあるのでスルーまたはフィードバック）
+        if (isButton) {
+            if(window.safePlay) window.safePlay(window.sfxBatu);
+            window.updateNellMessage(`残念！正解は「${correct}」だったにゃ。`, "gentle", false, true);
+            buttons.forEach(b => {
+                if (b.innerText === cleanUserAnswer) b.classList.add('quiz-wrong');
+                if (b.innerText === correct) b.classList.add('quiz-correct');
+            });
+            window.showQuizResult(false);
+            return true;
+        }
+    }
     return false; 
 };
 
@@ -392,10 +439,6 @@ async function fetchRiddleData() {
 }
 
 window.showRiddleGame = function() {
-    // analyze.js の selectMode が優先されるため、ここでは selectMode('riddle') を使わず
-    // 直接画面遷移と初期化を行うことでバグ（教科選択画面への遷移）を回避する
-    
-    // 1. 画面遷移
     if (typeof window.switchScreen === 'function') {
         window.switchScreen('screen-riddle');
     } else {
@@ -403,10 +446,8 @@ window.showRiddleGame = function() {
         document.getElementById('screen-riddle').classList.remove('hidden');
     }
     
-    // 2. モード設定
     window.currentMode = 'riddle';
     
-    // 3. 他のUI要素の非表示（リセット）
     const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'chat-free-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
     ids.forEach(id => { 
         const el = document.getElementById(id); 
@@ -415,7 +456,6 @@ window.showRiddleGame = function() {
     const convoLog = document.getElementById('conversation-log');
     if(convoLog) convoLog.classList.add('hidden');
     
-    // 4. なぞなぞ画面の初期化
     document.getElementById('riddle-question-text').innerText = "スタートボタンを押してにゃ！";
     document.getElementById('riddle-controls').style.display = 'none';
     const startBtn = document.getElementById('start-riddle-btn');
@@ -424,12 +464,10 @@ window.showRiddleGame = function() {
     document.getElementById('riddle-answer-display').classList.add('hidden');
     document.getElementById('riddle-mic-status').innerText = "";
     
-    // 5. メッセージ更新
     if(typeof window.updateNellMessage === 'function') {
         window.updateNellMessage("なぞなぞで遊ぶにゃ！", "excited", false);
     }
     
-    // 6. 音声認識停止
     if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
 };
 
@@ -440,20 +478,18 @@ window.startRiddle = async function() {
     document.getElementById('riddle-controls').style.display = 'flex';
     document.getElementById('riddle-answer-display').classList.add('hidden');
     
-    // 音声認識開始
     if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
     
     window.nextRiddle();
 };
 
 window.nextRiddle = async function() {
-    // UIリセット
     const qText = document.getElementById('riddle-question-text');
     const controls = document.getElementById('riddle-controls');
     const nextBtn = document.getElementById('next-riddle-btn');
     const ansDisplay = document.getElementById('riddle-answer-display');
     const micStatus = document.getElementById('riddle-mic-status');
-    const giveUpBtn = controls.querySelector('button.gray-btn'); // 答えを見るボタン
+    const giveUpBtn = controls.querySelector('button.gray-btn');
 
     qText.innerText = "なぞなぞを考えてるにゃ…";
     window.updateNellMessage("なぞなぞを考えてるにゃ…", "thinking");
@@ -482,13 +518,11 @@ window.nextRiddle = async function() {
 
     if (riddleData && riddleData.question) {
         riddleState.currentRiddle = riddleData;
-        // グローバル変数にも入れる（音声認識用）
         window.currentRiddle = riddleData; 
         
         qText.innerText = riddleData.question;
         window.updateNellMessage(riddleData.question, "normal", false, true);
         
-        // 次のなぞなぞを裏で取得
         fetchRiddleData().then(data => { riddleState.nextRiddle = data; }).catch(err => console.warn("Pre-fetch failed", err));
     } else {
         qText.innerText = "エラーだにゃ…";
@@ -498,14 +532,12 @@ window.nextRiddle = async function() {
 window.checkRiddleAnswer = function(userSpeech) {
     if (!riddleState.currentRiddle || window.currentMode !== 'riddle') return false; 
     
-    // すでに回答済みなら無視
     if (!document.getElementById('riddle-answer-display').classList.contains('hidden')) return false;
 
     const correct = riddleState.currentRiddle.answer;
     const accepted = riddleState.currentRiddle.accepted_answers || [];
     const userAnswer = userSpeech.trim();
     
-    // 部分一致で判定（なぞなぞは言い回しが多様なため）
     const isCorrect = userAnswer.includes(correct) || accepted.some(a => userAnswer.includes(a));
     
     const status = document.getElementById('riddle-mic-status');
