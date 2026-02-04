@@ -1,4 +1,4 @@
-// --- server.js (完全版 v370.0: ミニテスト含む全機能網羅版) ---
+// --- server.js (完全版 v371.0: ウルトラクイズ改修版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -100,26 +100,31 @@ function fixPronunciation(text) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API ---
+// --- クイズ生成 API (改修版: ジャンル指定対応) ---
 app.post('/generate-quiz', async (req, res) => {
     try {
-        const { grade } = req.body;
+        const { grade, genre } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
-        // ジャンルをランダムに決定
-        const genres = ["なぞなぞ", "4択クイズ", "一般常識", "芸能・アニメ", "おもしろ問題", "学校の勉強"];
-        const selectedGenre = genres[Math.floor(Math.random() * genres.length)];
+        // ジャンル決定ロジック
+        let targetGenre = genre;
+        if (!targetGenre || targetGenre === "全ジャンル") {
+            // ウルトラクイズ用: なぞなぞは含めない
+            const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
+            targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
+        }
 
         const prompt = `
-        小学${grade}年生向けの「${selectedGenre}」を1問作成してください。
+        小学${grade}年生向けの「${targetGenre}」に関するクイズを1問作成してください。
         
         【重要：禁止事項】
         - **「みんなこんにちは！」「ネル先生だよ！」などの冒頭の挨拶は一切不要です。**
         - **すぐに問題文から始めてください。**
 
-        【${selectedGenre}の作成ルール】
-        - 4択クイズの場合: 「問題文。1番〇〇、2番〇〇、3番〇〇、4番〇〇。正解はどーれだ？」のように読み上げられる形式にする。
-        - 芸能・アニメの場合: 子供に人気のある話題を選ぶ。
+        【作成ルール】
+        - 問題は読み上げやすい文章にしてください。
+        - 4択クイズ形式推奨ですが、一問一答でも構いません。
+        - 4択の場合は「問題文。1番〇〇、2番〇〇...」のように続けて読んでください。
 
         【出力JSONフォーマット】
         {
