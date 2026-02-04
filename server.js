@@ -1,4 +1,4 @@
-// --- server.js (完全版 v373.1: なぞなぞモード新設・図鑑文言修正・バグ修正版) ---
+// --- server.js (完全版 v374.0: ウルトラクイズ4択ボタン対応版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -100,37 +100,31 @@ function fixPronunciation(text) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (ジャンル指定対応) ---
+// --- クイズ生成 API (4択ボタン対応版) ---
 app.post('/generate-quiz', async (req, res) => {
     try {
         const { grade, genre } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
         let targetGenre = genre;
-        // 「全ジャンル」または指定なしの場合は、なぞなぞ以外のジャンルからランダム
         if (!targetGenre || targetGenre === "全ジャンル") {
             const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
             targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
         }
 
         const prompt = `
-        小学${grade}年生向けの「${targetGenre}」に関するクイズを1問作成してください。
+        小学${grade}年生向けの「${targetGenre}」に関する4択クイズを1問作成してください。
         
         【重要：禁止事項】
-        - **「みんなこんにちは！」「ネル先生だよ！」などの冒頭の挨拶は一切不要です。**
-        - **すぐに問題文から始めてください。**
-        - **なぞなぞは作成しないでください。**
-
-        【${targetGenre}クイズの作成ルール】
-        - 4択クイズ形式推奨ですが、子供が声で答えやすい一問一答でも構いません。
-        - 4択の場合は「問題文。1番〇〇、2番〇〇...」のように続けて読んでください。
-        - 芸能・アニメ・ゲームの場合: 子供に人気のある話題を選ぶ。
+        - **挨拶不要。すぐに問題文から始めてください。**
+        - **なぞなぞは禁止です。**
 
         【出力JSONフォーマット】
         {
-            "question": "問題文（挨拶なし。すぐに問題を読み上げる）",
-            "answer": "正解の単語（ひらがな推奨）",
-            "accepted_answers": ["正解1", "正解2", "漢字表記", "別名", "番号(1番など)"] 
+            "question": "問題文（「問題！〇〇はどれ？」のように、読み上げに適した文章）",
+            "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
+            "answer": "正解の選択肢の文字列（optionsに含まれるものと完全一致させること）",
+            "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）"
         }
         `;
 
@@ -143,7 +137,7 @@ app.post('/generate-quiz', async (req, res) => {
     }
 });
 
-// --- ★新規: なぞなぞ生成 API ---
+// --- なぞなぞ生成 API ---
 app.post('/generate-riddle', async (req, res) => {
     try {
         const { grade } = req.body;
@@ -153,8 +147,7 @@ app.post('/generate-riddle', async (req, res) => {
         小学${grade}年生向けの「なぞなぞ」を1問作成してください。
         
         【ルール】
-        - **4択ではありません。** 考えて答える形式の問題にしてください。
-        - 「パンはパンでも食べられないパンは？」のような古典的なものから、少しひねったものまで。
+        - 4択ではありません。考えて答える形式の問題にしてください。
         - 答えは子供が知っている単語で。
 
         【出力JSONフォーマット】
