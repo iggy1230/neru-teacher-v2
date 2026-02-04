@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v373.0: なぞなぞモード実装版) ---
+// --- js/game-engine.js (完全版 v373.1: なぞなぞモード実装・修正版) ---
 
 // ==========================================
 // 1. カリカリキャッチ
@@ -371,7 +371,7 @@ window.finishQuizSet = function() {
 };
 
 // ==========================================
-// 4. ★新規: ネル先生のなぞなぞ
+// 4. ★新規: ネル先生のなぞなぞ (修正版)
 // ==========================================
 
 let riddleState = {
@@ -392,12 +392,45 @@ async function fetchRiddleData() {
 }
 
 window.showRiddleGame = function() {
-    if(typeof window.selectMode === 'function') window.selectMode('riddle');
-    else {
-        // フォールバック
+    // analyze.js の selectMode が優先されるため、ここでは selectMode('riddle') を使わず
+    // 直接画面遷移と初期化を行うことでバグ（教科選択画面への遷移）を回避する
+    
+    // 1. 画面遷移
+    if (typeof window.switchScreen === 'function') {
         window.switchScreen('screen-riddle');
-        window.currentMode = 'riddle';
+    } else {
+        document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+        document.getElementById('screen-riddle').classList.remove('hidden');
     }
+    
+    // 2. モード設定
+    window.currentMode = 'riddle';
+    
+    // 3. 他のUI要素の非表示（リセット）
+    const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'chat-free-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
+    ids.forEach(id => { 
+        const el = document.getElementById(id); 
+        if (el) el.classList.add('hidden'); 
+    });
+    const convoLog = document.getElementById('conversation-log');
+    if(convoLog) convoLog.classList.add('hidden');
+    
+    // 4. なぞなぞ画面の初期化
+    document.getElementById('riddle-question-text').innerText = "スタートボタンを押してにゃ！";
+    document.getElementById('riddle-controls').style.display = 'none';
+    const startBtn = document.getElementById('start-riddle-btn');
+    if(startBtn) startBtn.style.display = 'inline-block';
+    
+    document.getElementById('riddle-answer-display').classList.add('hidden');
+    document.getElementById('riddle-mic-status').innerText = "";
+    
+    // 5. メッセージ更新
+    if(typeof window.updateNellMessage === 'function') {
+        window.updateNellMessage("なぞなぞで遊ぶにゃ！", "excited", false);
+    }
+    
+    // 6. 音声認識停止
+    if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
 };
 
 window.startRiddle = async function() {
