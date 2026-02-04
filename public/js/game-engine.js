@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v375.0: レベル対応・漢字判定緩和版) ---
+// --- js/game-engine.js (完全版 v376.0: レベル対応・漢字判定緩和版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -246,26 +246,18 @@ let quizState = {
     currentQuizData: null,
     nextQuizData: null,
     genre: "全ジャンル",
+    level: 1, // ★現在のプレイレベル
     isFinished: false
 };
 
-async function fetchQuizData(genre) {
-    // 現在のジャンルのレベルを取得
-    let currentLevel = 1;
-    if (currentUser && currentUser.quizLevels && currentUser.quizLevels[genre]) {
-        currentLevel = currentUser.quizLevels[genre];
-    } else if (currentUser && currentUser.quizLevels && currentUser.quizLevels["全ジャンル"]) {
-        // "全ジャンル"で代用する場合もあるが、基本は各ジャンルごと
-        currentLevel = currentUser.quizLevels["全ジャンル"];
-    }
-
+async function fetchQuizData(genre, level = 1) {
     const res = await fetch('/generate-quiz', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
             grade: currentUser ? currentUser.grade : "1",
             genre: genre,
-            level: currentLevel
+            level: level // ★レベル指定
         })
     });
     return await res.json();
@@ -296,12 +288,53 @@ window.showQuizGame = function() {
     });
 
     document.getElementById('quiz-genre-select').classList.remove('hidden');
+    document.getElementById('quiz-level-select').classList.add('hidden'); // レベル選択を隠す
     document.getElementById('quiz-game-area').classList.add('hidden');
     window.updateNellMessage("どのジャンルに挑戦するにゃ？", "normal");
 };
 
-window.startQuizSet = async function(genre) {
+// ★新規: レベル選択画面の表示
+window.showLevelSelection = function(genre) {
+    const currentMaxLevel = (currentUser && currentUser.quizLevels && currentUser.quizLevels[genre]) || 1;
+    
+    // レベル1しかない場合は即スタート
+    if (currentMaxLevel === 1) {
+        startQuizSet(genre, 1);
+        return;
+    }
+
+    // レベル選択画面を表示
+    document.getElementById('quiz-genre-select').classList.add('hidden');
+    document.getElementById('quiz-level-select').classList.remove('hidden');
+    
+    const container = document.getElementById('level-buttons-container');
+    container.innerHTML = "";
+    
+    // レベルボタンを生成
+    for (let i = 1; i <= currentMaxLevel; i++) {
+        const btn = document.createElement('button');
+        btn.className = "main-btn";
+        btn.innerText = `レベル ${i}`;
+        // 色分け
+        if (i === 1) btn.classList.add('blue-btn');
+        else if (i === 2) btn.classList.add('green-btn');
+        else if (i === 3) btn.classList.add('orange-btn');
+        else if (i === 4) btn.classList.add('pink-btn');
+        else btn.classList.add('purple-btn'); // Lv.5
+
+        btn.onclick = () => startQuizSet(genre, i);
+        container.appendChild(btn);
+    }
+};
+
+window.backToQuizGenre = function() {
+    document.getElementById('quiz-level-select').classList.add('hidden');
+    document.getElementById('quiz-genre-select').classList.remove('hidden');
+};
+
+window.startQuizSet = async function(genre, level) {
     quizState.genre = genre;
+    quizState.level = level; // ★選択されたレベルを保持
     quizState.currentQuestionIndex = 0;
     quizState.score = 0;
     quizState.isFinished = false;
@@ -309,10 +342,10 @@ window.startQuizSet = async function(genre) {
     quizState.nextQuizData = null;
 
     document.getElementById('quiz-genre-select').classList.add('hidden');
+    document.getElementById('quiz-level-select').classList.add('hidden');
     document.getElementById('quiz-game-area').classList.remove('hidden');
     
-    const currentLevel = (currentUser && currentUser.quizLevels && currentUser.quizLevels[genre]) || 1;
-    document.getElementById('quiz-genre-label').innerText = `${genre} Lv.${currentLevel}`;
+    document.getElementById('quiz-genre-label').innerText = `${genre} Lv.${level}`;
 
     // 音声認識開始
     if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
@@ -346,14 +379,14 @@ window.nextQuiz = async function() {
     nextBtn.classList.add('hidden');
     optionsContainer.innerHTML = ""; 
     
-    // データ取得 (プリフェッチがあればそれを使う)
+    // データ取得
     let quizData = null;
     if (quizState.nextQuizData) {
         quizData = quizState.nextQuizData;
         quizState.nextQuizData = null;
     } else {
         try {
-            quizData = await fetchQuizData(quizState.genre);
+            quizData = await fetchQuizData(quizState.genre, quizState.level);
         } catch (e) {
             console.error(e);
             qText.innerText = "問題が作れなかったにゃ…";
@@ -384,7 +417,7 @@ window.nextQuiz = async function() {
         controls.style.display = 'flex';
         
         // 次の問題を裏で取得
-        fetchQuizData(quizState.genre).then(data => { quizState.nextQuizData = data; }).catch(err => console.warn("Pre-fetch failed", err));
+        fetchQuizData(quizState.genre, quizState.level).then(data => { quizState.nextQuizData = data; }).catch(err => console.warn("Pre-fetch failed", err));
     } else {
         qText.innerText = "エラーだにゃ…";
     }
@@ -403,7 +436,13 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
     }
 
     const cleanUserAnswer = userAnswer.trim();
-    const isCorrect = cleanUserAnswer.includes(correct) || accepted.some(a => cleanUserAnswer.includes(a));
+    // あいまい一致判定
+    let isCorrect = false;
+    if (cleanUserAnswer.includes(correct) || accepted.some(a => cleanUserAnswer.includes(a))) {
+        isCorrect = true;
+    } else if (fuzzyContains(cleanUserAnswer, correct)) {
+        isCorrect = true;
+    }
     
     const status = document.getElementById('quiz-mic-status');
     status.innerText = `「${cleanUserAnswer}」？`;
@@ -484,9 +523,11 @@ window.finishQuizSet = function() {
     if (quizState.score === 100) {
         if (currentUser) {
             if (!currentUser.quizLevels) currentUser.quizLevels = {};
-            const currentLv = currentUser.quizLevels[quizState.genre] || 1;
-            if (currentLv < 5) {
-                newLevel = currentLv + 1;
+            const currentMaxLevel = currentUser.quizLevels[quizState.genre] || 1;
+            
+            // ★現在プレイ中のレベルが、解放されている最高レベルの場合のみレベルアップ
+            if (quizState.level === currentMaxLevel && currentMaxLevel < 5) {
+                newLevel = currentMaxLevel + 1;
                 currentUser.quizLevels[quizState.genre] = newLevel;
                 isLevelUp = true;
                 if(typeof window.saveAndSync === 'function') window.saveAndSync();
@@ -494,7 +535,7 @@ window.finishQuizSet = function() {
         }
 
         if (isLevelUp) {
-            msg = `全問正解！すごいにゃ！${quizState.genre}レベルが${newLevel}に上がったにゃ！！カリカリ100個あげるにゃ！`;
+            msg = `全問正解！すごいにゃ！${quizState.genre}のレベルが${newLevel}に上がったにゃ！！カリカリ100個あげるにゃ！`;
         } else {
             msg = "全問正解！天才だにゃ！！カリカリ100個あげるにゃ！";
         }
@@ -630,6 +671,7 @@ window.nextRiddle = async function() {
 
 window.checkRiddleAnswer = function(userSpeech) {
     if (!riddleState.currentRiddle || window.currentMode !== 'riddle') return false; 
+    
     if (!document.getElementById('riddle-answer-display').classList.contains('hidden')) return false;
 
     const correct = riddleState.currentRiddle.answer;
@@ -840,136 +882,4 @@ window.sendHttpTextInternal = function(text) {
         const speechText = data.speech || data.reply;
         if(typeof window.updateNellMessage === 'function') { window.updateNellMessage(speechText, "normal", true, true); }
     });
-};
-
-// ==========================================
-// 6. ネル先生のミニテスト
-// ==========================================
-
-let minitestState = {
-    currentQuestionIndex: 0,
-    maxQuestions: 5,
-    currentQuestionData: null,
-    subject: null,
-    score: 0
-};
-
-window.showMinitestMenu = function() {
-    window.switchScreen('screen-minitest');
-    window.currentMode = 'minitest';
-    // メニュー表示、ゲームエリア非表示
-    document.getElementById('minitest-subject-select').classList.remove('hidden');
-    document.getElementById('minitest-game-area').classList.add('hidden');
-};
-
-window.startMinitest = function(subject) {
-    minitestState.subject = subject;
-    minitestState.currentQuestionIndex = 0;
-    minitestState.score = 0;
-    
-    document.getElementById('minitest-subject-select').classList.add('hidden');
-    document.getElementById('minitest-game-area').classList.remove('hidden');
-    
-    window.updateNellMessage(`${subject}のテストだにゃ！がんばるにゃ！`, "excited");
-    window.nextMinitestQuestion();
-};
-
-window.nextMinitestQuestion = async function() {
-    if (minitestState.currentQuestionIndex >= minitestState.maxQuestions) {
-        // テスト終了
-        const resultMsg = `${minitestState.score}点だったにゃ！おつかれさま！`;
-        window.updateNellMessage(resultMsg, "happy", false, true);
-        alert(resultMsg);
-        window.showMinitestMenu();
-        return;
-    }
-
-    minitestState.currentQuestionIndex++;
-    document.getElementById('minitest-progress').innerText = `${minitestState.currentQuestionIndex} / ${minitestState.maxQuestions} 問目`;
-    
-    // UIリセット
-    const qText = document.getElementById('minitest-question');
-    const optionsDiv = document.getElementById('minitest-options');
-    const explanationArea = document.getElementById('minitest-explanation-area');
-    
-    qText.innerText = "問題を作成中にゃ...";
-    optionsDiv.innerHTML = "";
-    explanationArea.classList.add('hidden');
-    
-    try {
-        const res = await fetch('/generate-minitest', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                grade: currentUser ? currentUser.grade : "1",
-                subject: minitestState.subject 
-            })
-        });
-        const data = await res.json();
-        
-        if (data.question && data.options) {
-            minitestState.currentQuestionData = data;
-            
-            // 問題表示
-            qText.innerText = data.question;
-            window.updateNellMessage("さあ、どっちが正解かにゃ？", "normal", false, true); // 読み上げは省略またはタイトルのみ
-            
-            // 選択肢シャッフル表示
-            const shuffledOptions = [...data.options].sort(() => Math.random() - 0.5);
-            
-            shuffledOptions.forEach(opt => {
-                const btn = document.createElement('button');
-                btn.className = "minitest-option-btn";
-                btn.innerText = opt;
-                btn.onclick = () => window.checkMinitestAnswer(opt, btn);
-                optionsDiv.appendChild(btn);
-            });
-            
-        } else {
-            throw new Error("Invalid Minitest Data");
-        }
-    } catch (e) {
-        console.error(e);
-        qText.innerText = "エラーが発生したにゃ。";
-        // リトライボタンなど
-    }
-};
-
-window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
-    // 二重押し防止
-    const buttons = document.querySelectorAll('.minitest-option-btn');
-    buttons.forEach(b => b.disabled = true);
-    
-    const correct = minitestState.currentQuestionData.answer;
-    const isCorrect = (selectedAnswer === correct);
-    
-    if (isCorrect) {
-        btnElement.classList.add('minitest-correct');
-        if(window.safePlay) window.safePlay(window.sfxMaru);
-        window.updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false, true);
-        minitestState.score += 20; // 1問20点x5問=100点満点
-        // 報酬
-        window.giveGameReward(10);
-    } else {
-        btnElement.classList.add('minitest-wrong');
-        // 正解のボタンを緑にする
-        buttons.forEach(b => {
-            if (b.innerText === correct) b.classList.add('minitest-correct');
-        });
-        if(window.safePlay) window.safePlay(window.sfxBatu);
-        window.updateNellMessage("残念...正解はこっちだにゃ。", "gentle", false, true);
-    }
-    
-    // 解説表示
-    const expArea = document.getElementById('minitest-explanation-area');
-    const expText = document.getElementById('minitest-explanation-text');
-    if (minitestState.currentQuestionData.explanation) {
-        expText.innerText = minitestState.currentQuestionData.explanation;
-        expArea.classList.remove('hidden');
-    } else {
-        // 解説がない場合はすぐに次へ進めるようにボタンだけ表示（または自動遷移）
-        // ここでは解説エリアを流用してボタンだけ出す
-        expText.innerText = ""; 
-        expArea.classList.remove('hidden');
-    }
 };
