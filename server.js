@@ -1,4 +1,4 @@
-// --- server.js (完全版 v367.1: 全機能統合・修正版) ---
+// --- server.js (完全版 v370.0: ミニテスト含む全機能網羅版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -106,14 +106,26 @@ app.post('/generate-quiz', async (req, res) => {
         const { grade } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
+        // ジャンルをランダムに決定
+        const genres = ["なぞなぞ", "4択クイズ", "一般常識", "芸能・アニメ", "おもしろ問題", "学校の勉強"];
+        const selectedGenre = genres[Math.floor(Math.random() * genres.length)];
+
         const prompt = `
-        小学${grade}年生向けのクイズまたはなぞなぞを1問作成してください。
+        小学${grade}年生向けの「${selectedGenre}」を1問作成してください。
         
+        【重要：禁止事項】
+        - **「みんなこんにちは！」「ネル先生だよ！」などの冒頭の挨拶は一切不要です。**
+        - **すぐに問題文から始めてください。**
+
+        【${selectedGenre}の作成ルール】
+        - 4択クイズの場合: 「問題文。1番〇〇、2番〇〇、3番〇〇、4番〇〇。正解はどーれだ？」のように読み上げられる形式にする。
+        - 芸能・アニメの場合: 子供に人気のある話題を選ぶ。
+
         【出力JSONフォーマット】
         {
-            "question": "問題文（子供に分かりやすく、ネル先生の口調で）",
-            "answer": "正解の単語（ひらがな）",
-            "accepted_answers": ["正解1", "正解2", "漢字表記", "別名"] 
+            "question": "問題文（挨拶なし。すぐに問題を読み上げる）",
+            "answer": "正解の単語（ひらがな推奨）",
+            "accepted_answers": ["正解1", "正解2", "漢字表記", "別名", "番号(1番など)"] 
         }
         `;
 
@@ -126,28 +138,67 @@ app.post('/generate-quiz', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API (読み上げ問題のネタバレ防止) ---
+// --- ★新規: ミニテスト生成 API ---
+app.post('/generate-minitest', async (req, res) => {
+    try {
+        const { grade, subject } = req.body;
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+
+        const prompt = `
+        小学${grade}年生の「${subject}」に関する4択クイズを1問作成してください。
+        
+        【ルール】
+        - 低学年で「理科」「社会」が指定された場合は、「生活科」または一般的な科学・社会常識の問題にしてください。
+        - 問題は簡単すぎず、難しすぎないレベルで。
+        - 選択肢は4つ作成し、そのうち1つが正解です。
+
+        【出力JSONフォーマット】
+        {
+            "question": "問題文",
+            "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
+            "answer": "正解の選択肢の文字列（optionsに含まれるものと同じ）",
+            "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）"
+        }
+        `;
+
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        res.json(JSON.parse(text));
+    } catch (e) {
+        console.error("MiniTest Gen Error:", e);
+        res.status(500).json({ error: "問題が作れなかったにゃ…" });
+    }
+});
+
+// --- 漢字ドリル生成 API ---
 app.post('/generate-kanji', async (req, res) => {
     try {
-        const { grade } = req.body;
+        const { grade, mode } = req.body; // mode: 'reading' or 'writing'
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
+        let typeInstruction = "";
+        if (mode === 'reading') {
+            typeInstruction = "「読み（漢字の読み仮名を答える）」問題を作成してください。";
+        } else {
+            typeInstruction = "「書き取り（文章の穴埋めで漢字を書く）」問題を作成してください。";
+        }
+
         const prompt = `
         小学${grade}年生で習う漢字の問題をランダムに1問作成してください。
-        「書き取り（文章の穴埋め）」か「読み（漢字の読み仮名）」のどちらかにしてください。
+        ${typeInstruction}
 
         【重要：読み上げテキスト(question_speech)のルール】
         - **「読み問題」の場合、正解の読み方を絶対に喋ってはいけません。**
         - 「『山』の読み方は？」と聞くと、音声合成が「やま」と読んでしまいネタバレになります。
-        - **必ず「この漢字の読み方は何かな？」や「画面の漢字、読めるかにゃ？」のように、漢字そのものを発音しない言い回しにしてください。**
+        - **必ず「画面の漢字、読めるかにゃ？」や「この漢字の読み方はなにかな？」のように、漢字そのものを発音しない言い回しにしてください。**
 
         【出力JSONフォーマット】
         {
-            "type": "writing" または "reading",
+            "type": "${mode}",
             "kanji": "正解となる漢字（書き取りの場合はこれ判定、読みの場合は問題文の一部）",
             "reading": "正解となる読み仮名（ひらがな）",
             "question_display": "画面に表示する問題文（例: 『□□(しょうぶ)をする』 または 『『勝負』の読み方は？』）",
-            "question_speech": "ネル先生が読み上げる問題文（例: 『このカッコに入る漢字を書いてにゃ！』、読み問題なら『この漢字の読み方はなにかな？』）"
+            "question_speech": "ネル先生が読み上げる問題文"
         }
         `;
 
@@ -160,7 +211,7 @@ app.post('/generate-kanji', async (req, res) => {
     }
 });
 
-// --- 漢字採点 API (画像認識精度の向上) ---
+// --- 漢字採点 API ---
 app.post('/check-kanji', async (req, res) => {
     try {
         const { image, targetKanji } = req.body;
@@ -502,7 +553,7 @@ app.post('/identify-item', async (req, res) => {
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。
-        2. **呼び方ルール**: **解説の最後に、「${name}さんはこれ知ってたにゃ？」のように、必ず『${name}さん』とさん付けで呼びかけてください。呼び捨ては厳禁です。解説の最後に「知ってたにゃ？」などの定型的な問いかけは入れないでください。**
+        2. **呼び方ルール**: **解説の最後に、「${name}さんはこれ知ってたにゃ？」のように、必ず『${name}さん』とさん付けで呼びかけてください。呼び捨ては厳禁です。**
         3. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
         4. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
         5. **場所の言及ルール**: 撮影されたものが「建物」や「風景」ではなく、持ち運び可能な「商品」や「小物」の場合、解説文の中で**「ここは〇〇市〇〇町〜」のような撮影場所への言及は絶対にしないでください**。違和感があります。
@@ -703,6 +754,7 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
+                        // MODEL_REALTIME (gemini-3-flash-preview) を使用
                         model: `models/${MODEL_REALTIME}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
@@ -754,10 +806,16 @@ wss.on('connection', async (clientWs, req) => {
 
             geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
             
+            // ★追加: Gemini側からの切断を検知し、クライアントに通知して切断する
             geminiWs.on('close', (code, reason) => {
                 console.log(`Gemini WS Closed: ${code} ${reason}`);
                 if (clientWs.readyState === WebSocket.OPEN) {
-                    try { clientWs.send(JSON.stringify({ type: "gemini_closed" })); } catch(e) {}
+                    // クライアントに通知 (type: "gemini_closed")
+                    try {
+                        clientWs.send(JSON.stringify({ type: "gemini_closed" }));
+                    } catch(e) {}
+                    
+                    // クライアント側で再接続ロジックを動かすために接続を閉じる
                     clientWs.close();
                 }
             });
