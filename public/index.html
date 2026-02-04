@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v374.0: ウルトラクイズ4択ボタン対応版) -->
+<!-- index.html (完全版 v375.0: レベル・ID対応版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -68,7 +68,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v374.0-QuizBtn</div>
+            <div class="version-tag">Build: v375.0-LevelUp</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -246,12 +246,12 @@
             <div id="quiz-genre-select" class="glass-card" style="text-align:center; padding:20px;">
                 <p style="font-weight:bold; margin-bottom:15px; font-size:1.1rem;">ジャンルを選んでにゃ！</p>
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-                    <button onclick="startQuizSet('全ジャンル')" class="main-btn pink-btn" style="grid-column: span 2;">全ジャンル</button>
-                    <button onclick="startQuizSet('一般知識')" class="main-btn blue-btn">一般知識</button>
-                    <button onclick="startQuizSet('雑学')" class="main-btn orange-btn">雑学</button>
-                    <button onclick="startQuizSet('芸能・スポーツ')" class="main-btn green-btn">芸能・スポーツ</button>
-                    <button onclick="startQuizSet('歴史・地理・社会')" class="main-btn purple-btn">歴史・地理・社会</button>
-                    <button onclick="startQuizSet('ゲーム')" class="main-btn yellow-btn">ゲーム</button>
+                    <button id="btn-quiz-all" onclick="startQuizSet('全ジャンル')" class="main-btn pink-btn" style="grid-column: span 2;">全ジャンル</button>
+                    <button id="btn-quiz-general" onclick="startQuizSet('一般知識')" class="main-btn blue-btn">一般知識</button>
+                    <button id="btn-quiz-trivia" onclick="startQuizSet('雑学')" class="main-btn orange-btn">雑学</button>
+                    <button id="btn-quiz-entertainment" onclick="startQuizSet('芸能・スポーツ')" class="main-btn green-btn">芸能・スポーツ</button>
+                    <button id="btn-quiz-history" onclick="startQuizSet('歴史・地理・社会')" class="main-btn purple-btn">歴史・地理・社会</button>
+                    <button id="btn-quiz-game" onclick="startQuizSet('ゲーム')" class="main-btn yellow-btn">ゲーム</button>
                 </div>
             </div>
 
