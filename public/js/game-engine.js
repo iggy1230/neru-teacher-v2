@@ -269,14 +269,16 @@ window.showQuizGame = function() {
     
     // UI初期化: 各ボタンのテキストにレベルを表示
     const levels = (currentUser && currentUser.quizLevels) ? currentUser.quizLevels : {};
-    const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
+    const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", "マインクラフト", "ロブロックス"];
     const idMap = {
         "全ジャンル": "btn-quiz-all",
         "一般知識": "btn-quiz-general",
         "雑学": "btn-quiz-trivia",
         "芸能・スポーツ": "btn-quiz-entertainment",
         "歴史・地理・社会": "btn-quiz-history",
-        "ゲーム": "btn-quiz-game"
+        "ゲーム": "btn-quiz-game",
+        "マインクラフト": "btn-quiz-minecraft",
+        "ロブロックス": "btn-quiz-roblox"
     };
 
     genres.forEach(g => {
@@ -412,6 +414,14 @@ window.nextQuiz = async function() {
                 btn.onclick = () => window.checkQuizAnswer(opt, true); 
                 optionsContainer.appendChild(btn);
             });
+        }
+        
+        // ジャンル表示ラベルの更新（全ジャンルの場合に重要）
+        if (quizData.actual_genre && quizData.actual_genre !== quizState.genre) {
+             const baseLabel = `${quizState.genre} Lv.${quizState.level}`;
+             document.getElementById('quiz-genre-label').innerText = `${baseLabel} (${quizData.actual_genre})`;
+        } else {
+             document.getElementById('quiz-genre-label').innerText = `${quizState.genre} Lv.${quizState.level}`;
         }
 
         controls.style.display = 'flex';
