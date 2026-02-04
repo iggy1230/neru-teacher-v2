@@ -1,4 +1,4 @@
-// --- server.js (完全版 v376.0: 漢字読み上げ修正・クイズレベル選択対応版) ---
+// --- server.js (完全版 v377.0: マイクラ・ロブロックス追加版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -24,7 +24,7 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-const MODEL_HOMEWORK = "gemini-2.5-pro";
+const MODEL_HOMEWORK = "gemini-3-flash-preview";
 const MODEL_FAST = "gemini-2.5-flash";
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
@@ -100,13 +100,14 @@ function fixPronunciation(text) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (レベル対応版) ---
+// --- クイズ生成 API (ジャンル拡張版) ---
 app.post('/generate-quiz', async (req, res) => {
     try {
         const { grade, genre, level } = req.body; // level: 1~5
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
         let targetGenre = genre;
+        // 「全ジャンル」選択時のプール（マイクラ・ロブロックスは含めない）
         if (!targetGenre || targetGenre === "全ジャンル") {
             const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
             targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
@@ -138,7 +139,8 @@ app.post('/generate-quiz', async (req, res) => {
             "question": "問題文（「問題！〇〇はどれ？」のように、読み上げに適した文章）",
             "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
             "answer": "正解の選択肢の文字列（optionsに含まれるものと完全一致させること）",
-            "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）"
+            "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）",
+            "actual_genre": "${targetGenre}" 
         }
         `;
 
