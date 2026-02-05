@@ -47,8 +47,6 @@ let genAI, ttsClient;
 try {
 if (!process.env.GEMINI_API_KEY) console.error("⚠️ GEMINI_API_KEY が設定されていません。");
 genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-code
-Code
 if (process.env.GOOGLE_CREDENTIALS_JSON) {
     try {
         const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
@@ -99,8 +97,7 @@ app.post('/generate-quiz', async (req, res) => {
 try {
 const { grade, genre, level } = req.body;
 const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-code
-Code
+
 let targetGenre = genre;
     if (!targetGenre || targetGenre === "全ジャンル") {
         const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
@@ -151,8 +148,7 @@ app.post('/generate-riddle', async (req, res) => {
 try {
 const { grade } = req.body;
 const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-code
-Code
+
 const prompt = `
     小学${grade}年生向けの「なぞなぞ」を1問作成してください。
     
@@ -181,8 +177,7 @@ app.post('/generate-minitest', async (req, res) => {
 try {
 const { grade, subject } = req.body;
 const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-code
-Code
+
 const prompt = `
     小学${grade}年生の「${subject}」に関する4択クイズを1問作成してください。
     
@@ -213,8 +208,7 @@ app.post('/generate-kanji', async (req, res) => {
 try {
 const { grade, mode } = req.body;
 const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-code
-Code
+
 let typeInstruction = "";
     if (mode === 'reading') {
         typeInstruction = `
@@ -258,8 +252,7 @@ app.post('/check-kanji', async (req, res) => {
 try {
 const { image, targetKanji } = req.body;
 const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-code
-Code
+
 const prompt = `
     これは子供が学習アプリで書いた手書きの漢字画像です。
     書かれている文字が、ターゲットの漢字「${targetKanji}」として認識できるか判定してください。
@@ -290,8 +283,7 @@ const prompt = `
 app.post('/chat-dialogue', async (req, res) => {
 try {
 let { text, name, image, history, location, address, missingInfo, memoryContext, currentQuizData, currentRiddleData, currentMinitestData } = req.body;
-code
-Code
+
 const now = new Date();
     // ★修正: 日本時間・24時間表記を強制
     const currentDateTime = now.toLocaleString('ja-JP', { 
@@ -380,8 +372,7 @@ app.post('/synthesize', async (req, res) => {
 try {
 if (!ttsClient) throw new Error("TTS Not Ready");
 const { text, mood } = req.body;
-code
-Code
+
 let speakText = text;
     speakText = speakText.replace(/[\*#_`~]/g, "");
     speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
@@ -410,8 +401,6 @@ const model = genAI.getGenerativeModel({
 model: MODEL_FAST,
 generationConfig: { responseMimeType: "application/json" }
 });
-code
-Code
 const prompt = `
     あなたは生徒の長期記憶を管理するAIです。
     以下の「現在のプロフィール」と「直近の会話ログ」を分析し、最新のプロフィールJSONを作成してください。
@@ -484,8 +473,7 @@ const model = genAI.getGenerativeModel({
 model: MODEL_HOMEWORK,
 generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
 });
-code
-Code
+
 const subjectSpecificInstructions = getSubjectInstructions(subject);
 
     const prompt = `
@@ -558,8 +546,7 @@ const subjectSpecificInstructions = getSubjectInstructions(subject);
 app.post('/identify-item', async (req, res) => {
 try {
 const { image, name, location, address } = req.body;
-code
-Code
+
 const tools = [{ google_search: {} }];
     const model = genAI.getGenerativeModel({ 
         model: MODEL_FAST,
@@ -668,8 +655,7 @@ try {
 const { count, name } = req.body;
 // ★修正箇所: バッククォートを追加
 await appendToServerLog(name, 給食をくれた(${count}個目)。);
-code
-Code
+
 const isSpecial = (count % 10 === 0);
     
     const model = genAI.getGenerativeModel({ 
@@ -709,8 +695,7 @@ const { type, name, score } = req.body;
 const model = genAI.getGenerativeModel({ model: MODEL_FAST });
 let prompt = "";
 let mood = "excited";
-code
-Code
+
 if (type === 'start') {
         prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。語尾は「にゃ」。`;
     } else if (type === 'end') {
@@ -734,8 +719,6 @@ const params = parse(req.url, true).query;
 let grade = params.grade || "1";
 let name = decodeURIComponent(params.name || "生徒");
 let mode = params.mode || "simple-chat";
-code
-Code
 if (mode === 'chat') { 
     clientWs.close();
     return;
