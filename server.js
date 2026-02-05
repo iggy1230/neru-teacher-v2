@@ -1,4 +1,4 @@
-// --- server.js (完全版 v380.1: 構文エラー修正版) ---
+// --- server.js (完全版 v380.2: 構文エラー修正完了版) ---
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -28,8 +28,7 @@ try {
 let data = {};
 try { data = JSON.parse(await fs.readFile(MEMORY_FILE, 'utf8')); } catch {}
 const timestamp = new Date().toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-// ★修正: バッククォートを追加しました
-const newLog = [${timestamp}] ${text};
+// ★修正: バッククォート () で囲みました const newLog =[${timestamp}] ${text}`;
 let currentLogs = data[name] || [];
 currentLogs.push(newLog);
 if (currentLogs.length > 50) currentLogs = currentLogs.slice(-50);
