@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v378.0: レベル対応・漢字赤字・ポケモン追加版) ---
+// --- js/game-engine.js (完全版 v379.0: 問題モード会話制限対応版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -269,7 +269,6 @@ window.showQuizGame = function() {
     
     // UI初期化: 各ボタンのテキストにレベルを表示
     const levels = (currentUser && currentUser.quizLevels) ? currentUser.quizLevels : {};
-    // ★修正: ポケモンを追加
     const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", "マインクラフト", "ロブロックス", "ポケモン"];
     const idMap = {
         "全ジャンル": "btn-quiz-all",
@@ -739,7 +738,7 @@ window.showRiddleResult = function(isWin) {
 };
 
 // ==========================================
-// 5. ネル先生の漢字ドリル (★修正: HTMLタグ対応)
+// 5. ネル先生の漢字ドリル
 // ==========================================
 let kanjiState = { data: null, canvas: null, ctx: null, isDrawing: false, mode: 'writing', questionCount: 0, maxQuestions: 5 };
 
@@ -792,7 +791,9 @@ window.nextKanjiQuestion = async function() {
         const data = await res.json();
         if (data && data.kanji) {
             kanjiState.data = data;
-            // ★修正: innerHTMLを使用してHTMLタグ（赤字など）を反映
+            // ★追加: ミニテストデータをグローバルにセット（音声回答制限用）
+            window.currentMinitest = data; 
+            
             qText.innerHTML = data.question_display;
             window.updateNellMessage(data.question_speech, "normal", false, true);
             const cvs = document.getElementById('kanji-canvas');
@@ -844,6 +845,7 @@ window.checkKanji = async function() {
             document.getElementById('next-kanji-btn').style.display = 'inline-block';
             document.getElementById('kanji-answer-display').classList.remove('hidden');
             document.getElementById('kanji-answer-text').innerText = kanjiState.data.kanji;
+            window.currentMinitest = null; // 解除
         } else {
             if(window.safePlay) window.safePlay(window.sfxBatu);
         }
@@ -871,6 +873,7 @@ window.checkKanjiReading = function(text) {
         document.getElementById('next-kanji-btn').style.display = 'inline-block';
         document.getElementById('kanji-answer-display').classList.remove('hidden');
         document.getElementById('kanji-answer-text').innerText = correctHiragana;
+        window.currentMinitest = null; // 解除
         return true;
     }
     return false;
@@ -885,6 +888,7 @@ window.giveUpKanji = function() {
     document.getElementById('next-kanji-btn').style.display = 'inline-block';
     document.getElementById('kanji-answer-display').classList.remove('hidden');
     document.getElementById('kanji-answer-text').innerText = ans;
+    window.currentMinitest = null; // 解除
 };
 
 window.sendHttpTextInternal = function(text) {
@@ -895,4 +899,137 @@ window.sendHttpTextInternal = function(text) {
         const speechText = data.speech || data.reply;
         if(typeof window.updateNellMessage === 'function') { window.updateNellMessage(speechText, "normal", true, true); }
     });
+};
+
+// ==========================================
+// 6. ネル先生のミニテスト
+// ==========================================
+
+let minitestState = {
+    currentQuestionIndex: 0,
+    maxQuestions: 5,
+    currentQuestionData: null,
+    subject: null,
+    score: 0
+};
+
+window.showMinitestMenu = function() {
+    window.switchScreen('screen-minitest');
+    window.currentMode = 'minitest';
+    // メニュー表示、ゲームエリア非表示
+    document.getElementById('minitest-subject-select').classList.remove('hidden');
+    document.getElementById('minitest-game-area').classList.add('hidden');
+};
+
+window.startMinitest = function(subject) {
+    minitestState.subject = subject;
+    minitestState.currentQuestionIndex = 0;
+    minitestState.score = 0;
+    
+    document.getElementById('minitest-subject-select').classList.add('hidden');
+    document.getElementById('minitest-game-area').classList.remove('hidden');
+    
+    window.updateNellMessage(`${subject}のテストだにゃ！がんばるにゃ！`, "excited");
+    
+    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+
+    window.nextMinitestQuestion();
+};
+
+window.nextMinitestQuestion = async function() {
+    if (minitestState.currentQuestionIndex >= minitestState.maxQuestions) {
+        // テスト終了
+        const resultMsg = `${minitestState.score}点だったにゃ！おつかれさま！`;
+        window.updateNellMessage(resultMsg, "happy", false, true);
+        alert(resultMsg);
+        window.currentMinitest = null; // 解除
+        window.showMinitestMenu();
+        return;
+    }
+
+    minitestState.currentQuestionIndex++;
+    document.getElementById('minitest-progress').innerText = `${minitestState.currentQuestionIndex} / ${minitestState.maxQuestions} 問目`;
+    
+    // UIリセット
+    const qText = document.getElementById('minitest-question');
+    const optionsDiv = document.getElementById('minitest-options');
+    const explanationArea = document.getElementById('minitest-explanation-area');
+    
+    qText.innerText = "問題を作成中にゃ...";
+    optionsDiv.innerHTML = "";
+    explanationArea.classList.add('hidden');
+    
+    try {
+        const res = await fetch('/generate-minitest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                grade: currentUser ? currentUser.grade : "1",
+                subject: minitestState.subject 
+            })
+        });
+        const data = await res.json();
+        
+        if (data.question && data.options) {
+            minitestState.currentQuestionData = data;
+            // ★追加: ミニテストデータをグローバルにセット（音声回答制限用）
+            window.currentMinitest = data; 
+            
+            // 問題表示
+            qText.innerText = data.question;
+            window.updateNellMessage("さあ、どっちが正解かにゃ？", "normal", false, true); 
+            
+            // 選択肢シャッフル表示
+            const shuffledOptions = [...data.options].sort(() => Math.random() - 0.5);
+            
+            shuffledOptions.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = "minitest-option-btn";
+                btn.innerText = opt;
+                btn.onclick = () => window.checkMinitestAnswer(opt, btn);
+                optionsDiv.appendChild(btn);
+            });
+            
+        } else {
+            throw new Error("Invalid Minitest Data");
+        }
+    } catch (e) {
+        console.error(e);
+        qText.innerText = "エラーが発生したにゃ。";
+    }
+};
+
+window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
+    // 二重押し防止
+    const buttons = document.querySelectorAll('.minitest-option-btn');
+    buttons.forEach(b => b.disabled = true);
+    
+    const correct = minitestState.currentQuestionData.answer;
+    const isCorrect = (selectedAnswer === correct);
+    
+    if (isCorrect) {
+        btnElement.classList.add('minitest-correct');
+        if(window.safePlay) window.safePlay(window.sfxMaru);
+        window.updateNellMessage("正解だにゃ！すごい！", "excited", false, true);
+        minitestState.score += 20; 
+        window.giveGameReward(10);
+    } else {
+        btnElement.classList.add('minitest-wrong');
+        buttons.forEach(b => {
+            if (b.innerText === correct) b.classList.add('minitest-correct');
+        });
+        if(window.safePlay) window.safePlay(window.sfxBatu);
+        window.updateNellMessage("残念...正解はこっちだにゃ。", "gentle", false, true);
+    }
+    
+    // 解説表示
+    const expArea = document.getElementById('minitest-explanation-area');
+    const expText = document.getElementById('minitest-explanation-text');
+    if (minitestState.currentQuestionData.explanation) {
+        expText.innerText = minitestState.currentQuestionData.explanation;
+        expArea.classList.remove('hidden');
+    } else {
+        expText.innerText = ""; 
+        expArea.classList.remove('hidden');
+    }
 };
