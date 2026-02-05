@@ -1,4 +1,4 @@
-// --- server.js (完全版 v380.2: 構文エラー修正完了版) ---
+// --- server.js (完全版 v380.3: 構文エラー修正完了版) ---
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -28,7 +28,8 @@ try {
 let data = {};
 try { data = JSON.parse(await fs.readFile(MEMORY_FILE, 'utf8')); } catch {}
 const timestamp = new Date().toLocaleString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-// ★修正: バッククォート () で囲みました const newLog =[${timestamp}] ${text}`;
+// バッククォートで囲む
+const newLog = [${timestamp}] ${text};
 let currentLogs = data[name] || [];
 currentLogs.push(newLog);
 if (currentLogs.length > 50) currentLogs = currentLogs.slice(-50);
@@ -56,12 +57,7 @@ if (process.env.GOOGLE_CREDENTIALS_JSON) {
 // Helper Functions
 // ==========================================
 function getSubjectInstructions(subject) {
-switch (subject) {
-case 'さんすう': return - **数式の記号**: 筆算の「横線」と「マイナス記号」を絶対に混同しないこと。\n- **複雑な表記**: 累乗（2^2など）、分数、帯分数を正確に認識すること。\n- **図形問題**: 図の中に書かれた長さや角度の数値も見落とさないこと。;
-case 'こくご': return - **縦書きレイアウトの厳格な分離**: 問題文や選択肢は縦書きです。**縦の罫線や行間の余白**を強く意識し、隣の行や列の内容が絶対に混ざらないようにしてください。\n- **列の独立性**: ある問題の列にある文字と、隣の問題の列にある文字を混同しないこと。\n- **読み取り順序**: 右の行から左の行へ、上から下へ読み取ること。;
-case 'りか': return - **グラフ・表**: グラフの軸ラベルや単位（g, cm, ℃, A, Vなど）を絶対に省略せず読み取ること。\n- **選択問題**: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。\n- **配置**: 図や表のすぐ近くや上部に「最初の問題」が配置されている場合が多いので、見逃さないこと。;
-case 'しゃかい': return - **選択問題**: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。\n- **資料読み取り**: 地図やグラフ、年表の近くにある「最初の問題」を見逃さないこと。\n- **用語**: 歴史用語や地名は正確に（子供の字が崩れていても文脈から補正して）読み取ること。;
-default: return - 基本的にすべての文字、図表内の数値を拾うこと。;
+// エラーが出ていた箇所：文字列をバッククォート () で囲んでいます switch (subject) { case 'さんすう': return- 数式の記号: 筆算の「横線」と「マイナス記号」を絶対に混同しないこと。\n- 複雑な表記: 累乗（2^2など）、分数、帯分数を正確に認識すること。\n- 図形問題: 図の中に書かれた長さや角度の数値も見落とさないこと。; case 'こくご': return- 縦書きレイアウトの厳格な分離: 問題文や選択肢は縦書きです。縦の罫線や行間の余白を強く意識し、隣の行や列の内容が絶対に混ざらないようにしてください。\n- 列の独立性: ある問題の列にある文字と、隣の問題の列にある文字を混同しないこと。\n- 読み取り順序: 右の行から左の行へ、上から下へ読み取ること。; case 'りか': return- グラフ・表: グラフの軸ラベルや単位（g, cm, ℃, A, Vなど）を絶対に省略せず読み取ること。\n- 選択問題: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。\n- 配置: 図や表のすぐ近くや上部に「最初の問題」が配置されている場合が多いので、見逃さないこと。; case 'しゃかい': return- 選択問題: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。\n- 資料読み取り: 地図やグラフ、年表の近くにある「最初の問題」を見逃さないこと。\n- 用語: 歴史用語や地名は正確に（子供の字が崩れていても文脈から補正して）読み取ること。; default: return- 基本的にすべての文字、図表内の数値を拾うこと。`;
 }
 }
 function fixPronunciation(text) {
