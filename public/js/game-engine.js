@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v376.0: レベル対応・漢字判定緩和版) ---
+// --- js/game-engine.js (完全版 v378.0: レベル対応・漢字赤字・ポケモン追加版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -269,7 +269,8 @@ window.showQuizGame = function() {
     
     // UI初期化: 各ボタンのテキストにレベルを表示
     const levels = (currentUser && currentUser.quizLevels) ? currentUser.quizLevels : {};
-    const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", "マインクラフト", "ロブロックス"];
+    // ★修正: ポケモンを追加
+    const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", "マインクラフト", "ロブロックス", "ポケモン"];
     const idMap = {
         "全ジャンル": "btn-quiz-all",
         "一般知識": "btn-quiz-general",
@@ -278,7 +279,8 @@ window.showQuizGame = function() {
         "歴史・地理・社会": "btn-quiz-history",
         "ゲーム": "btn-quiz-game",
         "マインクラフト": "btn-quiz-minecraft",
-        "ロブロックス": "btn-quiz-roblox"
+        "ロブロックス": "btn-quiz-roblox",
+        "ポケモン": "btn-quiz-pokemon"
     };
 
     genres.forEach(g => {
@@ -737,7 +739,7 @@ window.showRiddleResult = function(isWin) {
 };
 
 // ==========================================
-// 5. ネル先生の漢字ドリル
+// 5. ネル先生の漢字ドリル (★修正: HTMLタグ対応)
 // ==========================================
 let kanjiState = { data: null, canvas: null, ctx: null, isDrawing: false, mode: 'writing', questionCount: 0, maxQuestions: 5 };
 
@@ -790,7 +792,8 @@ window.nextKanjiQuestion = async function() {
         const data = await res.json();
         if (data && data.kanji) {
             kanjiState.data = data;
-            qText.innerText = data.question_display;
+            // ★修正: innerHTMLを使用してHTMLタグ（赤字など）を反映
+            qText.innerHTML = data.question_display;
             window.updateNellMessage(data.question_speech, "normal", false, true);
             const cvs = document.getElementById('kanji-canvas');
             const mic = document.getElementById('kanji-mic-container');
@@ -854,7 +857,7 @@ window.checkKanjiReading = function(text) {
     const correctKatakana = correctHiragana.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
     const user = text.trim();
     
-    // あいまい一致判定 (★修正: 漢字読みも緩和判定対象へ)
+    // あいまい一致判定
     let isCorrect = false;
     if (fuzzyContains(user, correctHiragana) || fuzzyContains(user, correctKanji) || fuzzyContains(user, correctKatakana)) {
         isCorrect = true;
