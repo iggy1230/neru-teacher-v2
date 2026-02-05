@@ -1,4 +1,4 @@
-// --- server.js (完全版 v377.0: マイクラ・ロブロックス追加版) ---
+// --- server.js (完全版 v378.0: モデル変更・ポケモン追加・漢字赤字対応版) ---
 
 import textToSpeech from '@google-cloud/text-to-speech';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
@@ -24,6 +24,7 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
+// ★修正: 宿題分析モデルを gemini-3-flash-preview に変更
 const MODEL_HOMEWORK = "gemini-3-flash-preview";
 const MODEL_FAST = "gemini-2.5-flash";
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
@@ -100,14 +101,14 @@ function fixPronunciation(text) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (ジャンル拡張版) ---
+// --- クイズ生成 API ---
 app.post('/generate-quiz', async (req, res) => {
     try {
         const { grade, genre, level } = req.body; // level: 1~5
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
         let targetGenre = genre;
-        // 「全ジャンル」選択時のプール（マイクラ・ロブロックスは含めない）
+        // 「全ジャンル」選択時のプール（マイクラ・ロブロックス・ポケモンは含めない）
         if (!targetGenre || targetGenre === "全ジャンル") {
             const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
             targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
@@ -215,7 +216,7 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API (読み上げ問題のネタバレ防止) ---
+// --- 漢字ドリル生成 API (読み上げ問題のネタバレ防止 & 赤字対応) ---
 app.post('/generate-kanji', async (req, res) => {
     try {
         const { grade, mode } = req.body; // mode: 'reading' or 'writing'
@@ -227,6 +228,8 @@ app.post('/generate-kanji', async (req, res) => {
             「読み（漢字の読み仮名を答える）」問題を作成してください。
             **重要: 単体の漢字ではなく、短い文章やフレーズの中で使われている漢字の読みを問う形式にしてください。**
             例: 「山へ行く」の「山」の読み方は？
+            
+            **★重要: 画面表示用テキスト(question_display)では、出題対象の漢字を <span style='color:red;'>漢字</span> タグで囲んでください。**
             `;
         } else {
             typeInstruction = "「書き取り（文章の穴埋めで漢字を書く）」問題を作成してください。";
@@ -246,7 +249,7 @@ app.post('/generate-kanji', async (req, res) => {
             "type": "${mode}",
             "kanji": "正解となる漢字",
             "reading": "正解となる読み仮名（ひらがな）",
-            "question_display": "画面に表示する問題文（例: 『『山』へ行く』 または 『□□(しょうぶ)をする』）",
+            "question_display": "画面に表示する問題文（例: 『<span style='color:red;'>山</span>へ行く』 または 『□□(しょうぶ)をする』）",
             "question_speech": "ネル先生が読み上げる問題文（答えを含まないこと！）"
         }
         `;
