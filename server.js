@@ -674,9 +674,7 @@ app.post('/identify-item', async (req, res) => {
 app.post('/lunch-reaction', async (req, res) => {
     try {
         const { count, name } = req.body;
-        // ★修正箇所: バッククォートを追加
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
-        
         const isSpecial = (count % 10 === 0);
         
         const model = genAI.getGenerativeModel({ 
@@ -734,7 +732,6 @@ app.post('/game-reaction', async (req, res) => {
 app.get('*', (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 
 const PORT = process.env.PORT || 3000;
-// ★修正箇所: バッククォートを追加
 const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
 // --- WebSocket (Chat for simple-chat/embedded) ---
@@ -798,6 +795,12 @@ wss.on('connection', async (clientWs, req) => {
 
                 【生徒についての記憶】
                 ${statusContext}
+                
+                【重要: 会話スタイルの指示】
+                - **回答は必ず一文か二文で短くすること。** 長々とした説明は禁止です。
+                - 子供と会話のキャッチボールをすることを最優先してください。
+                - 相手の反応を待ってから次の発言をしてください。
+                - 楽しそうに、親しみやすく振る舞ってください。
                 `;
 
                 const tools = [
