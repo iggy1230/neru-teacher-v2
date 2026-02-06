@@ -156,24 +156,57 @@ app.post('/generate-quiz', async (req, res) => {
     }
 });
 
-// --- なぞなぞ生成 API ---
+// --- なぞなぞ生成 API (品質向上版) ---
 app.post('/generate-riddle', async (req, res) => {
     try {
         const { grade } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
 
+        // なぞなぞのパターンをランダム決定して質を上げる
+        const patterns = [
+            {
+                type: "言葉遊び・ダジャレ",
+                desc: "「パンはパンでも…」や「イスはイスでも…」のような、言葉の響きを使った古典的で面白いなぞなぞ。",
+                example: "「パンはパンでも、食べられないパンはなーんだ？（答え：フライパン）」"
+            },
+            {
+                type: "特徴当て（生き物・モノ）",
+                desc: "「耳が長くて、ぴょんぴょん跳ねる動物は？」のような、特徴をヒントにするクイズ。",
+                example: "「お昼になると、小さくなるものなーんだ？（答え：影）」"
+            },
+            {
+                type: "あるなしクイズ・連想",
+                desc: "「使うと減るけど、使わないと減らないものは？」のような、少し頭を使うトンチ問題。",
+                example: "「使うときは投げるもの、なーんだ？（答え：アンカー・投網・ボールなど）」"
+            },
+            {
+                type: "学校・日常あるある",
+                desc: "学校にあるものや、文房具、家にあるものを題材にしたなぞなぞ。",
+                example: "「黒くて四角くて、先生が字を書くものは？（答え：黒板）」"
+            }
+        ];
+        
+        const selectedPattern = patterns[Math.floor(Math.random() * patterns.length)];
+
         const prompt = `
         小学${grade}年生向けの「なぞなぞ」を1問作成してください。
         
-        【ルール】
-        - 4択ではありません。考えて答える形式の問題にしてください。
-        - 答えは子供が知っている単語で。
+        【今回のテーマ: ${selectedPattern.type}】
+        - ${selectedPattern.desc}
+        - 例: ${selectedPattern.example}
+        
+        【重要ルール】
+        1. **子供が絶対に知っている単語**を答えにしてください。
+        2. 問題文は、リズムよく、子供が聞いてワクワクするような言い回しにしてください。
+        3. 答えは「名詞（モノの名前）」で終わるものに限定してください。
+        4. 難しすぎる知識や、マニアックな単語は禁止です。
+        5. 挨拶不要。すぐに問題文のみを出力してください。
 
         【出力JSONフォーマット】
         {
-            "question": "問題文（挨拶なし。すぐに問題を読み上げる）",
-            "answer": "正解の単語（ひらがな）",
-            "accepted_answers": ["正解の別名", "漢字表記", "カタカナ表記"] 
+            "question": "問題文（「問題！〇〇なーんだ？」のように）",
+            "answer": "正解の単語（ひらがな、または一般的な表記）",
+            "accepted_answers": ["正解の別名", "漢字表記", "カタカナ表記", "ひらがな表記"] 
         }
         `;
 
