@@ -1,11 +1,8 @@
---- START OF FILE game-engine.js ---
-
-// --- js/game-engine.js (完全版 v380.0: ウルトラクイズ問題重複回避・住所ルール対応版) ---
+// --- js/game-engine.js (完全版 v382.0) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
 // ==========================================
-// 2つの文字列の類似度を測る
 function levenshteinDistance(a, b) {
     const matrix = [];
     for (let i = 0; i <= b.length; i++) matrix[i] = [i];
@@ -29,20 +26,15 @@ function levenshteinDistance(a, b) {
     return matrix[b.length][a.length];
 }
 
-// ユーザーの音声認識結果（長い文字列かもしれない）の中に、正解（短い文字列）に近いものが含まれているか判定
 function fuzzyContains(userText, targetText, maxDistance = 1) {
     if (!userText || !targetText) return false;
-    const u = userText.replace(/\s+/g, ""); // 空白除去
+    const u = userText.replace(/\s+/g, ""); 
     const t = targetText.replace(/\s+/g, "");
     
-    // 完全一致または単純な包含チェック
     if (u.includes(t)) return true;
     
-    // 正解の長さが短い場合、部分文字列との編集距離を見る
     const len = t.length;
-    // ユーザー発話から、正解と同じ長さ（±1文字）の部分文字列を切り出して比較
     for (let i = 0; i < u.length - len + 2; i++) {
-        // targetの長さ、長さ-1、長さ+1 の範囲で切り出す
         for (let diff = -1; diff <= 1; diff++) {
             const subLen = len + diff;
             if (subLen < 1) continue;
@@ -83,6 +75,7 @@ window.showGame = function() {
         }; 
     } 
 };
+
 window.fetchGameComment = function(type, score=0) { 
     if (!currentUser) return;
     fetch('/game-reaction', { 
@@ -98,6 +91,7 @@ window.fetchGameComment = function(type, score=0) {
     })
     .catch(e => { console.error("Game Comment Error:", e); }); 
 };
+
 window.initGame = function() {
     window.gameCanvas = document.getElementById('game-canvas');
     if(!window.gameCanvas) return;
@@ -124,6 +118,7 @@ window.initGame = function() {
     window.gameCanvas.onmousemove = movePaddle;
     window.gameCanvas.ontouchmove = (e) => { e.preventDefault(); movePaddle(e); };
 };
+
 window.giveGameReward = function(amount) {
     if (amount <= 0 || !currentUser) return;
     currentUser.karikari += amount;
@@ -131,6 +126,7 @@ window.giveGameReward = function(amount) {
     if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
     if(typeof window.showKarikariEffect === 'function') window.showKarikariEffect(amount);
 };
+
 window.drawGame = function() {
     if(!window.gameRunning) return;
     window.ctx.clearRect(0, 0, window.gameCanvas.width, window.gameCanvas.height);
@@ -181,6 +177,7 @@ window.drawGame = function() {
 // ==========================================
 let danmakuState = { running: false, ctx: null, canvas: null, width: 0, height: 0, score: 0, frame: 0, player: { x: 0, y: 0, r: 16 }, boss: { x: 0, y: 0, r: 24, angle: 0 }, bullets: [], touching: false };
 const catPixelArt = [ [0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0], [0,0,0,1,1,1,1,0,0,0,0,1,1,1,1,0], [0,0,1,1,1,1,1,1,0,0,1,1,1,1,1,1], [0,1,1,1,1,4,4,1,1,1,1,4,4,1,1,1], [1,1,1,1,4,4,4,4,1,1,4,4,4,4,1,1], [1,1,1,3,5,5,3,1,1,1,3,5,5,3,1,1], [1,1,1,5,3,3,5,1,1,1,5,3,3,5,1,1], [1,1,1,3,5,5,3,1,1,1,3,5,5,3,1,1], [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], [1,1,1,1,2,2,2,3,3,2,2,2,1,1,1,1], [0,1,1,2,2,2,3,4,4,3,2,2,2,1,1,0], [0,0,1,2,2,2,4,4,4,4,2,2,2,1,0,0], [0,0,0,1,1,2,2,2,2,2,2,1,1,0,0,0], [0,0,0,0,0,4,4,4,4,4,4,0,0,0,0,0], [0,0,0,0,4,4,4,4,4,4,4,4,0,0,0,0], [0,0,0,0,4,0,0,4,4,0,0,4,0,0,0,0] ];
+
 window.showDanmakuGame = function() {
     window.switchScreen('screen-danmaku'); document.getElementById('mini-karikari-display').classList.remove('hidden');
     if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
@@ -192,6 +189,7 @@ window.showDanmakuGame = function() {
     canvas.onmousedown = (e) => { danmakuState.touching = true; moveHandler(e); }; canvas.onmousemove = (e) => { if(danmakuState.touching) moveHandler(e); }; canvas.onmouseup = () => { danmakuState.touching = false; }; canvas.onmouseleave = () => { danmakuState.touching = false; }; canvas.ontouchstart = (e) => { danmakuState.touching = true; moveHandler(e); }; canvas.ontouchmove = moveHandler; canvas.ontouchend = () => { danmakuState.touching = false; };
     initDanmakuEntities(); drawDanmakuFrame();
 };
+
 function initDanmakuEntities() { danmakuState.player.x = danmakuState.width / 2; danmakuState.player.y = danmakuState.height - 50; danmakuState.boss.x = danmakuState.width / 2; danmakuState.boss.y = 100; danmakuState.bullets = []; danmakuState.frame = 0; }
 window.startDanmakuGame = function() { if (danmakuState.running) return; initDanmakuEntities(); danmakuState.score = 0; document.getElementById('danmaku-score').innerText = "0"; danmakuState.running = true; document.getElementById('start-danmaku-btn').disabled = true; loopDanmakuGame(); };
 window.stopDanmakuGame = function() { danmakuState.running = false; };
@@ -248,9 +246,9 @@ let quizState = {
     currentQuizData: null,
     nextQuizData: null,
     genre: "全ジャンル",
-    level: 1, // ★現在のプレイレベル
+    level: 1, 
     isFinished: false,
-    history: [] // ★追加: 過去の正解リスト（重複チェック用）
+    history: [] 
 };
 
 async function fetchQuizData(genre, level = 1) {
@@ -260,7 +258,7 @@ async function fetchQuizData(genre, level = 1) {
         body: JSON.stringify({ 
             grade: currentUser ? currentUser.grade : "1",
             genre: genre,
-            level: level // ★レベル指定
+            level: level 
         })
     });
     return await res.json();
@@ -270,7 +268,6 @@ window.showQuizGame = function() {
     window.switchScreen('screen-quiz');
     window.currentMode = 'quiz';
     
-    // UI初期化: 各ボタンのテキストにレベルを表示
     const levels = (currentUser && currentUser.quizLevels) ? currentUser.quizLevels : {};
     const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", "マインクラフト", "ロブロックス", "ポケモン"];
     const idMap = {
@@ -294,39 +291,34 @@ window.showQuizGame = function() {
     });
 
     document.getElementById('quiz-genre-select').classList.remove('hidden');
-    document.getElementById('quiz-level-select').classList.add('hidden'); // レベル選択を隠す
+    document.getElementById('quiz-level-select').classList.add('hidden'); 
     document.getElementById('quiz-game-area').classList.add('hidden');
     window.updateNellMessage("どのジャンルに挑戦するにゃ？", "normal");
 };
 
-// ★新規: レベル選択画面の表示
 window.showLevelSelection = function(genre) {
     const currentMaxLevel = (currentUser && currentUser.quizLevels && currentUser.quizLevels[genre]) || 1;
     
-    // レベル1しかない場合は即スタート
     if (currentMaxLevel === 1) {
         startQuizSet(genre, 1);
         return;
     }
 
-    // レベル選択画面を表示
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-level-select').classList.remove('hidden');
     
     const container = document.getElementById('level-buttons-container');
     container.innerHTML = "";
     
-    // レベルボタンを生成
     for (let i = 1; i <= currentMaxLevel; i++) {
         const btn = document.createElement('button');
         btn.className = "main-btn";
         btn.innerText = `レベル ${i}`;
-        // 色分け
         if (i === 1) btn.classList.add('blue-btn');
         else if (i === 2) btn.classList.add('green-btn');
         else if (i === 3) btn.classList.add('orange-btn');
         else if (i === 4) btn.classList.add('pink-btn');
-        else btn.classList.add('purple-btn'); // Lv.5
+        else btn.classList.add('purple-btn'); 
 
         btn.onclick = () => startQuizSet(genre, i);
         container.appendChild(btn);
@@ -340,13 +332,13 @@ window.backToQuizGenre = function() {
 
 window.startQuizSet = async function(genre, level) {
     quizState.genre = genre;
-    quizState.level = level; // ★選択されたレベルを保持
+    quizState.level = level; 
     quizState.currentQuestionIndex = 0;
     quizState.score = 0;
     quizState.isFinished = false;
     quizState.currentQuizData = null;
     quizState.nextQuizData = null;
-    quizState.history = []; // ★履歴初期化
+    quizState.history = []; 
 
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-level-select').classList.add('hidden');
@@ -354,10 +346,8 @@ window.startQuizSet = async function(genre, level) {
     
     document.getElementById('quiz-genre-label').innerText = `${genre} Lv.${level}`;
 
-    // 音声認識開始
     if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
 
-    // 最初の問題へ
     window.nextQuiz();
 };
 
@@ -370,7 +360,6 @@ window.nextQuiz = async function() {
     quizState.currentQuestionIndex++;
     document.getElementById('quiz-progress').innerText = `${quizState.currentQuestionIndex}/${quizState.maxQuestions} 問目`;
     
-    // UIリセット
     const qText = document.getElementById('quiz-question-text');
     const controls = document.getElementById('quiz-controls');
     const nextBtn = document.getElementById('next-quiz-btn');
@@ -386,7 +375,6 @@ window.nextQuiz = async function() {
     nextBtn.classList.add('hidden');
     optionsContainer.innerHTML = ""; 
     
-    // ★データ取得と重複チェック
     let quizData = null;
     let retryCount = 0;
     const MAX_RETRIES = 3;
@@ -405,18 +393,16 @@ window.nextQuiz = async function() {
         }
 
         if (quizData && quizData.answer) {
-            // 重複チェック: 履歴に含まれているか
             const isDuplicate = quizState.history.some(h => h === quizData.answer);
             if (!isDuplicate) {
-                // 重複していないならOK
                 break;
             } else {
                 console.log("Duplicate quiz detected. Retrying...", quizData.answer);
-                quizData = null; // 破棄してリトライ
+                quizData = null; 
                 retryCount++;
             }
         } else {
-            break; // データ不正ならループ抜ける
+            break; 
         }
     }
 
@@ -427,7 +413,6 @@ window.nextQuiz = async function() {
     }
 
     if (quizData && quizData.question) {
-        // ★履歴に追加 (最大5件)
         quizState.history.push(quizData.answer);
         if (quizState.history.length > 5) quizState.history.shift();
 
@@ -437,7 +422,6 @@ window.nextQuiz = async function() {
         qText.innerText = quizData.question;
         window.updateNellMessage(quizData.question, "normal", false, true);
         
-        // ★選択肢ボタンの生成
         if (quizData.options && Array.isArray(quizData.options)) {
             const shuffledOptions = [...quizData.options].sort(() => Math.random() - 0.5);
             shuffledOptions.forEach(opt => {
@@ -449,7 +433,6 @@ window.nextQuiz = async function() {
             });
         }
         
-        // ジャンル表示ラベルの更新（全ジャンルの場合に重要）
         if (quizData.actual_genre && quizData.actual_genre !== quizState.genre) {
              const baseLabel = `${quizState.genre} Lv.${quizState.level}`;
              document.getElementById('quiz-genre-label').innerText = `${baseLabel} (${quizData.actual_genre})`;
@@ -459,7 +442,6 @@ window.nextQuiz = async function() {
 
         controls.style.display = 'flex';
         
-        // 次の問題を裏で取得
         fetchQuizData(quizState.genre, quizState.level).then(data => { quizState.nextQuizData = data; }).catch(err => console.warn("Pre-fetch failed", err));
     } else {
         qText.innerText = "エラーだにゃ…";
@@ -479,7 +461,6 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
     }
 
     const cleanUserAnswer = userAnswer.trim();
-    // あいまい一致判定
     let isCorrect = false;
     if (cleanUserAnswer.includes(correct) || accepted.some(a => cleanUserAnswer.includes(a))) {
         isCorrect = true;
@@ -559,7 +540,6 @@ window.finishQuizSet = function() {
     let msg = "";
     let mood = "normal";
     
-    // レベルアップ判定
     let isLevelUp = false;
     let newLevel = 1;
 
@@ -568,7 +548,6 @@ window.finishQuizSet = function() {
             if (!currentUser.quizLevels) currentUser.quizLevels = {};
             const currentMaxLevel = currentUser.quizLevels[quizState.genre] || 1;
             
-            // ★現在プレイ中のレベルが、解放されている最高レベルの場合のみレベルアップ
             if (quizState.level === currentMaxLevel && currentMaxLevel < 5) {
                 newLevel = currentMaxLevel + 1;
                 currentUser.quizLevels[quizState.genre] = newLevel;
@@ -724,7 +703,6 @@ window.checkRiddleAnswer = function(userSpeech) {
     const status = document.getElementById('riddle-mic-status');
     status.innerText = `「${userAnswer}」？`;
     
-    // あいまい一致判定（部分一致 + 編集距離）
     let isCorrect = false;
     if (fuzzyContains(userAnswer, correct)) isCorrect = true;
     else {
@@ -823,7 +801,6 @@ window.nextKanjiQuestion = async function() {
         const data = await res.json();
         if (data && data.kanji) {
             kanjiState.data = data;
-            // ★追加: ミニテストデータをグローバルにセット（音声回答制限用）
             window.currentMinitest = data; 
             
             qText.innerHTML = data.question_display;
@@ -877,7 +854,7 @@ window.checkKanji = async function() {
             document.getElementById('next-kanji-btn').style.display = 'inline-block';
             document.getElementById('kanji-answer-display').classList.remove('hidden');
             document.getElementById('kanji-answer-text').innerText = kanjiState.data.kanji;
-            window.currentMinitest = null; // 解除
+            window.currentMinitest = null; 
         } else {
             if(window.safePlay) window.safePlay(window.sfxBatu);
         }
@@ -891,7 +868,6 @@ window.checkKanjiReading = function(text) {
     const correctKatakana = correctHiragana.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
     const user = text.trim();
     
-    // あいまい一致判定
     let isCorrect = false;
     if (fuzzyContains(user, correctHiragana) || fuzzyContains(user, correctKanji) || fuzzyContains(user, correctKatakana)) {
         isCorrect = true;
@@ -905,7 +881,7 @@ window.checkKanjiReading = function(text) {
         document.getElementById('next-kanji-btn').style.display = 'inline-block';
         document.getElementById('kanji-answer-display').classList.remove('hidden');
         document.getElementById('kanji-answer-text').innerText = correctHiragana;
-        window.currentMinitest = null; // 解除
+        window.currentMinitest = null; 
         return true;
     }
     return false;
@@ -920,7 +896,7 @@ window.giveUpKanji = function() {
     document.getElementById('next-kanji-btn').style.display = 'inline-block';
     document.getElementById('kanji-answer-display').classList.remove('hidden');
     document.getElementById('kanji-answer-text').innerText = ans;
-    window.currentMinitest = null; // 解除
+    window.currentMinitest = null; 
 };
 
 window.sendHttpTextInternal = function(text) {
@@ -948,7 +924,6 @@ let minitestState = {
 window.showMinitestMenu = function() {
     window.switchScreen('screen-minitest');
     window.currentMode = 'minitest';
-    // メニュー表示、ゲームエリア非表示
     document.getElementById('minitest-subject-select').classList.remove('hidden');
     document.getElementById('minitest-game-area').classList.add('hidden');
 };
@@ -970,11 +945,10 @@ window.startMinitest = function(subject) {
 
 window.nextMinitestQuestion = async function() {
     if (minitestState.currentQuestionIndex >= minitestState.maxQuestions) {
-        // テスト終了
         const resultMsg = `${minitestState.score}点だったにゃ！おつかれさま！`;
         window.updateNellMessage(resultMsg, "happy", false, true);
         alert(resultMsg);
-        window.currentMinitest = null; // 解除
+        window.currentMinitest = null; 
         window.showMinitestMenu();
         return;
     }
@@ -982,7 +956,6 @@ window.nextMinitestQuestion = async function() {
     minitestState.currentQuestionIndex++;
     document.getElementById('minitest-progress').innerText = `${minitestState.currentQuestionIndex} / ${minitestState.maxQuestions} 問目`;
     
-    // UIリセット
     const qText = document.getElementById('minitest-question');
     const optionsDiv = document.getElementById('minitest-options');
     const explanationArea = document.getElementById('minitest-explanation-area');
@@ -1004,14 +977,11 @@ window.nextMinitestQuestion = async function() {
         
         if (data.question && data.options) {
             minitestState.currentQuestionData = data;
-            // ★追加: ミニテストデータをグローバルにセット（音声回答制限用）
             window.currentMinitest = data; 
             
-            // 問題表示
             qText.innerText = data.question;
             window.updateNellMessage("さあ、どっちが正解かにゃ？", "normal", false, true); 
             
-            // 選択肢シャッフル表示
             const shuffledOptions = [...data.options].sort(() => Math.random() - 0.5);
             
             shuffledOptions.forEach(opt => {
@@ -1032,7 +1002,6 @@ window.nextMinitestQuestion = async function() {
 };
 
 window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
-    // 二重押し防止
     const buttons = document.querySelectorAll('.minitest-option-btn');
     buttons.forEach(b => b.disabled = true);
     
@@ -1054,7 +1023,6 @@ window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
         window.updateNellMessage("残念...正解はこっちだにゃ。", "gentle", false, true);
     }
     
-    // 解説表示
     const expArea = document.getElementById('minitest-explanation-area');
     const expText = document.getElementById('minitest-explanation-text');
     if (minitestState.currentQuestionData.explanation) {
