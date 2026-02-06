@@ -1,4 +1,4 @@
-// --- js/voice-service.js (完全版 v385.0: 会話中断抑制対応版) ---
+// --- js/voice-service.js (完全版 v386.0: iPhone会話中断バグ修正・ノイズゲート搭載版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -25,14 +25,14 @@ function shouldInterrupt(text) {
     
     const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
     
-    // ★修正: 15文字以上の長いフレーズでない限り、割り込みとみなさない（相槌などはスルー）
+    // PC版用: 15文字以上の長いフレーズでない限り、割り込みとみなさない（相槌などはスルー）
     const isLongEnough = cleanText.length >= 15;
     
     return isStopCommand || isLongEnough;
 }
 
 // ==========================================
-// 常時聞き取り (Speech Recognition)
+// 常時聞き取り (Speech Recognition - PC/Android用)
 // ==========================================
 window.startAlwaysOnListening = function() {
     if (!('webkitSpeechRecognition' in window)) {
@@ -71,7 +71,7 @@ window.startAlwaysOnListening = function() {
             }
         }
 
-        // ★追加: ネル先生が話している最中の処理
+        // ネル先生が話している最中の処理（PC/Android）
         if (window.isNellSpeaking) {
             const textToCheck = finalTranscript || interimTranscript;
             
@@ -143,7 +143,7 @@ window.startAlwaysOnListening = function() {
                 currentRiddleData = window.currentRiddle;
             } else if (window.currentMode === 'minitest' && window.currentMinitest) {
                 currentMinitestData = window.currentMinitest;
-            } else if (window.currentMode === 'kanji' && window.currentMinitest) { // 漢字もminitest変数で代用している場合
+            } else if (window.currentMode === 'kanji' && window.currentMinitest) { 
                 currentMinitestData = window.currentMinitest;
             }
 
@@ -162,8 +162,8 @@ window.startAlwaysOnListening = function() {
                         missingInfo: missingInfo,
                         memoryContext: memoryContext,
                         currentQuizData: currentQuizData,
-                        currentRiddleData: currentRiddleData, // ★追加
-                        currentMinitestData: currentMinitestData // ★追加
+                        currentRiddleData: currentRiddleData, 
+                        currentMinitestData: currentMinitestData
                     })
                 });
                 
@@ -225,7 +225,7 @@ window.stopAlwaysOnListening = function() {
 };
 
 // ==========================================
-// リアルタイムチャット (WebSocket)
+// リアルタイムチャット (WebSocket - iPhone/Safari用)
 // ==========================================
 
 window.stopLiveChat = function() {
@@ -495,9 +495,28 @@ window.startMicrophone = async function() {
         const source = window.audioContext.createMediaStreamSource(window.mediaStream); 
         window.workletNode = new AudioWorkletNode(window.audioContext, 'pcm-processor'); 
         source.connect(window.workletNode); 
+        
+        // ★修正ポイント: AudioWorkletからのメッセージ処理
         window.workletNode.port.onmessage = (event) => { 
             if (window.isMicMuted) return;
             if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) return; 
+            
+            // 【iPhone修正】ネル先生が話している間は音声を送信しない（強制ブロック）
+            // これにより、雑音による意図しない中断を防ぐ
+            if (window.isNellSpeaking) return;
+
+            // 【iPhone修正】ノイズゲート: 極端に小さい音（サーッというノイズ）は無視する
+            const float32Data = event.data;
+            let sum = 0;
+            // 処理負荷軽減のため間引きながら計算
+            for (let i = 0; i < float32Data.length; i += 4) { 
+                sum += float32Data[i] * float32Data[i];
+            }
+            const rms = Math.sqrt(sum / (float32Data.length / 4));
+            
+            // 閾値（環境に合わせて調整可能。0.01は静かな部屋のノイズレベル）
+            if (rms < 0.01) return;
+
             const downsampled = window.downsampleBuffer(event.data, window.audioContext.sampleRate, 16000); 
             window.liveSocket.send(JSON.stringify({ base64Audio: window.arrayBufferToBase64(window.floatTo16BitPCM(downsampled)) })); 
         }; 
