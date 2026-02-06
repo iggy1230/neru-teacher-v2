@@ -1,937 +1,1065 @@
---- START OF FILE server.js ---
+// --- js/game-engine.js (完全版 v380.0: ウルトラクイズ問題重複回避・住所ルール対応版) ---
 
-import textToSpeech from '@google-cloud/text-to-speech';
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
-import express from 'express';
-import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import WebSocket, { WebSocketServer } from 'ws';
-import { parse } from 'url';
-import dotenv from 'dotenv';
-import fs from 'fs/promises';
+// ==========================================
+// 共通ヘルパー: レーベンシュタイン距離 (編集距離)
+// ==========================================
+// 2つの文字列の類似度を測る
+function levenshteinDistance(a, b) {
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
 
-dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const app = express();
-
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-
-const publicDir = path.join(__dirname, 'public');
-app.use(express.static(publicDir));
-
-// --- AI Model Constants ---
-const MODEL_HOMEWORK = "gemini-3-pro-preview";
-const MODEL_FAST = "gemini-3-flash-preview";
-const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
-
-// --- Server Log ---
-const MEMORY_FILE = path.join(__dirname, 'server_log.json');
-async function appendToServerLog(name, text) {
-    try {
-        let data = {};
-        try { data = JSON.parse(await fs.readFile(MEMORY_FILE, 'utf8')); } catch {}
-        const timestamp = new Date().toLocaleString('ja-JP', { 
-            timeZone: 'Asia/Tokyo', 
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: false 
-        });
-        const newLog = `[${timestamp}] ${text}`;
-        let currentLogs = data[name] || [];
-        currentLogs.push(newLog);
-        if (currentLogs.length > 50) currentLogs = currentLogs.slice(-50);
-        data[name] = currentLogs;
-        await fs.writeFile(MEMORY_FILE, JSON.stringify(data, null, 2));
-    } catch (e) { console.error("Server Log Error:", e); }
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1, // 置換
+                    Math.min(
+                        matrix[i][j - 1] + 1, // 挿入
+                        matrix[i - 1][j] + 1  // 削除
+                    )
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
 }
 
-// --- AI Initialization ---
-let genAI, ttsClient;
-try {
-    if (!process.env.GEMINI_API_KEY) console.error("⚠️ GEMINI_API_KEY が設定されていません。");
-    genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// ユーザーの音声認識結果（長い文字列かもしれない）の中に、正解（短い文字列）に近いものが含まれているか判定
+function fuzzyContains(userText, targetText, maxDistance = 1) {
+    if (!userText || !targetText) return false;
+    const u = userText.replace(/\s+/g, ""); // 空白除去
+    const t = targetText.replace(/\s+/g, "");
     
-    if (process.env.GOOGLE_CREDENTIALS_JSON) {
-        try {
-            const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
-            ttsClient = new textToSpeech.TextToSpeechClient({ credentials });
-        } catch(e) { console.error("TTS Credential Error:", e.message); }
+    // 完全一致または単純な包含チェック
+    if (u.includes(t)) return true;
+    
+    // 正解の長さが短い場合、部分文字列との編集距離を見る
+    const len = t.length;
+    // ユーザー発話から、正解と同じ長さ（±1文字）の部分文字列を切り出して比較
+    for (let i = 0; i < u.length - len + 2; i++) {
+        // targetの長さ、長さ-1、長さ+1 の範囲で切り出す
+        for (let diff = -1; diff <= 1; diff++) {
+            const subLen = len + diff;
+            if (subLen < 1) continue;
+            const sub = u.substr(i, subLen);
+            if (levenshteinDistance(sub, t) <= maxDistance) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// ==========================================
+// 1. カリカリキャッチ
+// ==========================================
+window.showGame = function() { 
+    if (typeof window.switchScreen === 'function') {
+        window.switchScreen('screen-game'); 
     } else {
-        ttsClient = new textToSpeech.TextToSpeechClient();
+        document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+        document.getElementById('screen-game').classList.remove('hidden');
     }
-} catch (e) { console.error("Init Error:", e.message); }
+    document.getElementById('mini-karikari-display').classList.remove('hidden'); 
+    if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari(); 
+    window.initGame(); 
+    window.fetchGameComment("start"); 
+    const startBtn = document.getElementById('start-game-btn'); 
+    if (startBtn) { 
+        const newBtn = startBtn.cloneNode(true); 
+        startBtn.parentNode.replaceChild(newBtn, startBtn); 
+        newBtn.onclick = () => { 
+            if (!window.gameRunning) { 
+                window.initGame(); 
+                window.gameRunning = true; 
+                newBtn.disabled = true; 
+                window.drawGame(); 
+            } 
+        }; 
+    } 
+};
+window.fetchGameComment = function(type, score=0) { 
+    if (!currentUser) return;
+    fetch('/game-reaction', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ type, name: currentUser.name, score }) 
+    })
+    .then(r => r.json())
+    .then(d => { 
+        if(typeof window.updateNellMessage === 'function') {
+            window.updateNellMessage(d.reply, d.mood || "excited", true); 
+        }
+    })
+    .catch(e => { console.error("Game Comment Error:", e); }); 
+};
+window.initGame = function() {
+    window.gameCanvas = document.getElementById('game-canvas');
+    if(!window.gameCanvas) return;
+    window.ctx = window.gameCanvas.getContext('2d');
+    window.paddle = { x: window.gameCanvas.width / 2 - 40, y: window.gameCanvas.height - 30, w: 80, h: 10 };
+    window.ball = { x: window.gameCanvas.width / 2, y: window.gameCanvas.height - 40, r: 8, dx: 4, dy: -4 };
+    window.score = 0;
+    const scoreEl = document.getElementById('game-score');
+    if(scoreEl) scoreEl.innerText = window.score;
+    window.bricks = [];
+    for(let c = 0; c < 5; c++) {
+        for(let r = 0; r < 4; r++) {
+            window.bricks.push({ x: 30 + (c * 55), y: 30 + (r * 30), w: 40, h: 20, status: 1 });
+        }
+    }
+    const movePaddle = (e) => {
+        const rect = window.gameCanvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        let relativeX = clientX - rect.left;
+        if(relativeX > 0 && relativeX < window.gameCanvas.width) {
+            window.paddle.x = relativeX - window.paddle.w/2;
+        }
+    };
+    window.gameCanvas.onmousemove = movePaddle;
+    window.gameCanvas.ontouchmove = (e) => { e.preventDefault(); movePaddle(e); };
+};
+window.giveGameReward = function(amount) {
+    if (amount <= 0 || !currentUser) return;
+    currentUser.karikari += amount;
+    if(typeof window.saveAndSync === 'function') window.saveAndSync();
+    if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
+    if(typeof window.showKarikariEffect === 'function') window.showKarikariEffect(amount);
+};
+window.drawGame = function() {
+    if(!window.gameRunning) return;
+    window.ctx.clearRect(0, 0, window.gameCanvas.width, window.gameCanvas.height);
+    window.ctx.beginPath(); window.ctx.arc(window.ball.x, window.ball.y, window.ball.r, 0, Math.PI*2); window.ctx.fillStyle = "#ff5722"; window.ctx.fill(); window.ctx.closePath();
+    window.ctx.beginPath(); window.ctx.rect(window.paddle.x, window.paddle.y, window.paddle.w, window.paddle.h); window.ctx.fillStyle = "#8d6e63"; window.ctx.fill(); window.ctx.closePath();
+    window.bricks.forEach(b => {
+        if(b.status === 1) {
+            window.ctx.beginPath(); window.ctx.font = "20px sans-serif"; window.ctx.textAlign = "center"; window.ctx.textBaseline = "middle"; window.ctx.fillText("🍖", b.x + b.w/2, b.y + b.h/2); window.ctx.closePath();
+        }
+    });
+    window.ball.x += window.ball.dx; window.ball.y += window.ball.dy;
+    if(window.ball.x + window.ball.dx > window.gameCanvas.width - window.ball.r || window.ball.x + window.ball.dx < window.ball.r) window.ball.dx = -window.ball.dx;
+    if(window.ball.y + window.ball.dy < window.ball.r) window.ball.dy = -window.ball.dy;
+    if(window.ball.y + window.ball.dy > window.gameCanvas.height - window.ball.r - 30) {
+        if(window.ball.x > window.paddle.x && window.ball.x < window.paddle.x + window.paddle.w) {
+            window.ball.dy = -window.ball.dy; if(window.safePlay) window.safePlay(window.sfxPaddle);
+        } else if(window.ball.y + window.ball.dy > window.gameCanvas.height - window.ball.r) {
+            window.gameRunning = false; if(window.safePlay) window.safePlay(window.sfxOver);
+            if (window.score > 0) { window.giveGameReward(window.score); if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`あ〜あ、落ちちゃったにゃ…。でも${window.score}個ゲットだにゃ！`, "sad"); } else { if(typeof window.updateNellMessage === 'function') window.updateNellMessage("あ〜あ、落ちちゃったにゃ…", "sad"); }
+            window.fetchGameComment("end", window.score);
+            const startBtn = document.getElementById('start-game-btn'); if(startBtn) { startBtn.disabled = false; startBtn.innerText = "もう一回！"; }
+            return;
+        }
+    }
+    let allCleared = true;
+    window.bricks.forEach(b => {
+        if(b.status === 1) {
+            allCleared = false;
+            if(window.ball.x > b.x && window.ball.x < b.x + b.w && window.ball.y > b.y && window.ball.y < b.y + b.h) {
+                window.ball.dy = -window.ball.dy; b.status = 0; window.score += 10;
+                const scoreEl = document.getElementById('game-score'); if(scoreEl) scoreEl.innerText = window.score;
+                if(window.safePlay) window.safePlay(window.sfxHit);
+            }
+        }
+    });
+    if (allCleared) {
+        window.gameRunning = false; window.giveGameReward(window.score);
+        if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`全部取ったにゃ！すごいにゃ！！${window.score}個ゲットだにゃ！`, "excited");
+        window.fetchGameComment("end", window.score);
+        const startBtn = document.getElementById('start-game-btn'); if(startBtn) { startBtn.disabled = false; startBtn.innerText = "もう一回！"; }
+        return;
+    }
+    window.gameAnimId = requestAnimationFrame(window.drawGame);
+};
 
 // ==========================================
-// Helper Functions
+// 2. VS ロボット掃除機
 // ==========================================
-
-function getSubjectInstructions(subject) {
-    switch (subject) {
-        case 'さんすう': return `- **数式の記号**: 筆算の「横線」と「マイナス記号」を絶対に混同しないこと。\n- **複雑な表記**: 累乗（2^2など）、分数、帯分数を正確に認識すること。\n- **図形問題**: 図の中に書かれた長さや角度の数値も見落とさないこと。`;
-        case 'こくご': return `- **縦書きレイアウトの厳格な分離**: 問題文や選択肢は縦書きです。**縦の罫線や行間の余白**を強く意識し、隣の行や列の内容が絶対に混ざらないようにしてください。\n- **列の独立性**: ある問題の列にある文字と、隣の問題の列にある文字を混同しないこと。\n- **読み取り順序**: 右の行から左の行へ、上から下へ読み取ること。`;
-        case 'りか': return `- **グラフ・表**: グラフの軸ラベルや単位（g, cm, ℃, A, Vなど）を絶対に省略せず読み取ること。\n- **選択問題**: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。\n- **配置**: 図や表のすぐ近くや上部に「最初の問題」が配置されている場合が多いので、見逃さないこと。`;
-        case 'しゃかい': return `- **選択問題**: 記号選択問題（ア、イ、ウ...）の選択肢の文章もすべて書き出すこと。\n- **資料読み取り**: 地図やグラフ、年表の近くにある「最初の問題」を見逃さないこと。\n- **用語**: 歴史用語や地名は正確に（子供の字が崩れていても文脈から補正して）読み取ること。`;
-        default: return `- 基本的にすべての文字、図表内の数値を拾うこと。`;
+let danmakuState = { running: false, ctx: null, canvas: null, width: 0, height: 0, score: 0, frame: 0, player: { x: 0, y: 0, r: 16 }, boss: { x: 0, y: 0, r: 24, angle: 0 }, bullets: [], touching: false };
+const catPixelArt = [ [0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0], [0,0,0,1,1,1,1,0,0,0,0,1,1,1,1,0], [0,0,1,1,1,1,1,1,0,0,1,1,1,1,1,1], [0,1,1,1,1,4,4,1,1,1,1,4,4,1,1,1], [1,1,1,1,4,4,4,4,1,1,4,4,4,4,1,1], [1,1,1,3,5,5,3,1,1,1,3,5,5,3,1,1], [1,1,1,5,3,3,5,1,1,1,5,3,3,5,1,1], [1,1,1,3,5,5,3,1,1,1,3,5,5,3,1,1], [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], [1,1,1,1,2,2,2,3,3,2,2,2,1,1,1,1], [0,1,1,2,2,2,3,4,4,3,2,2,2,1,1,0], [0,0,1,2,2,2,4,4,4,4,2,2,2,1,0,0], [0,0,0,1,1,2,2,2,2,2,2,1,1,0,0,0], [0,0,0,0,0,4,4,4,4,4,4,0,0,0,0,0], [0,0,0,0,4,4,4,4,4,4,4,4,0,0,0,0], [0,0,0,0,4,0,0,4,4,0,0,4,0,0,0,0] ];
+window.showDanmakuGame = function() {
+    window.switchScreen('screen-danmaku'); document.getElementById('mini-karikari-display').classList.remove('hidden');
+    if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
+    const canvas = document.getElementById('danmaku-canvas'); danmakuState.canvas = canvas; danmakuState.ctx = canvas.getContext('2d'); danmakuState.width = canvas.width; danmakuState.height = canvas.height;
+    danmakuState.running = false; danmakuState.score = 0; document.getElementById('danmaku-score').innerText = "0";
+    const startBtn = document.getElementById('start-danmaku-btn'); startBtn.disabled = false; startBtn.innerText = "スタート！";
+    window.updateNellMessage("ロボット掃除機からカリカリを守るにゃ！茶色は取って、他は避けるにゃ！", "excited", false);
+    const moveHandler = (e) => { if (!danmakuState.running) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let x = clientX - rect.left; let y = clientY - rect.top; x = Math.max(danmakuState.player.r, Math.min(danmakuState.width - danmakuState.player.r, x)); y = Math.max(danmakuState.player.r, Math.min(danmakuState.height - danmakuState.player.r, y)); danmakuState.player.x = x; danmakuState.player.y = y; };
+    canvas.onmousedown = (e) => { danmakuState.touching = true; moveHandler(e); }; canvas.onmousemove = (e) => { if(danmakuState.touching) moveHandler(e); }; canvas.onmouseup = () => { danmakuState.touching = false; }; canvas.onmouseleave = () => { danmakuState.touching = false; }; canvas.ontouchstart = (e) => { danmakuState.touching = true; moveHandler(e); }; canvas.ontouchmove = moveHandler; canvas.ontouchend = () => { danmakuState.touching = false; };
+    initDanmakuEntities(); drawDanmakuFrame();
+};
+function initDanmakuEntities() { danmakuState.player.x = danmakuState.width / 2; danmakuState.player.y = danmakuState.height - 50; danmakuState.boss.x = danmakuState.width / 2; danmakuState.boss.y = 100; danmakuState.bullets = []; danmakuState.frame = 0; }
+window.startDanmakuGame = function() { if (danmakuState.running) return; initDanmakuEntities(); danmakuState.score = 0; document.getElementById('danmaku-score').innerText = "0"; danmakuState.running = true; document.getElementById('start-danmaku-btn').disabled = true; loopDanmakuGame(); };
+window.stopDanmakuGame = function() { danmakuState.running = false; };
+function loopDanmakuGame() { if (!danmakuState.running) return; updateDanmaku(); drawDanmakuFrame(); requestAnimationFrame(loopDanmakuGame); }
+function updateDanmaku() {
+    danmakuState.frame++; danmakuState.boss.x = (danmakuState.width / 2) + Math.sin(danmakuState.frame * 0.02) * 100; danmakuState.boss.angle += 0.05; 
+    let spawnRate = Math.max(10, 60 - Math.floor(danmakuState.score / 50)); if (danmakuState.frame % spawnRate === 0) spawnBullet();
+    for (let i = danmakuState.bullets.length - 1; i >= 0; i--) {
+        let b = danmakuState.bullets[i]; b.x += b.vx; b.y += b.vy;
+        if (b.y > danmakuState.height + 20 || b.x < -20 || b.x > danmakuState.width + 20 || b.y < -20) { danmakuState.bullets.splice(i, 1); continue; }
+        let dx = b.x - danmakuState.player.x; let dy = b.y - danmakuState.player.y; let dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < danmakuState.player.r + b.r - 4) {
+            if (b.type === 'good') { danmakuState.score += 10; document.getElementById('danmaku-score').innerText = danmakuState.score; if(window.safePlay) window.safePlay(window.sfxHit); danmakuState.bullets.splice(i, 1); } 
+            else { gameOverDanmaku(); return; }
+        }
     }
 }
-
-function fixPronunciation(text) {
-    if (!text) return "";
-    let t = text;
-    t = t.replace(/角/g, "かく"); 
-    t = t.replace(/辺/g, "へん");
-    t = t.replace(/真分数/g, "しんぶんすう");
-    t = t.replace(/仮分数/g, "かぶんすう");
-    t = t.replace(/帯分数/g, "たいぶんすう");
-    t = t.replace(/約分/g, "やくぶん");
-    t = t.replace(/通分/g, "つうぶん");
-    t = t.replace(/直角/g, "ちょっかく");
-    t = t.replace(/\+/g, "たす");
-    t = t.replace(/＋/g, "たす");
-    t = t.replace(/\-/g, "ひく");
-    t = t.replace(/－/g, "ひく");
-    t = t.replace(/\=/g, "わ");
-    t = t.replace(/＝/g, "わ");
-    t = t.replace(/×/g, "かける");
-    t = t.replace(/÷/g, "わる");
-    return t;
+function spawnBullet() {
+    let type = Math.random() < 0.5 ? 'good' : 'bad'; let content = '🍖';
+    if (type === 'bad') { const bads = ['🐭', '⚽', '⚾']; content = bads[Math.floor(Math.random() * bads.length)]; }
+    let angle = Math.atan2(danmakuState.player.y - danmakuState.boss.y, danmakuState.player.x - danmakuState.boss.x); angle += (Math.random() - 0.5) * 1.0; 
+    let speed = 2 + Math.random() * 2 + (danmakuState.score / 500); 
+    danmakuState.bullets.push({ x: danmakuState.boss.x, y: danmakuState.boss.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: 12, type: type, content: content });
+}
+function gameOverDanmaku() {
+    danmakuState.running = false; if(window.safePlay) window.safePlay(window.sfxOver);
+    if (danmakuState.score > 0) { window.giveGameReward(danmakuState.score); window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${danmakuState.score}個ゲットだにゃ！`, "sad"); } 
+    else { window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad"); }
+    const startBtn = document.getElementById('start-danmaku-btn'); startBtn.disabled = false; startBtn.innerText = "もう一回！";
+}
+function drawDanmakuFrame() {
+    const ctx = danmakuState.ctx; const w = danmakuState.width; const h = danmakuState.height; ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#f5deb3"; ctx.fillRect(0, 0, w, h); ctx.strokeStyle = "#deb887"; ctx.lineWidth = 2; for(let i=0; i<h; i+=40) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke(); }
+    ctx.save(); ctx.translate(danmakuState.boss.x, danmakuState.boss.y); ctx.rotate(danmakuState.boss.angle);
+    ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI*2); ctx.fillStyle = "#333"; ctx.fill(); ctx.strokeStyle = "#ccc"; ctx.lineWidth = 3; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, -10, 4, 0, Math.PI*2); ctx.fillStyle = "#0f0"; ctx.fill(); ctx.restore();
+    ctx.save(); ctx.translate(danmakuState.player.x, danmakuState.player.y);
+    const pixelSize = 2; const catW = 16 * pixelSize; const catH = 16 * pixelSize; const drawX = -catW / 2; const drawY = -catH / 2;
+    const colors = [null, "#ffb74d", "#ffffff", "#000000", "#5d4037", "#fdd835"];
+    for (let r = 0; r < 16; r++) { for (let c = 0; c < 16; c++) { const colorIndex = catPixelArt[r][c]; if (colorIndex !== 0) { ctx.fillStyle = colors[colorIndex]; ctx.fillRect(drawX + c * pixelSize, drawY + r * pixelSize, pixelSize, pixelSize); } } }
+    ctx.restore();
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = "24px sans-serif"; ctx.fillStyle = "#000000";
+    danmakuState.bullets.forEach(b => { ctx.fillText(b.content, b.x, b.y); });
 }
 
 // ==========================================
-// API Endpoints
+// 3. ウルトラクイズ
 // ==========================================
 
-// --- クイズ生成 API ---
-app.post('/generate-quiz', async (req, res) => {
-    try {
-        const { grade, genre, level } = req.body; 
-        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-        
-        let targetGenre = genre;
-        if (!targetGenre || targetGenre === "全ジャンル") {
-            const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
-            targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
+let quizState = {
+    currentQuestionIndex: 0,
+    maxQuestions: 5,
+    score: 0,
+    currentQuizData: null,
+    nextQuizData: null,
+    genre: "全ジャンル",
+    level: 1, // ★現在のプレイレベル
+    isFinished: false,
+    history: [] // ★追加: 過去の正解リスト（重複チェック用）
+};
+
+async function fetchQuizData(genre, level = 1) {
+    const res = await fetch('/generate-quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            grade: currentUser ? currentUser.grade : "1",
+            genre: genre,
+            level: level // ★レベル指定
+        })
+    });
+    return await res.json();
+}
+
+window.showQuizGame = function() {
+    window.switchScreen('screen-quiz');
+    window.currentMode = 'quiz';
+    
+    // UI初期化: 各ボタンのテキストにレベルを表示
+    const levels = (currentUser && currentUser.quizLevels) ? currentUser.quizLevels : {};
+    const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", "マインクラフト", "ロブロックス", "ポケモン"];
+    const idMap = {
+        "全ジャンル": "btn-quiz-all",
+        "一般知識": "btn-quiz-general",
+        "雑学": "btn-quiz-trivia",
+        "芸能・スポーツ": "btn-quiz-entertainment",
+        "歴史・地理・社会": "btn-quiz-history",
+        "ゲーム": "btn-quiz-game",
+        "マインクラフト": "btn-quiz-minecraft",
+        "ロブロックス": "btn-quiz-roblox",
+        "ポケモン": "btn-quiz-pokemon"
+    };
+
+    genres.forEach(g => {
+        const btn = document.getElementById(idMap[g]);
+        if (btn) {
+            const lv = levels[g] || 1;
+            btn.innerText = `${g} (Lv.${lv})`;
         }
-
-        const currentLevel = level || 1;
-        let difficultyDesc = "";
-        switch(parseInt(currentLevel)) {
-            case 1: difficultyDesc = `小学${grade}年生でも簡単にわかる、基礎的な問題`; break;
-            case 2: difficultyDesc = `小学${grade}年生が少し考えればわかる問題`; break;
-            case 3: difficultyDesc = `高学年～中学生レベルの知識が必要な問題`; break;
-            case 4: difficultyDesc = `大人でも間違えるかもしれない難しい問題`; break;
-            case 5: difficultyDesc = `非常にマニアック、または高度な知識が必要な超難問（クイズ王レベル）`; break;
-            default: difficultyDesc = `標準的な問題`;
-        }
-
-        const prompt = `
-        「${targetGenre}」に関する4択クイズを1問作成してください。
-        
-        【難易度設定: レベル${currentLevel}】
-        - ${difficultyDesc}
-        
-        【重要：禁止事項】
-        - **挨拶不要。すぐに問題文から始めてください。**
-        - **なぞなぞは禁止です。**
-
-        【出力JSONフォーマット】
-        {
-            "question": "問題文（「問題！〇〇はどれ？」のように、読み上げに適した文章）",
-            "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
-            "answer": "正解の選択肢の文字列（optionsに含まれるものと完全一致させること）",
-            "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）",
-            "actual_genre": "${targetGenre}" 
-        }
-        `;
-
-        const result = await model.generateContent(prompt);
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        res.json(JSON.parse(text));
-    } catch (e) {
-        console.error("Quiz Gen Error:", e);
-        res.status(500).json({ error: "クイズが作れなかったにゃ…" });
-    }
-});
-
-// --- なぞなぞ生成 API ---
-app.post('/generate-riddle', async (req, res) => {
-    try {
-        const { grade } = req.body;
-        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-
-        const prompt = `
-        小学${grade}年生向けの「なぞなぞ」を1問作成してください。
-        
-        【ルール】
-        - 4択ではありません。考えて答える形式の問題にしてください。
-        - 答えは子供が知っている単語で。
-
-        【出力JSONフォーマット】
-        {
-            "question": "問題文（挨拶なし。すぐに問題を読み上げる）",
-            "answer": "正解の単語（ひらがな）",
-            "accepted_answers": ["正解の別名", "漢字表記", "カタカナ表記"] 
-        }
-        `;
-
-        const result = await model.generateContent(prompt);
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        res.json(JSON.parse(text));
-    } catch (e) {
-        console.error("Riddle Gen Error:", e);
-        res.status(500).json({ error: "なぞなぞが思いつかないにゃ…" });
-    }
-});
-
-// --- ミニテスト生成 API ---
-app.post('/generate-minitest', async (req, res) => {
-    try {
-        const { grade, subject } = req.body;
-        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-
-        const prompt = `
-        小学${grade}年生の「${subject}」に関する4択クイズを1問作成してください。
-        
-        【ルール】
-        - 低学年で「理科」「社会」が指定された場合は、「生活科」または一般的な科学・社会常識の問題にしてください。
-        - 問題は簡単すぎず、難しすぎないレベルで。
-        - 選択肢は4つ作成し、そのうち1つが正解です。
-
-        【出力JSONフォーマット】
-        {
-            "question": "問題文",
-            "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
-            "answer": "正解の選択肢の文字列（optionsに含まれるものと同じ）",
-            "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）"
-        }
-        `;
-
-        const result = await model.generateContent(prompt);
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        res.json(JSON.parse(text));
-    } catch (e) {
-        console.error("MiniTest Gen Error:", e);
-        res.status(500).json({ error: "問題が作れなかったにゃ…" });
-    }
-});
-
-// --- 漢字ドリル生成 API ---
-app.post('/generate-kanji', async (req, res) => {
-    try {
-        const { grade, mode } = req.body; 
-        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-        
-        let typeInstruction = "";
-        if (mode === 'reading') {
-            typeInstruction = `
-            「読み（漢字の読み仮名を答える）」問題を作成してください。
-            **重要: 単体の漢字ではなく、短い文章やフレーズの中で使われている漢字の読みを問う形式にしてください。**
-            例: 「山へ行く」の「山」の読み方は？
-            **★重要: 画面表示用テキスト(question_display)では、出題対象の漢字を <span style='color:red;'>漢字</span> タグで囲んでください。**
-            `;
-        } else {
-            typeInstruction = "「書き取り（文章の穴埋めで漢字を書く）」問題を作成してください。";
-        }
-
-        const prompt = `
-        小学${grade}年生で習う漢字の問題をランダムに1問作成してください。
-        ${typeInstruction}
-
-        【最重要：読み上げテキスト(question_speech)のルール】
-        - **「読み問題」の場合、出題対象の漢字そのものを絶対に発音してはいけません。**
-        - **必ず「『画面の赤くなっている漢字』の読み方は？」や「『この漢字』の読み方はなにかな？」のように、指示語を使って漢字を指し示し、音読み・訓読みを含め一切の読み方を言わないでください。**
-
-        【出力JSONフォーマット】
-        {
-            "type": "${mode}",
-            "kanji": "正解となる漢字",
-            "reading": "正解となる読み仮名（ひらがな）",
-            "question_display": "画面に表示する問題文（例: 『<span style='color:red;'>山</span>へ行く』 または 『□□(しょうぶ)をする』）",
-            "question_speech": "ネル先生が読み上げる問題文（答えを含まないこと！）"
-        }
-        `;
-
-        const result = await model.generateContent(prompt);
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        res.json(JSON.parse(text));
-    } catch (e) {
-        console.error("Kanji Gen Error:", e);
-        res.status(500).json({ error: "漢字が見つからないにゃ…" });
-    }
-});
-
-// --- 漢字採点 API ---
-app.post('/check-kanji', async (req, res) => {
-    try {
-        const { image, targetKanji } = req.body;
-        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-
-        const prompt = `
-        これは子供が学習アプリで書いた手書きの漢字画像です。
-        書かれている文字が、ターゲットの漢字「${targetKanji}」として認識できるか判定してください。
-        【判定ルール】
-        1. **子供の字です**: 多少のバランスの崩れ、線の歪み、太さは許容してください。
-        2. **構成要素**: 漢字を構成するパーツ（偏と旁など）が正しく配置されていれば「正解」としてください。
-
-        【出力JSONフォーマット】
-        {
-            "is_correct": true または false,
-            "comment": "ネル先生としてのコメント。正解なら『すごい！』と褒める。不正解なら『惜しい！〇〇の部分がちょっと違うかも？』と優しく教える。"
-        }
-        `;
-
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { mime_type: "image/png", data: image } }
-        ]);
-        
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        res.json(JSON.parse(text));
-    } catch (e) {
-        console.error("Kanji Check Error:", e);
-        res.status(500).json({ is_correct: false, comment: "よく見えなかったにゃ…もう一回書いてみてにゃ？" });
-    }
-});
-
-// --- HTTPチャット会話 ---
-app.post('/chat-dialogue', async (req, res) => {
-    try {
-        let { text, name, image, history, location, address, missingInfo, memoryContext, currentQuizData, currentRiddleData, currentMinitestData } = req.body;
-        
-        const now = new Date();
-        const currentDateTime = now.toLocaleString('ja-JP', { 
-            timeZone: 'Asia/Tokyo', 
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: false
-        });
-
-        let systemPrompt = `
-        あなたは猫の「ネル先生」です。相手は「${name}」さん。
-        現在は ${currentDateTime} です。
-        相手を呼ぶときは必ず「${name}さん」と呼んでください。
-        `;
-
-        let problemContext = null;
-        if (currentQuizData) problemContext = { type: "クイズ", ...currentQuizData };
-        else if (currentRiddleData) problemContext = { type: "なぞなぞ", ...currentRiddleData };
-        else if (currentMinitestData) problemContext = { type: "ミニテスト", ...currentMinitestData };
-
-        if (problemContext) {
-             systemPrompt += `
-            【現在、ユーザーは「${problemContext.type}」に挑戦中です】
-            問題: ${problemContext.question}
-            正解: ${problemContext.answer}
-            （選択肢がある場合）: ${JSON.stringify(problemContext.options || [])}
-            
-            ユーザーの発言: 「${text}」
-            
-            【★重要指示: 出題モード (厳守)】
-            - **現在は学習・ゲームモード中です。出題中の問題に関する話題以外には一切反応しないでください。**
-            - ユーザーが雑談や関係ない質問をした場合は、「今は問題に集中するにゃ！」や「それはあとで話すにゃ。答えはなにかな？」と軽くかわして、問題への回答を促してください。
-            - 正解は直接教えず、ヒントを出してください。
-            - ユーザーが答えを言った場合は、正解か不正解かを判定し、褒めるか励ましてください。
-            `;
-        } else {
-            systemPrompt += `
-            【生徒についての記憶】
-            ${memoryContext || "（まだ情報はありません）"}
-            `;
-            if (location) {
-               systemPrompt += `\n現在地座標: ${location.lat}, ${location.lon}`;
-               if(address) systemPrompt += `\n住所: ${address}`;
-            }
-        }
-
-        let contextPrompt = "";
-        if (history && history.length > 0) {
-            contextPrompt = "【直近の会話】\n" + history.map(h => `${h.role === 'user' ? name : 'ネル'}: ${h.text}`).join("\n");
-        }
-
-        const prompt = `
-        ${systemPrompt}
-        ${contextPrompt}
-        
-        ユーザー: ${text}
-        ネル先生: 
-        `;
-
-        let result;
-        const toolsConfig = image ? undefined : [{ google_search: {} }];
-        const model = genAI.getGenerativeModel({ model: MODEL_FAST, tools: toolsConfig });
-
-        if (image) {
-            result = await model.generateContent([
-                prompt,
-                { inlineData: { mime_type: "image/jpeg", data: image } }
-            ]);
-        } else {
-            result = await model.generateContent(prompt);
-        }
-        
-        const responseText = result.response.text().trim();
-        let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-        cleanText = cleanText.split('\n').filter(line => !/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(line)).join(' ');
-
-        res.json({ speech: cleanText });
-
-    } catch (error) {
-        console.error("Chat API Fatal Error:", error);
-        res.status(200).json({ speech: "ごめんにゃ、頭が回らないにゃ…。" });
-    }
-});
-
-// --- TTS ---
-app.post('/synthesize', async (req, res) => {
-    try {
-        if (!ttsClient) throw new Error("TTS Not Ready");
-        const { text, mood } = req.body;
-        
-        let speakText = text;
-        speakText = speakText.replace(/[\*#_`~]/g, "");
-        speakText = speakText.replace(/([a-zA-Z0-9一-龠々ヶァ-ヴー]+)\s*[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$2');
-        speakText = fixPronunciation(speakText);
-
-        let rate = "1.1"; let pitch = "+2st";
-        if (mood === "thinking") { rate = "1.0"; pitch = "0st"; }
-        if (mood === "gentle") { rate = "0.95"; pitch = "+1st"; }
-        if (mood === "excited") { rate = "1.2"; pitch = "+4st"; }
-        
-        const ssml = `<speak><prosody rate="${rate}" pitch="${pitch}">${speakText}</prosody></speak>`;
-        
-        const [response] = await ttsClient.synthesizeSpeech({
-            input: { ssml },
-            voice: { languageCode: 'ja-JP', name: 'ja-JP-Neural2-B' },
-            audioConfig: { audioEncoding: 'MP3' },
-        });
-        res.json({ audioContent: response.audioContent.toString('base64') });
-    } catch (err) { res.status(500).send(err.message); }
-});
-
-// --- Memory Update ---
-app.post('/update-memory', async (req, res) => {
-    try {
-        const { currentProfile, chatLog } = req.body;
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_FAST,
-            generationConfig: { responseMimeType: "application/json" }
-        });
-
-        const prompt = `
-        あなたは生徒の長期記憶を管理するAIです。
-        以下の「現在のプロフィール」と「直近の会話ログ」を分析し、最新のプロフィールJSONを作成してください。
-
-        【重要指示】
-        1. **情報の抽出**: 会話ログから誕生日、好きなもの、苦手なもの、趣味等の情報を抽出し、プロフィールを更新してください。
-        2. **誕生日**: 会話内で日付（〇月〇日）が言及され、それがユーザーの誕生日であれば、必ず \`birthday\` を更新してください。
-        3. **維持**: 会話ログに新しい情報がない項目は、現在の内容をそのまま維持してください。
-
-        【★重要: 好きなものの判定ルール (厳守)】
-        - **ユーザーが画像を見せただけ、または「これは何？」と質問しただけの対象は、絶対に「好きなもの」に追加しないでください。**
-        - ユーザーが明確に「～が好き」「～にハマっている」「～が気に入っている」と言葉で発言した場合のみ、「好きなもの」に追加してください。
-
-        【タスク2: 会話の要約】
-        今回の会話の内容を、「○○について話した」のように一文で要約し、\`summary_text\` として出力してください。
-
-        【現在のプロフィール】
-        ${JSON.stringify(currentProfile)}
-
-        【直近の会話ログ】
-        ${chatLog}
-
-        【出力フォーマット (JSON)】
-        {
-            "profile": {
-                "nickname": "...",
-                "birthday": "...",
-                "likes": ["..."],
-                "weaknesses": ["..."],
-                "achievements": ["..."],
-                "last_topic": "..."
-            },
-            "summary_text": "会話の要約文"
-        }
-        `;
-
-        const result = await model.generateContent(prompt);
-        const responseText = result.response.text();
-        
-        let output;
-        try {
-            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                cleanText = cleanText.substring(firstBrace, lastBrace + 1);
-            }
-            output = JSON.parse(cleanText);
-        } catch (e) {
-            console.warn("Memory JSON Parse Error. Using fallback.");
-            return res.json({ profile: currentProfile, summary_text: "（更新なし）" });
-        }
-
-        if (Array.isArray(output)) output = output[0];
-        if (!output.profile) {
-            output = { profile: output, summary_text: "（会話終了）" };
-        }
-
-        res.json(output);
-
-    } catch (error) {
-        res.status(200).json({ profile: req.body.currentProfile || {}, summary_text: "" });
-    }
-});
-
-// --- Analyze (宿題分析) ---
-app.post('/analyze', async (req, res) => {
-    try {
-        const { image, mode, grade, subject, name } = req.body;
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_HOMEWORK, 
-            generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
-        });
-
-        const subjectSpecificInstructions = getSubjectInstructions(subject);
-
-        const prompt = `
-        あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
-        提供された画像（生徒のノートやドリル）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。
-
-        【重要: 教科別の解析ルール (${subject})】
-        ${subjectSpecificInstructions}
-        - **表記ルール**: 解説文の中に読み間違いやすい人名、地名、難読漢字が出てくる場合は、『漢字(ふりがな)』の形式で記述してください（例: 筑後市(ちくごし)）。**一般的な簡単な漢字にはふりがなを振らないでください。**
-
-        【重要: 子供向け解説】
-        - **解説やヒントは、必ず小学${grade}年生が理解できる言葉遣い、漢字（習っていない漢字はひらがなにする）、概念で記述してください。**
-        - 専門用語は使わず、噛み砕いて説明してください。
-        - 難しい言い回しは禁止です。優しく語りかけてください。
-
-        【タスク1: 問題文の書き起こし】
-        - 設問文、選択肢を正確に書き起こす。
-
-        【タスク2: 正解データの作成 (配列形式)】
-        - 答えは必ず「文字列のリスト（配列）」にする。
-
-        【タスク3: 採点 & ヒント】
-        - 手書きの答え(student_answer)を読み取り、正誤判定(is_correct)を行う。
-        - student_answer が空文字 "" の場合は、is_correct は false にする。
-        - 3段階のヒント(hints)を作成する。ヒントも小学${grade}年生向けに平易にすること。
-
-        【出力JSONフォーマット】
-        [
-          {
-            "id": 1,
-            "label": "①",
-            "question": "問題文",
-            "correct_answer": ["正解"], 
-            "student_answer": ["手書きの答え"],
-            "is_correct": true,
-            "hints": ["ヒント1", "ヒント2", "ヒント3"]
-          }
-        ]
-        `;
-
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { mime_type: "image/jpeg", data: image } }
-        ]);
-
-        const responseText = result.response.text();
-        let problems = [];
-        try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const jsonStart = cleanText.indexOf('[');
-            const jsonEnd = cleanText.lastIndexOf(']');
-            if (jsonStart !== -1 && jsonEnd !== -1) {
-                problems = JSON.parse(cleanText.substring(jsonStart, jsonEnd + 1));
-            } else {
-                throw new Error("Valid JSON array not found");
-            }
-        } catch (e) {
-            console.error("JSON Parse Error:", responseText);
-            throw new Error("AIからの応答を読み取れませんでした。");
-        }
-
-        res.json(problems);
-
-    } catch (error) {
-        console.error("解析エラー:", error);
-        res.status(500).json({ error: "解析に失敗したにゃ: " + error.message });
-    }
-});
-
-// --- お宝図鑑用 画像解析 ---
-app.post('/identify-item', async (req, res) => {
-    try {
-        const { image, name, location, address } = req.body;
-        
-        const tools = [{ google_search: {} }];
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_FAST,
-            tools: tools
-        });
-
-        let locationInfo = "";
-        if (address) {
-            locationInfo = `
-            【最優先情報：現在地】
-            クライアント特定住所: **${address}**
-            
-            指示:
-            1. **広域の確定**: ユーザーは「${address}」にいます。
-            2. **詳細スポットの特定**: この住所（${address}）の中にある、画像に写っているようなものをGoogle検索で特定してください。
-            3. 解説の冒頭で「ここは${address}の〇〇（詳細スポット名）だにゃ！」と明言してください。
-            `;
-        } else if (location && location.lat && location.lon) {
-            locationInfo = `
-            【位置情報】
-            GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
-            
-            指示:
-            1. Google検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**を確定してください。
-            2. その市町村の中で、画像に写っているものを検索して特定してください。
-            `;
-        }
-
-        const prompt = `
-        あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。
-        送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
-        
-        ${locationInfo}
-
-        【特定と命名のルール】
-        1. **店舗・建物の場合 (最優先)**: 画像が「お店の外観」「看板」「建物」で、位置情報が利用可能な場合は、Google検索を駆使して**必ず「チェーン名 + 支店名」まで特定して** \`itemName\` に設定してください（例: 「セブン-イレブン」ではなく「セブン-イレブン 世田谷猫屋敷店」、「マクドナルド」ではなく「マクドナルド 国道1号店」）。
-        2. **商品・小物の場合**: 画像が「商品（お菓子、飲み物）」「植物」「生き物」などの場合は、撮影場所の店名は含めず、その**モノの正式名称**を \`itemName\` にしてください。
-        3. **観光地・公共施設**: その場所の正式名称を特定してください。
-
-        【★レアリティ判定基準 (肉球ランク 1〜5)】
-        - **1 (★)**: どこでも買える市販の商品（お菓子、飲み物、文房具、おもちゃ、スマホ、家電）、どこにでも生えている植物（雑草）、日常的な風景。**※スーパーやコンビニで買えるものは必ず「1」にしてください。**
-        - **2 (★★)**: ちょっとだけ珍しいもの。**建物・建造物（学校、駅、公民館、橋など）は最低でも「2」以上にする。**
-        - **3 (★★★)**: その場所に行かないと見られないもの。**動物（犬、猫、鳥、虫など）は最低でも「3」以上にする。** **入手困難な人気商品（最新ゲーム機など）は「3」以上にする。**
-        - **4 (★★★★)**: かなり珍しいもの。**特別な種類の動物や、歴史的建造物、有名なテーマパークは「4」以上にする。**
-        - **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
-
-        【解説のルール】
-        1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。
-        2. **呼び方ルール**: **解説の最後に、「${name}さんはこれ知ってたにゃ？」のように、名前を呼びかけて質問するフレーズは絶対に含めないでください。** 説明だけで完結させてください。
-        3. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
-        4. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
-        5. **場所の言及ルール (重要)**: 
-           - 画像が**「建物」「風景」「観光地」の場合**: 「ここは〇〇（詳細地名）だにゃ！」と場所を紹介してOKです。
-           - 画像が**「商品」「小物」「生き物」など持ち運び可能なものの場合**: **詳細な住所（町名・番地・店名）への言及は禁止です。** 言及する場合でも、「〇〇市で見つけたにゃ！」や「〇〇県にいるんだにゃ！」のように、**市町村または都道府県レベルの広域地名**にとどめてください。「〇〇店で売ってる」のような店名の特定もしないでください（違和感があるため）。
-        6. **禁止事項**: 座標の数値をそのままユーザーへの返答に入れないでください。
-
-        【出力フォーマット (JSON)】
-        \`\`\`json
-        {
-            "itemName": "正式名称",
-            "rarity": 1, 
-            "description": "ネル先生の面白い解説",
-            "realDescription": "本当の解説",
-            "speechText": "『これは（itemName）だにゃ！（description）』"
-        }
-        \`\`\`
-        `;
-
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { mime_type: "image/jpeg", data: image } }
-        ]);
-
-        const responseText = result.response.text();
-        
-        let json;
-        try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                json = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
-            } else {
-                throw new Error("JSON parse failed");
-            }
-        } catch (e) {
-            console.warn("JSON Parse Fallback (Item):", responseText);
-            let fallbackText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            json = {
-                itemName: "なぞの物体",
-                rarity: 1, // Fallback
-                description: fallbackText,
-                realDescription: "AIの解析結果を直接表示しています。",
-                speechText: fallbackText
-            };
-        }
-        
-        res.json(json);
-
-    } catch (error) {
-        console.error("Identify Error:", error);
-        res.status(500).json({ error: "解析失敗", speechText: "よく見えなかったにゃ…もう一回見せてにゃ？", itemName: null });
-    }
-});
-
-// --- 反応系 ---
-app.post('/lunch-reaction', async (req, res) => {
-    try {
-        const { count, name } = req.body;
-        await appendToServerLog(name, `給食をくれた(${count}個目)。`);
-        const isSpecial = (count % 10 === 0);
-        
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_FAST,
-            safetySettings: [
-                { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-                { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-                { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-                { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
-            ]
-        });
-        
-        let prompt = isSpecial 
-            ? `あなたは猫の「ネル先生」。生徒の「${name}さん」から記念すべき${count}個目の給食（カリカリ）をもらいました！
-               【ルール】
-               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
-               2. テンションMAXで、思わず笑ってしまうような大げさな感謝と喜びを50文字以内で叫んでください。
-               3. 語尾は「にゃ」。`
-            : `あなたは猫の「ネル先生」。生徒の「${name}さん」から給食（カリカリ）をもらって食べました。
-               【ルール】
-               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
-               2. 思わずクスッと笑ってしまうような、独特な食レポや、猫ならではの感想を30文字以内で言ってください。
-               3. 語尾は「にゃ」。`;
-
-        const result = await model.generateContent(prompt);
-        res.json({ reply: result.response.text().trim(), isSpecial });
-    } catch (error) { 
-        console.error("Lunch Reaction Error:", error); 
-        const fallbacks = ["おいしいにゃ！", "うまうまにゃ！", "カリカリ最高にゃ！", "ありがとにゃ！", "元気が出たにゃ！"];
-        const randomFallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-        res.json({ reply: randomFallback, isSpecial: false }); 
-    }
-});
-
-app.post('/game-reaction', async (req, res) => {
-    try {
-        const { type, name, score } = req.body;
-        const model = genAI.getGenerativeModel({ model: MODEL_FAST });
-        let prompt = "";
-        let mood = "excited";
-
-        if (type === 'start') {
-            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。語尾は「にゃ」。`;
-        } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。語尾は「にゃ」。`;
-        } else {
-            return res.json({ reply: "ナイスにゃ！", mood: "excited" });
-        }
-
-        const result = await model.generateContent(prompt);
-        res.json({ reply: result.response.text().trim(), mood });
-    } catch { res.json({ reply: "おつかれさまにゃ！", mood: "happy" }); }
-});
-
-app.get('*', (req, res) => res.sendFile(path.join(publicDir, 'index.html')));
-
-const PORT = process.env.PORT || 3000;
-const server = app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-// --- WebSocket (Chat for simple-chat/embedded) ---
-const wss = new WebSocketServer({ server });
-
-wss.on('connection', async (clientWs, req) => {
-    const params = parse(req.url, true).query;
-    let grade = params.grade || "1";
-    let name = decodeURIComponent(params.name || "生徒");
-    let mode = params.mode || "simple-chat";
-
-    if (mode === 'chat') { 
-        clientWs.close();
+    });
+
+    document.getElementById('quiz-genre-select').classList.remove('hidden');
+    document.getElementById('quiz-level-select').classList.add('hidden'); // レベル選択を隠す
+    document.getElementById('quiz-game-area').classList.add('hidden');
+    window.updateNellMessage("どのジャンルに挑戦するにゃ？", "normal");
+};
+
+// ★新規: レベル選択画面の表示
+window.showLevelSelection = function(genre) {
+    const currentMaxLevel = (currentUser && currentUser.quizLevels && currentUser.quizLevels[genre]) || 1;
+    
+    // レベル1しかない場合は即スタート
+    if (currentMaxLevel === 1) {
+        startQuizSet(genre, 1);
         return;
     }
 
-    let geminiWs = null;
+    // レベル選択画面を表示
+    document.getElementById('quiz-genre-select').classList.add('hidden');
+    document.getElementById('quiz-level-select').classList.remove('hidden');
+    
+    const container = document.getElementById('level-buttons-container');
+    container.innerHTML = "";
+    
+    // レベルボタンを生成
+    for (let i = 1; i <= currentMaxLevel; i++) {
+        const btn = document.createElement('button');
+        btn.className = "main-btn";
+        btn.innerText = `レベル ${i}`;
+        // 色分け
+        if (i === 1) btn.classList.add('blue-btn');
+        else if (i === 2) btn.classList.add('green-btn');
+        else if (i === 3) btn.classList.add('orange-btn');
+        else if (i === 4) btn.classList.add('pink-btn');
+        else btn.classList.add('purple-btn'); // Lv.5
 
-    const connectToGemini = (statusContext) => {
-        const now = new Date();
-        const dateOptions = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'Asia/Tokyo' };
-        const timeOptions = { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' };
-        const todayStr = now.toLocaleDateString('ja-JP', dateOptions);
-        const timeStr = now.toLocaleTimeString('ja-JP', timeOptions);
-        
-        const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
-        
-        try {
-            geminiWs = new WebSocket(GEMINI_URL);
-            
-            geminiWs.on('open', () => {
-                let systemInstructionText = `
-                あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
+        btn.onclick = () => startQuizSet(genre, i);
+        container.appendChild(btn);
+    }
+};
 
-                【重要：現在の時刻設定】
-                **現在は ${todayStr} ${timeStr} です。**
+window.backToQuizGenre = function() {
+    document.getElementById('quiz-level-select').classList.add('hidden');
+    document.getElementById('quiz-genre-select').classList.remove('hidden');
+};
 
-                【話し方のルール】
-                1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
-                2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
-                3. 落ち着いた日本語のリズムを大切にして、親しみやすく話してにゃ。
-                4. 給食(餌)のカリカリが大好物にゃ。
-                5. とにかく何でも知っているにゃ。
-                6. **呼び方ルール**: **相手を呼ぶときは必ず「${name}さん」と呼んでください。絶対に呼び捨てにしないでください。**
+window.startQuizSet = async function(genre, level) {
+    quizState.genre = genre;
+    quizState.level = level; // ★選択されたレベルを保持
+    quizState.currentQuestionIndex = 0;
+    quizState.score = 0;
+    quizState.isFinished = false;
+    quizState.currentQuizData = null;
+    quizState.nextQuizData = null;
+    quizState.history = []; // ★履歴初期化
 
-                【最重要：位置情報の取り扱い】
-                ユーザーから「現在地」や「座標」が提供された場合：
-                1. **絶対に**その数値だけを見て場所を推測してはいけません。
-                2. 提供されたツール（Google検索）を使い、必ず「緯度 経度 住所」というキーワードで検索を行ってください。
-                3. 検索結果に表示された「県・市町村名」を唯一の正解として扱ってください。
-                4. 近隣に有名な観光地があっても、検索結果の住所と異なる場合は絶対に言及しないでください。
-                5. 「場所がわからない」と答えることは禁止です。座標があれば必ず検索で特定できます。
-                6. **2段階特定**: まず「市町村」を特定し、次にその中の「詳細スポット（公園、店など）」を特定してください。
+    document.getElementById('quiz-genre-select').classList.add('hidden');
+    document.getElementById('quiz-level-select').classList.add('hidden');
+    document.getElementById('quiz-game-area').classList.remove('hidden');
+    
+    document.getElementById('quiz-genre-label').innerText = `${genre} Lv.${level}`;
 
-                【最重要: 画像への対応ルール】
-                ユーザーから画像が送信された場合：
-                1. それは「勉強の問題」や「教えてほしい画像」です。
-                2. 画像の内容を詳しく解析し、子供にもわかるように優しく、丁寧に教えてください。
-                3. **重要: 一般的なカテゴリ名ではなく、具体的な商品名や固有名詞を特定して答えてください。**
-                4. 図鑑登録ツールは使用しないでください。
+    // 音声認識開始
+    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
 
-                【生徒についての記憶】
-                ${statusContext}
-                
-                【重要: 会話スタイルの指示】
-                - **回答は必ず一文か二文で短くすること。** 長々とした説明は禁止です。
-                - 子供と会話のキャッチボールをすることを最優先してください。
-                - 相手の反応を待ってから次の発言をしてください。
-                - 楽しそうに、親しみやすく振る舞ってください。
-                `;
+    // 最初の問題へ
+    window.nextQuiz();
+};
 
-                const tools = [
-                    { google_search: {} },
-                    {
-                        function_declarations: [
-                            {
-                                name: "show_kanji",
-                                description: "Display a Kanji, word, or math formula on the whiteboard.",
-                                parameters: {
-                                    type: "OBJECT",
-                                    properties: { content: { type: "STRING" } },
-                                    required: ["content"]
-                                }
-                            }
-                        ]
-                    }
-                ];
+window.nextQuiz = async function() {
+    if (quizState.currentQuestionIndex >= quizState.maxQuestions) {
+        window.finishQuizSet();
+        return;
+    }
 
-                geminiWs.send(JSON.stringify({
-                    setup: {
-                        // MODEL_REALTIME (gemini-3-flash-preview) を使用
-                        model: `models/${MODEL_REALTIME}`,
-                        generationConfig: { 
-                            responseModalities: ["AUDIO"],
-                            speech_config: { 
-                                voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
-                                language_code: "ja-JP" 
-                            } 
-                        }, 
-                        tools: tools,
-                        systemInstruction: { parts: [{ text: systemInstructionText }] }
-                    }
-                }));
+    quizState.currentQuestionIndex++;
+    document.getElementById('quiz-progress').innerText = `${quizState.currentQuestionIndex}/${quizState.maxQuestions} 問目`;
+    
+    // UIリセット
+    const qText = document.getElementById('quiz-question-text');
+    const controls = document.getElementById('quiz-controls');
+    const nextBtn = document.getElementById('next-quiz-btn');
+    const ansDisplay = document.getElementById('quiz-answer-display');
+    const micStatus = document.getElementById('quiz-mic-status');
+    const optionsContainer = document.getElementById('quiz-options-container');
 
-                if (clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(JSON.stringify({ type: "server_ready" }));
-                }
-            });
+    qText.innerText = "問題を作ってるにゃ…";
+    window.updateNellMessage("問題を作ってるにゃ…", "thinking");
+    micStatus.innerText = "";
+    ansDisplay.classList.add('hidden');
+    controls.style.display = 'none';
+    nextBtn.classList.add('hidden');
+    optionsContainer.innerHTML = ""; 
+    
+    // ★データ取得と重複チェック
+    let quizData = null;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
 
-            geminiWs.on('message', (data) => {
-                try {
-                    const response = JSON.parse(data);
-                    
-                    if (response.serverContent?.modelTurn?.parts) {
-                        const parts = response.serverContent.modelTurn.parts;
-                        parts.forEach(part => {
-                            if (part.functionCall) {
-                                if (part.functionCall.name === "show_kanji") {
-                                    geminiWs.send(JSON.stringify({
-                                        toolResponse: {
-                                            functionResponses: [{
-                                                name: "show_kanji",
-                                                response: { result: "displayed" },
-                                                id: part.functionCall.id
-                                            }]
-                                        }
-                                    }));
-                                }
-                            }
-                        });
-                    }
-                    
-                    if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
-                    
-                } catch (e) {
-                    console.error("Gemini WS Handling Error:", e);
-                    if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
-                }
-            });
-
-            geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
-            
-            // ★追加: Gemini側からの切断を検知し、クライアントに通知して切断する
-            geminiWs.on('close', (code, reason) => {
-                console.log(`Gemini WS Closed: ${code} ${reason}`);
-                if (clientWs.readyState === WebSocket.OPEN) {
-                    // クライアントに通知 (type: "gemini_closed")
-                    try {
-                        clientWs.send(JSON.stringify({ type: "gemini_closed" }));
-                    } catch(e) {}
-                    
-                    // クライアント側で再接続ロジックを動かすために接続を閉じる
-                    clientWs.close();
-                }
-            });
-
-        } catch(e) { 
-            console.error("Gemini Connection Error:", e);
-            clientWs.close(); 
+    while (retryCount < MAX_RETRIES) {
+        if (quizState.nextQuizData) {
+            quizData = quizState.nextQuizData;
+            quizState.nextQuizData = null;
+        } else {
+            try {
+                quizData = await fetchQuizData(quizState.genre, quizState.level);
+            } catch (e) {
+                console.error(e);
+                break;
+            }
         }
-    };
 
-    clientWs.on('message', (data) => {
+        if (quizData && quizData.answer) {
+            // 重複チェック: 履歴に含まれているか
+            const isDuplicate = quizState.history.some(h => h === quizData.answer);
+            if (!isDuplicate) {
+                // 重複していないならOK
+                break;
+            } else {
+                console.log("Duplicate quiz detected. Retrying...", quizData.answer);
+                quizData = null; // 破棄してリトライ
+                retryCount++;
+            }
+        } else {
+            break; // データ不正ならループ抜ける
+        }
+    }
+
+    if (!quizData) {
+        qText.innerText = "問題が作れなかったにゃ…";
+        setTimeout(() => window.showQuizGame(), 2000);
+        return;
+    }
+
+    if (quizData && quizData.question) {
+        // ★履歴に追加 (最大5件)
+        quizState.history.push(quizData.answer);
+        if (quizState.history.length > 5) quizState.history.shift();
+
+        window.currentQuiz = quizData; 
+        quizState.currentQuizData = quizData;
+        
+        qText.innerText = quizData.question;
+        window.updateNellMessage(quizData.question, "normal", false, true);
+        
+        // ★選択肢ボタンの生成
+        if (quizData.options && Array.isArray(quizData.options)) {
+            const shuffledOptions = [...quizData.options].sort(() => Math.random() - 0.5);
+            shuffledOptions.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = "quiz-option-btn";
+                btn.innerText = opt;
+                btn.onclick = () => window.checkQuizAnswer(opt, true); 
+                optionsContainer.appendChild(btn);
+            });
+        }
+        
+        // ジャンル表示ラベルの更新（全ジャンルの場合に重要）
+        if (quizData.actual_genre && quizData.actual_genre !== quizState.genre) {
+             const baseLabel = `${quizState.genre} Lv.${quizState.level}`;
+             document.getElementById('quiz-genre-label').innerText = `${baseLabel} (${quizData.actual_genre})`;
+        } else {
+             document.getElementById('quiz-genre-label').innerText = `${quizState.genre} Lv.${quizState.level}`;
+        }
+
+        controls.style.display = 'flex';
+        
+        // 次の問題を裏で取得
+        fetchQuizData(quizState.genre, quizState.level).then(data => { quizState.nextQuizData = data; }).catch(err => console.warn("Pre-fetch failed", err));
+    } else {
+        qText.innerText = "エラーだにゃ…";
+    }
+};
+
+window.checkQuizAnswer = function(userAnswer, isButton = false) {
+    if (!window.currentQuiz || window.currentMode !== 'quiz') return false; 
+    if (!document.getElementById('quiz-answer-display').classList.contains('hidden')) return false;
+
+    const correct = window.currentQuiz.answer;
+    const accepted = window.currentQuiz.accepted_answers || [];
+    
+    const buttons = document.querySelectorAll('.quiz-option-btn');
+    if (isButton) {
+        buttons.forEach(b => b.disabled = true);
+    }
+
+    const cleanUserAnswer = userAnswer.trim();
+    // あいまい一致判定
+    let isCorrect = false;
+    if (cleanUserAnswer.includes(correct) || accepted.some(a => cleanUserAnswer.includes(a))) {
+        isCorrect = true;
+    } else if (fuzzyContains(cleanUserAnswer, correct)) {
+        isCorrect = true;
+    }
+    
+    const status = document.getElementById('quiz-mic-status');
+    status.innerText = `「${cleanUserAnswer}」？`;
+    
+    if (isCorrect) {
+        if(window.safePlay) window.safePlay(window.sfxMaru);
+        window.updateNellMessage(`ピンポン！正解だにゃ！答えは「${correct}」！`, "excited", false, true);
+        quizState.score += 20; 
+        
+        if (isButton) {
+            buttons.forEach(b => {
+                if (b.innerText === cleanUserAnswer) b.classList.add('quiz-correct');
+            });
+        } else {
+            buttons.forEach(b => {
+                if (b.innerText === correct) b.classList.add('quiz-correct');
+            });
+        }
+
+        window.showQuizResult(true);
+        return true; 
+    } else {
+        if (isButton) {
+            if(window.safePlay) window.safePlay(window.sfxBatu);
+            window.updateNellMessage(`残念！正解は「${correct}」だったにゃ。`, "gentle", false, true);
+            buttons.forEach(b => {
+                if (b.innerText === cleanUserAnswer) b.classList.add('quiz-wrong');
+                if (b.innerText === correct) b.classList.add('quiz-correct');
+            });
+            window.showQuizResult(false);
+            return true;
+        }
+    }
+    return false; 
+};
+
+window.requestQuizHint = function() {
+    if (!window.currentQuiz) return;
+    window.sendHttpTextInternal("ヒントを教えて");
+};
+
+window.giveUpQuiz = function() {
+    if (!window.currentQuiz) return;
+    if(window.safePlay) window.safePlay(window.sfxBatu);
+    window.updateNellMessage(`残念だにゃ～。正解は「${window.currentQuiz.answer}」だったにゃ！`, "gentle", false, true);
+    window.showQuizResult(false);
+};
+
+window.showQuizResult = function(isWin) {
+    const controls = document.getElementById('quiz-controls');
+    const nextBtn = document.getElementById('next-quiz-btn');
+    const ansDisplay = document.getElementById('quiz-answer-display');
+    const ansText = document.getElementById('quiz-answer-text');
+
+    const btns = controls.querySelectorAll('button:not(#next-quiz-btn)');
+    btns.forEach(b => b.classList.add('hidden'));
+    
+    nextBtn.classList.remove('hidden');
+    controls.style.display = 'flex';
+
+    if (window.currentQuiz) {
+        ansText.innerText = window.currentQuiz.answer;
+        ansDisplay.classList.remove('hidden');
+    }
+};
+
+window.finishQuizSet = function() {
+    quizState.isFinished = true;
+    window.currentQuiz = null;
+
+    let msg = "";
+    let mood = "normal";
+    
+    // レベルアップ判定
+    let isLevelUp = false;
+    let newLevel = 1;
+
+    if (quizState.score === 100) {
+        if (currentUser) {
+            if (!currentUser.quizLevels) currentUser.quizLevels = {};
+            const currentMaxLevel = currentUser.quizLevels[quizState.genre] || 1;
+            
+            // ★現在プレイ中のレベルが、解放されている最高レベルの場合のみレベルアップ
+            if (quizState.level === currentMaxLevel && currentMaxLevel < 5) {
+                newLevel = currentMaxLevel + 1;
+                currentUser.quizLevels[quizState.genre] = newLevel;
+                isLevelUp = true;
+                if(typeof window.saveAndSync === 'function') window.saveAndSync();
+            }
+        }
+
+        if (isLevelUp) {
+            msg = `全問正解！すごいにゃ！${quizState.genre}のレベルが${newLevel}に上がったにゃ！！カリカリ100個あげるにゃ！`;
+        } else {
+            msg = "全問正解！天才だにゃ！！カリカリ100個あげるにゃ！";
+        }
+        mood = "excited";
+        window.giveGameReward(100);
+    } else if (quizState.score >= 60) {
+        msg = `${quizState.score}点！よくがんばったにゃ！カリカリ${quizState.score}個あげるにゃ！`;
+        mood = "happy";
+        window.giveGameReward(quizState.score);
+    } else {
+        msg = `${quizState.score}点だったにゃ。次はもっとがんばるにゃ！カリカリ10個あげるにゃ。`;
+        mood = "gentle";
+        window.giveGameReward(10);
+    }
+
+    window.updateNellMessage(msg, mood, false, true);
+    alert(msg);
+    
+    window.showQuizGame();
+};
+
+// ==========================================
+// 4. ★新規: ネル先生のなぞなぞ (修正版)
+// ==========================================
+
+let riddleState = {
+    currentRiddle: null,
+    nextRiddle: null,
+    isFinished: false
+};
+
+async function fetchRiddleData() {
+    const res = await fetch('/generate-riddle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            grade: currentUser ? currentUser.grade : "1"
+        })
+    });
+    return await res.json();
+}
+
+window.showRiddleGame = function() {
+    if (typeof window.switchScreen === 'function') {
+        window.switchScreen('screen-riddle');
+    } else {
+        document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+        document.getElementById('screen-riddle').classList.remove('hidden');
+    }
+    
+    window.currentMode = 'riddle';
+    
+    const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'chat-free-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
+    ids.forEach(id => { 
+        const el = document.getElementById(id); 
+        if (el) el.classList.add('hidden'); 
+    });
+    const convoLog = document.getElementById('conversation-log');
+    if(convoLog) convoLog.classList.add('hidden');
+    
+    document.getElementById('riddle-question-text').innerText = "スタートボタンを押してにゃ！";
+    document.getElementById('riddle-controls').style.display = 'none';
+    const startBtn = document.getElementById('start-riddle-btn');
+    if(startBtn) startBtn.style.display = 'inline-block';
+    
+    document.getElementById('riddle-answer-display').classList.add('hidden');
+    document.getElementById('riddle-mic-status').innerText = "";
+    
+    if(typeof window.updateNellMessage === 'function') {
+        window.updateNellMessage("なぞなぞで遊ぶにゃ！", "excited", false);
+    }
+    
+    if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
+};
+
+window.startRiddle = async function() {
+    const startBtn = document.getElementById('start-riddle-btn');
+    startBtn.style.display = 'none';
+    
+    document.getElementById('riddle-controls').style.display = 'flex';
+    document.getElementById('riddle-answer-display').classList.add('hidden');
+    
+    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+    
+    window.nextRiddle();
+};
+
+window.nextRiddle = async function() {
+    const qText = document.getElementById('riddle-question-text');
+    const controls = document.getElementById('riddle-controls');
+    const nextBtn = document.getElementById('next-riddle-btn');
+    const ansDisplay = document.getElementById('riddle-answer-display');
+    const micStatus = document.getElementById('riddle-mic-status');
+    const giveUpBtn = controls.querySelector('button.gray-btn');
+
+    qText.innerText = "なぞなぞを考えてるにゃ…";
+    window.updateNellMessage("なぞなぞを考えてるにゃ…", "thinking");
+    micStatus.innerText = "";
+    ansDisplay.classList.add('hidden');
+    nextBtn.classList.add('hidden');
+    if(giveUpBtn) giveUpBtn.classList.remove('hidden');
+    
+    let riddleData = null;
+    if (riddleState.nextRiddle) {
+        riddleData = riddleState.nextRiddle;
+        riddleState.nextRiddle = null;
+    } else {
         try {
-            const msg = JSON.parse(data);
+            riddleData = await fetchRiddleData();
+        } catch (e) {
+            console.error(e);
+            qText.innerText = "なぞなぞが作れなかったにゃ…";
+            setTimeout(() => {
+                document.getElementById('start-riddle-btn').style.display = 'inline-block';
+                controls.style.display = 'none';
+            }, 2000);
+            return;
+        }
+    }
 
-            if (msg.type === 'init') {
-                const context = msg.context || "";
-                name = msg.name || name;
-                grade = msg.grade || grade;
-                mode = msg.mode || mode;
-                connectToGemini(context);
-                return;
-            }
+    if (riddleData && riddleData.question) {
+        riddleState.currentRiddle = riddleData;
+        window.currentRiddle = riddleData; 
+        
+        qText.innerText = riddleData.question;
+        window.updateNellMessage(riddleData.question, "normal", false, true);
+        
+        fetchRiddleData().then(data => { riddleState.nextRiddle = data; }).catch(err => console.warn("Pre-fetch failed", err));
+    } else {
+        qText.innerText = "エラーだにゃ…";
+    }
+};
 
-            if (!geminiWs || geminiWs.readyState !== WebSocket.OPEN) {
-                return;
-            }
+window.checkRiddleAnswer = function(userSpeech) {
+    if (!riddleState.currentRiddle || window.currentMode !== 'riddle') return false; 
+    
+    if (!document.getElementById('riddle-answer-display').classList.contains('hidden')) return false;
 
-            if (msg.toolResponse) {
-                geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
-                return;
+    const correct = riddleState.currentRiddle.answer;
+    const accepted = riddleState.currentRiddle.accepted_answers || [];
+    const userAnswer = userSpeech.trim();
+    
+    const status = document.getElementById('riddle-mic-status');
+    status.innerText = `「${userAnswer}」？`;
+    
+    // あいまい一致判定（部分一致 + 編集距離）
+    let isCorrect = false;
+    if (fuzzyContains(userAnswer, correct)) isCorrect = true;
+    else {
+        for (const ans of accepted) {
+            if (fuzzyContains(userAnswer, ans)) {
+                isCorrect = true;
+                break;
             }
-            if (msg.clientContent) {
-                geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
+        }
+    }
+    
+    if (isCorrect) {
+        if(window.safePlay) window.safePlay(window.sfxMaru);
+        window.updateNellMessage(`大正解だにゃ！答えは「${correct}」！カリカリ20個あげるにゃ！`, "excited", false, true);
+        window.giveGameReward(20);
+        window.showRiddleResult(true);
+        return true; 
+    } 
+    return false; 
+};
+
+window.giveUpRiddle = function() {
+    if (!riddleState.currentRiddle) return;
+    if(window.safePlay) window.safePlay(window.sfxBatu);
+    window.updateNellMessage(`答えは「${riddleState.currentRiddle.answer}」だったにゃ！`, "gentle", false, true);
+    window.showRiddleResult(false);
+};
+
+window.showRiddleResult = function(isWin) {
+    const controls = document.getElementById('riddle-controls');
+    const nextBtn = document.getElementById('next-riddle-btn');
+    const ansDisplay = document.getElementById('riddle-answer-display');
+    const ansText = document.getElementById('riddle-answer-text');
+    const giveUpBtn = controls.querySelector('button.gray-btn');
+
+    if(giveUpBtn) giveUpBtn.classList.add('hidden');
+    nextBtn.classList.remove('hidden');
+
+    if (riddleState.currentRiddle) {
+        ansText.innerText = riddleState.currentRiddle.answer;
+        ansDisplay.classList.remove('hidden');
+    }
+};
+
+// ==========================================
+// 5. ネル先生の漢字ドリル
+// ==========================================
+let kanjiState = { data: null, canvas: null, ctx: null, isDrawing: false, mode: 'writing', questionCount: 0, maxQuestions: 5 };
+
+window.showKanjiMenu = function() {
+    window.switchScreen('screen-kanji');
+    document.getElementById('kanji-menu-container').classList.remove('hidden');
+    document.getElementById('kanji-game-container').classList.add('hidden');
+    document.getElementById('kanji-menu-container').style.display = 'block';
+};
+
+window.startKanjiSet = function(mode) {
+    window.currentMode = 'kanji';
+    kanjiState.mode = mode;
+    kanjiState.questionCount = 0;
+    document.getElementById('kanji-menu-container').style.display = 'none';
+    document.getElementById('kanji-game-container').classList.remove('hidden');
+    const canvas = document.getElementById('kanji-canvas');
+    kanjiState.canvas = canvas; kanjiState.ctx = canvas.getContext('2d');
+    kanjiState.ctx.lineCap = 'round'; kanjiState.ctx.lineJoin = 'round'; kanjiState.ctx.lineWidth = 12; kanjiState.ctx.strokeStyle = '#000000';
+    const startDraw = (e) => { kanjiState.isDrawing = true; const pos = getPos(e); kanjiState.ctx.beginPath(); kanjiState.ctx.moveTo(pos.x, pos.y); e.preventDefault(); };
+    const draw = (e) => { if (!kanjiState.isDrawing) return; const pos = getPos(e); kanjiState.ctx.lineTo(pos.x, pos.y); kanjiState.ctx.stroke(); e.preventDefault(); };
+    const endDraw = () => { kanjiState.isDrawing = false; };
+    const getPos = (e) => { const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; return { x: clientX - rect.left, y: clientY - rect.top }; };
+    canvas.onmousedown = startDraw; canvas.onmousemove = draw; canvas.onmouseup = endDraw;
+    canvas.ontouchstart = startDraw; canvas.ontouchmove = draw; canvas.ontouchend = endDraw;
+    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+    window.nextKanjiQuestion();
+};
+
+window.nextKanjiQuestion = async function() {
+    if (kanjiState.questionCount >= kanjiState.maxQuestions) {
+        window.updateNellMessage("5問クリア！よくがんばったにゃ！", "excited", false, true);
+        setTimeout(() => { alert("おつかれさま！メニューに戻るにゃ。"); window.showKanjiMenu(); }, 2000);
+        return;
+    }
+    kanjiState.questionCount++;
+    document.getElementById('kanji-progress').innerText = `${kanjiState.questionCount}/${kanjiState.maxQuestions} 問目`;
+    document.getElementById('kanji-controls').style.display = 'none';
+    document.getElementById('next-kanji-btn').style.display = 'none';
+    document.getElementById('kanji-answer-display').classList.add('hidden');
+    const qText = document.getElementById('kanji-question-text');
+    qText.innerText = "問題を探してるにゃ…";
+    window.updateNellMessage("問題を探してるにゃ…", "thinking");
+    try {
+        const res = await fetch('/generate-kanji', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ grade: currentUser ? currentUser.grade : "1", mode: kanjiState.mode })
+        });
+        const data = await res.json();
+        if (data && data.kanji) {
+            kanjiState.data = data;
+            // ★追加: ミニテストデータをグローバルにセット（音声回答制限用）
+            window.currentMinitest = data; 
+            
+            qText.innerHTML = data.question_display;
+            window.updateNellMessage(data.question_speech, "normal", false, true);
+            const cvs = document.getElementById('kanji-canvas');
+            const mic = document.getElementById('kanji-mic-container');
+            const checkBtn = document.getElementById('check-kanji-btn');
+            const clearBtn = document.getElementById('clear-kanji-btn');
+            if (data.type === 'writing') {
+                cvs.classList.remove('hidden'); mic.classList.add('hidden'); checkBtn.style.display = 'inline-block'; clearBtn.style.display = 'inline-block'; window.clearKanjiCanvas();
+            } else {
+                cvs.classList.add('hidden'); mic.classList.remove('hidden'); checkBtn.style.display = 'none'; clearBtn.style.display = 'none';
             }
-            if (msg.base64Audio) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
-            }
-            if (msg.base64Image) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
-            }
-        } catch(e) { console.error("Client WS Handling Error:", e); }
+            document.getElementById('kanji-controls').style.display = 'flex';
+        } else { throw new Error("Invalid Kanji Data"); }
+    } catch (e) {
+        console.error(e); qText.innerText = "問題が出せないにゃ…"; window.updateNellMessage("ごめん、問題が出せないにゃ…", "sad");
+    }
+};
+
+window.clearKanjiCanvas = function() {
+    if (!kanjiState.ctx) return;
+    kanjiState.ctx.clearRect(0, 0, kanjiState.canvas.width, kanjiState.canvas.height);
+    kanjiState.ctx.save();
+    kanjiState.ctx.strokeStyle = '#eee'; kanjiState.ctx.lineWidth = 2; kanjiState.ctx.setLineDash([5, 5]);
+    kanjiState.ctx.beginPath(); kanjiState.ctx.moveTo(150, 0); kanjiState.ctx.lineTo(150, 300); kanjiState.ctx.moveTo(0, 150); kanjiState.ctx.lineTo(300, 150); kanjiState.ctx.stroke();
+    kanjiState.ctx.restore();
+};
+
+window.checkKanji = async function() {
+    if (!kanjiState.data || kanjiState.data.type !== 'writing') return;
+    window.updateNellMessage("採点するにゃ…じーっ…", "thinking");
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = kanjiState.canvas.width; tempCanvas.height = kanjiState.canvas.height;
+    const tCtx = tempCanvas.getContext('2d');
+    tCtx.fillStyle = '#ffffff'; tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    tCtx.drawImage(kanjiState.canvas, 0, 0);
+    const dataUrl = tempCanvas.toDataURL('image/png');
+    const base64 = dataUrl.split(',')[1];
+    try {
+        const res = await fetch('/check-kanji', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64, targetKanji: kanjiState.data.kanji })
+        });
+        const data = await res.json();
+        window.updateNellMessage(data.comment, data.is_correct ? "happy" : "gentle", false, true);
+        if (data.is_correct) {
+            if(window.safePlay) window.safePlay(window.sfxMaru);
+            window.giveGameReward(10);
+            document.getElementById('kanji-controls').style.display = 'none';
+            document.getElementById('next-kanji-btn').style.display = 'inline-block';
+            document.getElementById('kanji-answer-display').classList.remove('hidden');
+            document.getElementById('kanji-answer-text').innerText = kanjiState.data.kanji;
+            window.currentMinitest = null; // 解除
+        } else {
+            if(window.safePlay) window.safePlay(window.sfxBatu);
+        }
+    } catch(e) { window.updateNellMessage("よくわからなかったにゃ…", "thinking"); }
+};
+
+window.checkKanjiReading = function(text) {
+    if (!kanjiState.data || kanjiState.data.type !== 'reading') return false;
+    const correctHiragana = kanjiState.data.reading;
+    const correctKanji = kanjiState.data.kanji;
+    const correctKatakana = correctHiragana.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
+    const user = text.trim();
+    
+    // あいまい一致判定
+    let isCorrect = false;
+    if (fuzzyContains(user, correctHiragana) || fuzzyContains(user, correctKanji) || fuzzyContains(user, correctKatakana)) {
+        isCorrect = true;
+    }
+
+    if (isCorrect) {
+        if(window.safePlay) window.safePlay(window.sfxMaru);
+        window.updateNellMessage(`正解だにゃ！「${correctHiragana}」だにゃ！カリカリ10個あげるにゃ！`, "excited", false, true);
+        window.giveGameReward(10);
+        document.getElementById('kanji-controls').style.display = 'none';
+        document.getElementById('next-kanji-btn').style.display = 'inline-block';
+        document.getElementById('kanji-answer-display').classList.remove('hidden');
+        document.getElementById('kanji-answer-text').innerText = correctHiragana;
+        window.currentMinitest = null; // 解除
+        return true;
+    }
+    return false;
+};
+
+window.giveUpKanji = function() {
+    if (!kanjiState.data) return;
+    let ans = kanjiState.data.type === 'writing' ? kanjiState.data.kanji : kanjiState.data.reading;
+    window.updateNellMessage(`正解は「${ans}」だにゃ。次は頑張るにゃ！`, "gentle", false, true);
+    if(window.safePlay) window.safePlay(window.sfxBatu);
+    document.getElementById('kanji-controls').style.display = 'none';
+    document.getElementById('next-kanji-btn').style.display = 'inline-block';
+    document.getElementById('kanji-answer-display').classList.remove('hidden');
+    document.getElementById('kanji-answer-text').innerText = ans;
+    window.currentMinitest = null; // 解除
+};
+
+window.sendHttpTextInternal = function(text) {
+    fetch('/chat-dialogue', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text, name: currentUser ? currentUser.name : "生徒", history: window.chatSessionHistory, location: window.currentLocation, currentQuizData: window.currentQuiz })
+    }).then(res => res.json()).then(data => {
+        const speechText = data.speech || data.reply;
+        if(typeof window.updateNellMessage === 'function') { window.updateNellMessage(speechText, "normal", true, true); }
     });
+};
 
-    clientWs.on('close', () => {
-        if (geminiWs) geminiWs.close();
-    });
-});
+// ==========================================
+// 6. ネル先生のミニテスト
+// ==========================================
+
+let minitestState = {
+    currentQuestionIndex: 0,
+    maxQuestions: 5,
+    currentQuestionData: null,
+    subject: null,
+    score: 0
+};
+
+window.showMinitestMenu = function() {
+    window.switchScreen('screen-minitest');
+    window.currentMode = 'minitest';
+    // メニュー表示、ゲームエリア非表示
+    document.getElementById('minitest-subject-select').classList.remove('hidden');
+    document.getElementById('minitest-game-area').classList.add('hidden');
+};
+
+window.startMinitest = function(subject) {
+    minitestState.subject = subject;
+    minitestState.currentQuestionIndex = 0;
+    minitestState.score = 0;
+    
+    document.getElementById('minitest-subject-select').classList.add('hidden');
+    document.getElementById('minitest-game-area').classList.remove('hidden');
+    
+    window.updateNellMessage(`${subject}のテストだにゃ！がんばるにゃ！`, "excited");
+    
+    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+
+    window.nextMinitestQuestion();
+};
+
+window.nextMinitestQuestion = async function() {
+    if (minitestState.currentQuestionIndex >= minitestState.maxQuestions) {
+        // テスト終了
+        const resultMsg = `${minitestState.score}点だったにゃ！おつかれさま！`;
+        window.updateNellMessage(resultMsg, "happy", false, true);
+        alert(resultMsg);
+        window.currentMinitest = null; // 解除
+        window.showMinitestMenu();
+        return;
+    }
+
+    minitestState.currentQuestionIndex++;
+    document.getElementById('minitest-progress').innerText = `${minitestState.currentQuestionIndex} / ${minitestState.maxQuestions} 問目`;
+    
+    // UIリセット
+    const qText = document.getElementById('minitest-question');
+    const optionsDiv = document.getElementById('minitest-options');
+    const explanationArea = document.getElementById('minitest-explanation-area');
+    
+    qText.innerText = "問題を作成中にゃ...";
+    optionsDiv.innerHTML = "";
+    explanationArea.classList.add('hidden');
+    
+    try {
+        const res = await fetch('/generate-minitest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                grade: currentUser ? currentUser.grade : "1",
+                subject: minitestState.subject 
+            })
+        });
+        const data = await res.json();
+        
+        if (data.question && data.options) {
+            minitestState.currentQuestionData = data;
+            // ★追加: ミニテストデータをグローバルにセット（音声回答制限用）
+            window.currentMinitest = data; 
+            
+            // 問題表示
+            qText.innerText = data.question;
+            window.updateNellMessage("さあ、どっちが正解かにゃ？", "normal", false, true); 
+            
+            // 選択肢シャッフル表示
+            const shuffledOptions = [...data.options].sort(() => Math.random() - 0.5);
+            
+            shuffledOptions.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = "minitest-option-btn";
+                btn.innerText = opt;
+                btn.onclick = () => window.checkMinitestAnswer(opt, btn);
+                optionsDiv.appendChild(btn);
+            });
+            
+        } else {
+            throw new Error("Invalid Minitest Data");
+        }
+    } catch (e) {
+        console.error(e);
+        qText.innerText = "エラーが発生したにゃ。";
+    }
+};
+
+window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
+    // 二重押し防止
+    const buttons = document.querySelectorAll('.minitest-option-btn');
+    buttons.forEach(b => b.disabled = true);
+    
+    const correct = minitestState.currentQuestionData.answer;
+    const isCorrect = (selectedAnswer === correct);
+    
+    if (isCorrect) {
+        btnElement.classList.add('minitest-correct');
+        if(window.safePlay) window.safePlay(window.sfxMaru);
+        window.updateNellMessage("正解だにゃ！すごい！", "excited", false, true);
+        minitestState.score += 20; 
+        window.giveGameReward(10);
+    } else {
+        btnElement.classList.add('minitest-wrong');
+        buttons.forEach(b => {
+            if (b.innerText === correct) b.classList.add('minitest-correct');
+        });
+        if(window.safePlay) window.safePlay(window.sfxBatu);
+        window.updateNellMessage("残念...正解はこっちだにゃ。", "gentle", false, true);
+    }
+    
+    // 解説表示
+    const expArea = document.getElementById('minitest-explanation-area');
+    const expText = document.getElementById('minitest-explanation-text');
+    if (minitestState.currentQuestionData.explanation) {
+        expText.innerText = minitestState.currentQuestionData.explanation;
+        expArea.classList.remove('hidden');
+    } else {
+        expText.innerText = ""; 
+        expArea.classList.remove('hidden');
+    }
+};
