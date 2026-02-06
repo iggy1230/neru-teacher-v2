@@ -1,4 +1,4 @@
-// --- js/voice-service.js (完全版 v387.0: iPhone認識復旧＆ダイナミックノイズゲート版) ---
+// --- js/voice-service.js (完全版 v385.0: 会話中断抑制対応版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -25,14 +25,14 @@ function shouldInterrupt(text) {
     
     const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
     
-    // PC版用: 15文字以上の長いフレーズでない限り、割り込みとみなさない（相槌などはスルー）
+    // ★修正: 15文字以上の長いフレーズでない限り、割り込みとみなさない（相槌などはスルー）
     const isLongEnough = cleanText.length >= 15;
     
     return isStopCommand || isLongEnough;
 }
 
 // ==========================================
-// 常時聞き取り (Speech Recognition - PC/Android用)
+// 常時聞き取り (Speech Recognition)
 // ==========================================
 window.startAlwaysOnListening = function() {
     if (!('webkitSpeechRecognition' in window)) {
@@ -71,16 +71,18 @@ window.startAlwaysOnListening = function() {
             }
         }
 
-        // PC/Android版: ネル先生が話している最中の処理
+        // ★追加: ネル先生が話している最中の処理
         if (window.isNellSpeaking) {
             const textToCheck = finalTranscript || interimTranscript;
             
             if (shouldInterrupt(textToCheck)) {
+                // 制止ワードや長い文なら中断
                 console.log("[Interruption] Stopping audio.");
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
                 window.stopAudioPlayback();
             } else {
-                // 短い発言（相槌など）なら無視
+                // 短い発言（相槌など）なら無視して、API送信も行わない
+                console.log(`[Ignored] Speech ignored (too short): ${textToCheck}`);
                 return; 
             }
         }
@@ -141,7 +143,7 @@ window.startAlwaysOnListening = function() {
                 currentRiddleData = window.currentRiddle;
             } else if (window.currentMode === 'minitest' && window.currentMinitest) {
                 currentMinitestData = window.currentMinitest;
-            } else if (window.currentMode === 'kanji' && window.currentMinitest) { 
+            } else if (window.currentMode === 'kanji' && window.currentMinitest) { // 漢字もminitest変数で代用している場合
                 currentMinitestData = window.currentMinitest;
             }
 
@@ -160,8 +162,8 @@ window.startAlwaysOnListening = function() {
                         missingInfo: missingInfo,
                         memoryContext: memoryContext,
                         currentQuizData: currentQuizData,
-                        currentRiddleData: currentRiddleData, 
-                        currentMinitestData: currentMinitestData
+                        currentRiddleData: currentRiddleData, // ★追加
+                        currentMinitestData: currentMinitestData // ★追加
                     })
                 });
                 
@@ -223,7 +225,7 @@ window.stopAlwaysOnListening = function() {
 };
 
 // ==========================================
-// リアルタイムチャット (WebSocket - iPhone/Safari用)
+// リアルタイムチャット (WebSocket)
 // ==========================================
 
 window.stopLiveChat = function() {
@@ -493,27 +495,9 @@ window.startMicrophone = async function() {
         const source = window.audioContext.createMediaStreamSource(window.mediaStream); 
         window.workletNode = new AudioWorkletNode(window.audioContext, 'pcm-processor'); 
         source.connect(window.workletNode); 
-        
-        // ★修正: ダイナミック・ノイズゲート
         window.workletNode.port.onmessage = (event) => { 
             if (window.isMicMuted) return;
             if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) return; 
-            
-            // 音量（RMS）を簡易計算
-            const float32Data = event.data;
-            let sum = 0;
-            for (let i = 0; i < float32Data.length; i += 4) { // 処理軽減のため間引き
-                sum += float32Data[i] * float32Data[i];
-            }
-            const rms = Math.sqrt(sum / (float32Data.length / 4));
-
-            // ★ここが重要: 
-            // ネル先生が話している時は、閾値を高くする（＝かなり大きな声じゃないと反応しない）
-            // 普段は低くして反応を良くする
-            const threshold = window.isNellSpeaking ? 0.02 : 0.002;
-
-            if (rms < threshold) return;
-
             const downsampled = window.downsampleBuffer(event.data, window.audioContext.sampleRate, 16000); 
             window.liveSocket.send(JSON.stringify({ base64Audio: window.arrayBufferToBase64(window.floatTo16BitPCM(downsampled)) })); 
         }; 
