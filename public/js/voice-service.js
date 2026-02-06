@@ -1,4 +1,4 @@
-// --- js/voice-service.js (完全版 v386.0: iPhone会話中断バグ修正・ノイズゲート搭載版) ---
+// --- js/voice-service.js (完全版 v387.0: iPhone認識復旧＆ダイナミックノイズゲート版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -71,18 +71,16 @@ window.startAlwaysOnListening = function() {
             }
         }
 
-        // ネル先生が話している最中の処理（PC/Android）
+        // PC/Android版: ネル先生が話している最中の処理
         if (window.isNellSpeaking) {
             const textToCheck = finalTranscript || interimTranscript;
             
             if (shouldInterrupt(textToCheck)) {
-                // 制止ワードや長い文なら中断
                 console.log("[Interruption] Stopping audio.");
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
                 window.stopAudioPlayback();
             } else {
-                // 短い発言（相槌など）なら無視して、API送信も行わない
-                console.log(`[Ignored] Speech ignored (too short): ${textToCheck}`);
+                // 短い発言（相槌など）なら無視
                 return; 
             }
         }
@@ -496,26 +494,25 @@ window.startMicrophone = async function() {
         window.workletNode = new AudioWorkletNode(window.audioContext, 'pcm-processor'); 
         source.connect(window.workletNode); 
         
-        // ★修正ポイント: AudioWorkletからのメッセージ処理
+        // ★修正: ダイナミック・ノイズゲート
         window.workletNode.port.onmessage = (event) => { 
             if (window.isMicMuted) return;
             if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) return; 
             
-            // 【iPhone修正】ネル先生が話している間は音声を送信しない（強制ブロック）
-            // これにより、雑音による意図しない中断を防ぐ
-            if (window.isNellSpeaking) return;
-
-            // 【iPhone修正】ノイズゲート: 極端に小さい音（サーッというノイズ）は無視する
+            // 音量（RMS）を簡易計算
             const float32Data = event.data;
             let sum = 0;
-            // 処理負荷軽減のため間引きながら計算
-            for (let i = 0; i < float32Data.length; i += 4) { 
+            for (let i = 0; i < float32Data.length; i += 4) { // 処理軽減のため間引き
                 sum += float32Data[i] * float32Data[i];
             }
             const rms = Math.sqrt(sum / (float32Data.length / 4));
-            
-            // 閾値（環境に合わせて調整可能。0.01は静かな部屋のノイズレベル）
-            if (rms < 0.01) return;
+
+            // ★ここが重要: 
+            // ネル先生が話している時は、閾値を高くする（＝かなり大きな声じゃないと反応しない）
+            // 普段は低くして反応を良くする
+            const threshold = window.isNellSpeaking ? 0.02 : 0.002;
+
+            if (rms < threshold) return;
 
             const downsampled = window.downsampleBuffer(event.data, window.audioContext.sampleRate, 16000); 
             window.liveSocket.send(JSON.stringify({ base64Audio: window.arrayBufferToBase64(window.floatTo16BitPCM(downsampled)) })); 
