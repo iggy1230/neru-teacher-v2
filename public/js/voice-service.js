@@ -1,4 +1,4 @@
-// --- js/voice-service.js (完全版 v379.0: 問題モード会話制限対応版) ---
+// --- js/voice-service.js (完全版 v385.0: 会話中断抑制対応版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -17,12 +17,17 @@ function shouldInterrupt(text) {
     if (!text) return false;
     const cleanText = text.trim();
     if (cleanText.length === 0) return false;
+    
     const stopKeywords = [
         "違う", "ちがう", "待って", "まって", "ストップ", "やめて", "うるさい", "静か", "しずか",
         "ねえ", "ちょっと", "あの", "先生", "せんせい", "あのね", "stop", "wait"
     ];
+    
     const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
-    const isLongEnough = cleanText.length >= 6;
+    
+    // ★修正: 15文字以上の長いフレーズでない限り、割り込みとみなさない（相槌などはスルー）
+    const isLongEnough = cleanText.length >= 15;
+    
     return isStopCommand || isLongEnough;
 }
 
@@ -66,11 +71,19 @@ window.startAlwaysOnListening = function() {
             }
         }
 
+        // ★追加: ネル先生が話している最中の処理
         if (window.isNellSpeaking) {
-            if (shouldInterrupt(interimTranscript) || shouldInterrupt(finalTranscript)) {
+            const textToCheck = finalTranscript || interimTranscript;
+            
+            if (shouldInterrupt(textToCheck)) {
+                // 制止ワードや長い文なら中断
                 console.log("[Interruption] Stopping audio.");
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
                 window.stopAudioPlayback();
+            } else {
+                // 短い発言（相槌など）なら無視して、API送信も行わない
+                console.log(`[Ignored] Speech ignored (too short): ${textToCheck}`);
+                return; 
             }
         }
 
