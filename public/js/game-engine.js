@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v382.0) ---
+// --- js/game-engine.js (完全版 v384.0: 画像パス修正・キャッシュ対策版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -173,66 +173,311 @@ window.drawGame = function() {
 };
 
 // ==========================================
-// 2. VS ロボット掃除機
+// 2. VS ロボット掃除機 (画像対応・ライフ制版)
 // ==========================================
-let danmakuState = { running: false, ctx: null, canvas: null, width: 0, height: 0, score: 0, frame: 0, player: { x: 0, y: 0, r: 16 }, boss: { x: 0, y: 0, r: 24, angle: 0 }, bullets: [], touching: false };
-const catPixelArt = [ [0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0], [0,0,0,1,1,1,1,0,0,0,0,1,1,1,1,0], [0,0,1,1,1,1,1,1,0,0,1,1,1,1,1,1], [0,1,1,1,1,4,4,1,1,1,1,4,4,1,1,1], [1,1,1,1,4,4,4,4,1,1,4,4,4,4,1,1], [1,1,1,3,5,5,3,1,1,1,3,5,5,3,1,1], [1,1,1,5,3,3,5,1,1,1,5,3,3,5,1,1], [1,1,1,3,5,5,3,1,1,1,3,5,5,3,1,1], [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1], [1,1,1,1,2,2,2,3,3,2,2,2,1,1,1,1], [0,1,1,2,2,2,3,4,4,3,2,2,2,1,1,0], [0,0,1,2,2,2,4,4,4,4,2,2,2,1,0,0], [0,0,0,1,1,2,2,2,2,2,2,1,1,0,0,0], [0,0,0,0,0,4,4,4,4,4,4,0,0,0,0,0], [0,0,0,0,4,4,4,4,4,4,4,4,0,0,0,0], [0,0,0,0,4,0,0,4,4,0,0,4,0,0,0,0] ];
+// ★修正: ルート相対パスに変更
+const DANMAKU_ASSETS_PATH = '/assets/images/game/souji/';
 
-window.showDanmakuGame = function() {
-    window.switchScreen('screen-danmaku'); document.getElementById('mini-karikari-display').classList.remove('hidden');
-    if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
-    const canvas = document.getElementById('danmaku-canvas'); danmakuState.canvas = canvas; danmakuState.ctx = canvas.getContext('2d'); danmakuState.width = canvas.width; danmakuState.height = canvas.height;
-    danmakuState.running = false; danmakuState.score = 0; document.getElementById('danmaku-score').innerText = "0";
-    const startBtn = document.getElementById('start-danmaku-btn'); startBtn.disabled = false; startBtn.innerText = "スタート！";
-    window.updateNellMessage("ロボット掃除機からカリカリを守るにゃ！茶色は取って、他は避けるにゃ！", "excited", false);
-    const moveHandler = (e) => { if (!danmakuState.running) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let x = clientX - rect.left; let y = clientY - rect.top; x = Math.max(danmakuState.player.r, Math.min(danmakuState.width - danmakuState.player.r, x)); y = Math.max(danmakuState.player.r, Math.min(danmakuState.height - danmakuState.player.r, y)); danmakuState.player.x = x; danmakuState.player.y = y; };
-    canvas.onmousedown = (e) => { danmakuState.touching = true; moveHandler(e); }; canvas.onmousemove = (e) => { if(danmakuState.touching) moveHandler(e); }; canvas.onmouseup = () => { danmakuState.touching = false; }; canvas.onmouseleave = () => { danmakuState.touching = false; }; canvas.ontouchstart = (e) => { danmakuState.touching = true; moveHandler(e); }; canvas.ontouchmove = moveHandler; canvas.ontouchend = () => { danmakuState.touching = false; };
-    initDanmakuEntities(); drawDanmakuFrame();
+const danmakuImages = {
+    player: new Image(),
+    boss: new Image(),
+    goods: [],
+    bads: []
 };
 
-function initDanmakuEntities() { danmakuState.player.x = danmakuState.width / 2; danmakuState.player.y = danmakuState.height - 50; danmakuState.boss.x = danmakuState.width / 2; danmakuState.boss.y = 100; danmakuState.bullets = []; danmakuState.frame = 0; }
-window.startDanmakuGame = function() { if (danmakuState.running) return; initDanmakuEntities(); danmakuState.score = 0; document.getElementById('danmaku-score').innerText = "0"; danmakuState.running = true; document.getElementById('start-danmaku-btn').disabled = true; loopDanmakuGame(); };
-window.stopDanmakuGame = function() { danmakuState.running = false; };
-function loopDanmakuGame() { if (!danmakuState.running) return; updateDanmaku(); drawDanmakuFrame(); requestAnimationFrame(loopDanmakuGame); }
+// Goodアイテム定義
+const goodItemsDef = [
+    { file: 'kari1_dot.png', score: 10, weight: 60 },
+    { file: 'kari100_dot.png', score: 50, weight: 30 },
+    { file: 'churu_dot.png', score: 100, weight: 10 }
+];
+// Badアイテム定義
+const badItemsDef = [
+    'soccerball_dot.png', 'baseball_dot.png', 'coffee_dot.png',
+    'can_dot.png', 'mouse_dot.png', 'konchu_dot.png', 'choco_dot.png'
+];
+
+let areDanmakuImagesLoaded = false;
+
+function loadDanmakuImages() {
+    if (areDanmakuImagesLoaded) return;
+    
+    // ★キャッシュ対策のタイムスタンプを追加
+    const ts = new Date().getTime();
+    
+    danmakuImages.player.crossOrigin = "Anonymous";
+    danmakuImages.player.src = DANMAKU_ASSETS_PATH + 'neru_dot.png?v=' + ts;
+    
+    danmakuImages.boss.crossOrigin = "Anonymous";
+    danmakuImages.boss.src = DANMAKU_ASSETS_PATH + 'runba_dot.png?v=' + ts;
+    
+    // Goodアイテム読み込み
+    danmakuImages.goods = goodItemsDef.map(def => {
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        img.src = DANMAKU_ASSETS_PATH + def.file + '?v=' + ts;
+        return { img: img, score: def.score, weight: def.weight };
+    });
+
+    // Badアイテム読み込み
+    danmakuImages.bads = badItemsDef.map(file => {
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        img.src = DANMAKU_ASSETS_PATH + file + '?v=' + ts;
+        return img;
+    });
+
+    areDanmakuImagesLoaded = true;
+}
+
+let danmakuState = { 
+    running: false, 
+    ctx: null, 
+    canvas: null, 
+    width: 0, 
+    height: 0, 
+    score: 0, 
+    life: 3, 
+    frame: 0, 
+    invincibleTimer: 0, 
+    player: { x: 0, y: 0, w: 40, h: 40 }, 
+    boss: { x: 0, y: 0, w: 60, h: 60, angle: 0 }, 
+    bullets: [], 
+    touching: false 
+};
+
+window.showDanmakuGame = function() {
+    window.switchScreen('screen-danmaku'); 
+    document.getElementById('mini-karikari-display').classList.remove('hidden');
+    if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
+    
+    loadDanmakuImages(); 
+
+    const canvas = document.getElementById('danmaku-canvas'); 
+    danmakuState.canvas = canvas; 
+    danmakuState.ctx = canvas.getContext('2d'); 
+    danmakuState.width = canvas.width; 
+    danmakuState.height = canvas.height;
+    
+    danmakuState.running = false; 
+    danmakuState.score = 0; 
+    danmakuState.life = 3;
+    document.getElementById('danmaku-score').innerText = "0";
+    
+    const startBtn = document.getElementById('start-danmaku-btn'); 
+    startBtn.disabled = false; 
+    startBtn.innerText = "スタート！";
+    
+    window.updateNellMessage("ロボット掃除機をよけてアイテムを集めるにゃ！3回ぶつかるとゲームオーバーだにゃ！", "excited", false);
+    
+    const moveHandler = (e) => { 
+        if (!danmakuState.running) return; 
+        e.preventDefault(); 
+        const rect = canvas.getBoundingClientRect(); 
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX; 
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY; 
+        let x = clientX - rect.left; 
+        let y = clientY - rect.top; 
+        x = Math.max(danmakuState.player.w/2, Math.min(danmakuState.width - danmakuState.player.w/2, x)); 
+        y = Math.max(danmakuState.player.h/2, Math.min(danmakuState.height - danmakuState.player.h/2, y)); 
+        danmakuState.player.x = x; 
+        danmakuState.player.y = y; 
+    };
+    canvas.onmousedown = (e) => { danmakuState.touching = true; moveHandler(e); }; 
+    canvas.onmousemove = (e) => { if(danmakuState.touching) moveHandler(e); }; 
+    canvas.onmouseup = () => { danmakuState.touching = false; }; 
+    canvas.onmouseleave = () => { danmakuState.touching = false; }; 
+    canvas.ontouchstart = (e) => { danmakuState.touching = true; moveHandler(e); }; 
+    canvas.ontouchmove = moveHandler; 
+    canvas.ontouchend = () => { danmakuState.touching = false; };
+    
+    initDanmakuEntities(); 
+    drawDanmakuFrame();
+};
+
+function initDanmakuEntities() { 
+    danmakuState.player.x = danmakuState.width / 2; 
+    danmakuState.player.y = danmakuState.height - 60; 
+    danmakuState.boss.x = danmakuState.width / 2; 
+    danmakuState.boss.y = 80; 
+    danmakuState.bullets = []; 
+    danmakuState.frame = 0; 
+    danmakuState.life = 3;
+    danmakuState.invincibleTimer = 0;
+}
+
+window.startDanmakuGame = function() { 
+    if (danmakuState.running) return; 
+    initDanmakuEntities(); 
+    danmakuState.score = 0; 
+    document.getElementById('danmaku-score').innerText = "0"; 
+    danmakuState.running = true; 
+    document.getElementById('start-danmaku-btn').disabled = true; 
+    loopDanmakuGame(); 
+};
+
+window.stopDanmakuGame = function() { 
+    danmakuState.running = false; 
+};
+
+function loopDanmakuGame() { 
+    if (!danmakuState.running) return; 
+    updateDanmaku(); 
+    drawDanmakuFrame(); 
+    requestAnimationFrame(loopDanmakuGame); 
+}
+
 function updateDanmaku() {
-    danmakuState.frame++; danmakuState.boss.x = (danmakuState.width / 2) + Math.sin(danmakuState.frame * 0.02) * 100; danmakuState.boss.angle += 0.05; 
-    let spawnRate = Math.max(10, 60 - Math.floor(danmakuState.score / 50)); if (danmakuState.frame % spawnRate === 0) spawnBullet();
+    danmakuState.frame++; 
+    
+    danmakuState.boss.x = (danmakuState.width / 2) + Math.sin(danmakuState.frame * 0.02) * (danmakuState.width / 3); 
+    
+    let spawnRate = Math.max(15, 60 - Math.floor(danmakuState.score / 100)); 
+    if (danmakuState.frame % spawnRate === 0) spawnBullet();
+    
+    if (danmakuState.invincibleTimer > 0) danmakuState.invincibleTimer--;
+
     for (let i = danmakuState.bullets.length - 1; i >= 0; i--) {
-        let b = danmakuState.bullets[i]; b.x += b.vx; b.y += b.vy;
-        if (b.y > danmakuState.height + 20 || b.x < -20 || b.x > danmakuState.width + 20 || b.y < -20) { danmakuState.bullets.splice(i, 1); continue; }
-        let dx = b.x - danmakuState.player.x; let dy = b.y - danmakuState.player.y; let dist = Math.sqrt(dx*dx + dy*dy);
-        if (dist < danmakuState.player.r + b.r - 4) {
-            if (b.type === 'good') { danmakuState.score += 10; document.getElementById('danmaku-score').innerText = danmakuState.score; if(window.safePlay) window.safePlay(window.sfxHit); danmakuState.bullets.splice(i, 1); } 
-            else { gameOverDanmaku(); return; }
+        let b = danmakuState.bullets[i]; 
+        b.x += b.vx; 
+        b.y += b.vy;
+        
+        if (b.y > danmakuState.height + 30 || b.x < -30 || b.x > danmakuState.width + 30 || b.y < -30) { 
+            danmakuState.bullets.splice(i, 1); 
+            continue; 
+        }
+        
+        let itemRadius = 16;
+        let playerRadius = 12; 
+        
+        let dx = b.x - danmakuState.player.x; 
+        let dy = b.y - danmakuState.player.y; 
+        let dist = Math.sqrt(dx*dx + dy*dy);
+        
+        if (dist < playerRadius + itemRadius) {
+            if (b.type === 'good') { 
+                danmakuState.score += b.scoreVal; 
+                document.getElementById('danmaku-score').innerText = danmakuState.score; 
+                if(window.safePlay) window.safePlay(window.sfxHit); 
+                danmakuState.bullets.splice(i, 1); 
+            } else { 
+                if (danmakuState.invincibleTimer <= 0) {
+                    danmakuState.life--;
+                    if(window.safePlay) window.safePlay(window.sfxBatu); 
+                    danmakuState.invincibleTimer = 60; 
+                    
+                    if (danmakuState.life <= 0) {
+                        gameOverDanmaku(); 
+                        return;
+                    }
+                }
+            }
         }
     }
 }
+
 function spawnBullet() {
-    let type = Math.random() < 0.5 ? 'good' : 'bad'; let content = '🍖';
-    if (type === 'bad') { const bads = ['🐭', '⚽', '⚾']; content = bads[Math.floor(Math.random() * bads.length)]; }
-    let angle = Math.atan2(danmakuState.player.y - danmakuState.boss.y, danmakuState.player.x - danmakuState.boss.x); angle += (Math.random() - 0.5) * 1.0; 
-    let speed = 2 + Math.random() * 2 + (danmakuState.score / 500); 
-    danmakuState.bullets.push({ x: danmakuState.boss.x, y: danmakuState.boss.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, r: 12, type: type, content: content });
+    let type = Math.random() < 0.4 ? 'good' : 'bad'; 
+    let bulletObj = {};
+    
+    if (type === 'good') {
+        const rand = Math.random() * 100;
+        let cumulative = 0;
+        let selected = danmakuImages.goods[0];
+        for (let g of danmakuImages.goods) {
+            cumulative += g.weight;
+            if (rand < cumulative) {
+                selected = g;
+                break;
+            }
+        }
+        bulletObj = { type: 'good', img: selected.img, scoreVal: selected.score };
+    } else {
+        const randIdx = Math.floor(Math.random() * danmakuImages.bads.length);
+        bulletObj = { type: 'bad', img: danmakuImages.bads[randIdx], scoreVal: 0 };
+    }
+
+    let angle = Math.atan2(danmakuState.player.y - danmakuState.boss.y, danmakuState.player.x - danmakuState.boss.x); 
+    angle += (Math.random() - 0.5) * 0.8; 
+    
+    let speed = 2 + Math.random() * 3 + (danmakuState.score / 1000); 
+    
+    danmakuState.bullets.push({ 
+        x: danmakuState.boss.x, 
+        y: danmakuState.boss.y, 
+        vx: Math.cos(angle) * speed, 
+        vy: Math.sin(angle) * speed, 
+        ...bulletObj
+    });
 }
+
 function gameOverDanmaku() {
-    danmakuState.running = false; if(window.safePlay) window.safePlay(window.sfxOver);
-    if (danmakuState.score > 0) { window.giveGameReward(danmakuState.score); window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${danmakuState.score}個ゲットだにゃ！`, "sad"); } 
-    else { window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad"); }
-    const startBtn = document.getElementById('start-danmaku-btn'); startBtn.disabled = false; startBtn.innerText = "もう一回！";
+    danmakuState.running = false; 
+    if(window.safePlay) window.safePlay(window.sfxOver);
+    
+    if (danmakuState.score > 0) { 
+        window.giveGameReward(danmakuState.score); 
+        window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${danmakuState.score}個ゲットだにゃ！`, "sad"); 
+    } else { 
+        window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad"); 
+    }
+    const startBtn = document.getElementById('start-danmaku-btn'); 
+    startBtn.disabled = false; 
+    startBtn.innerText = "もう一回！";
 }
+
 function drawDanmakuFrame() {
-    const ctx = danmakuState.ctx; const w = danmakuState.width; const h = danmakuState.height; ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "#f5deb3"; ctx.fillRect(0, 0, w, h); ctx.strokeStyle = "#deb887"; ctx.lineWidth = 2; for(let i=0; i<h; i+=40) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke(); }
-    ctx.save(); ctx.translate(danmakuState.boss.x, danmakuState.boss.y); ctx.rotate(danmakuState.boss.angle);
-    ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI*2); ctx.fillStyle = "#333"; ctx.fill(); ctx.strokeStyle = "#ccc"; ctx.lineWidth = 3; ctx.stroke();
-    ctx.beginPath(); ctx.arc(0, -10, 4, 0, Math.PI*2); ctx.fillStyle = "#0f0"; ctx.fill(); ctx.restore();
-    ctx.save(); ctx.translate(danmakuState.player.x, danmakuState.player.y);
-    const pixelSize = 2; const catW = 16 * pixelSize; const catH = 16 * pixelSize; const drawX = -catW / 2; const drawY = -catH / 2;
-    const colors = [null, "#ffb74d", "#ffffff", "#000000", "#5d4037", "#fdd835"];
-    for (let r = 0; r < 16; r++) { for (let c = 0; c < 16; c++) { const colorIndex = catPixelArt[r][c]; if (colorIndex !== 0) { ctx.fillStyle = colors[colorIndex]; ctx.fillRect(drawX + c * pixelSize, drawY + r * pixelSize, pixelSize, pixelSize); } } }
-    ctx.restore();
-    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = "24px sans-serif"; ctx.fillStyle = "#000000";
-    danmakuState.bullets.forEach(b => { ctx.fillText(b.content, b.x, b.y); });
+    const ctx = danmakuState.ctx; 
+    const w = danmakuState.width; 
+    const h = danmakuState.height; 
+    
+    ctx.clearRect(0, 0, w, h);
+    
+    ctx.fillStyle = "#fff9c4"; 
+    ctx.fillRect(0, 0, w, h); 
+    
+    ctx.strokeStyle = "#ffe082"; 
+    ctx.lineWidth = 2; 
+    for(let i=0; i<h; i+=40) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke(); }
+    
+    // Boss (Robot Cleaner)
+    if (danmakuImages.boss.complete && danmakuImages.boss.naturalWidth > 0) {
+        ctx.drawImage(danmakuImages.boss, danmakuState.boss.x - 30, danmakuState.boss.y - 30, 60, 60);
+    } else {
+        // Fallback: Gray circle
+        ctx.fillStyle = "gray"; ctx.beginPath(); ctx.arc(danmakuState.boss.x, danmakuState.boss.y, 30, 0, Math.PI*2); ctx.fill();
+    }
+
+    if (danmakuState.invincibleTimer > 0 && Math.floor(danmakuState.frame / 4) % 2 === 0) {
+        // 無敵時間中の点滅（描画スキップ）
+    } else {
+        // Player (Nelu)
+        if (danmakuImages.player.complete && danmakuImages.player.naturalWidth > 0) {
+            ctx.drawImage(danmakuImages.player, danmakuState.player.x - 20, danmakuState.player.y - 20, 40, 40);
+        } else {
+            // Fallback: Orange circle
+            ctx.fillStyle = "orange"; ctx.beginPath(); ctx.arc(danmakuState.player.x, danmakuState.player.y, 20, 0, Math.PI*2); ctx.fill();
+        }
+    }
+
+    // Bullets (Items)
+    danmakuState.bullets.forEach(b => {
+        if (b.img && b.img.complete && b.img.naturalWidth > 0) {
+            ctx.drawImage(b.img, b.x - 16, b.y - 16, 32, 32);
+        } else {
+            // Fallback
+            ctx.fillStyle = b.type === 'good' ? "blue" : "red";
+            ctx.beginPath(); ctx.arc(b.x, b.y, 10, 0, Math.PI*2); ctx.fill();
+        }
+    });
+
+    // Life
+    ctx.textAlign = "left"; 
+    ctx.textBaseline = "top"; 
+    ctx.font = "20px sans-serif"; 
+    ctx.fillStyle = "#ff5252";
+    let lifeStr = "❤️".repeat(Math.max(0, danmakuState.life));
+    ctx.fillText("LIFE: " + lifeStr, 10, 10);
 }
 
 // ==========================================
@@ -1011,7 +1256,7 @@ window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
     if (isCorrect) {
         btnElement.classList.add('minitest-correct');
         if(window.safePlay) window.safePlay(window.sfxMaru);
-        window.updateNellMessage("正解だにゃ！すごい！", "excited", false, true);
+        window.updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false, true);
         minitestState.score += 20; 
         window.giveGameReward(10);
     } else {
