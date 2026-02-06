@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v381.0: メモリ最適化版) ---
+// --- js/state/memory.js (v326.0: レアリティ保存対応版) ---
 
 (function(global) {
     const Memory = {};
@@ -60,11 +60,7 @@
 
     Memory.saveUserProfile = async function(userId, profile) {
         if (Array.isArray(profile)) profile = profile[0] || Memory.createEmptyProfile();
-        
-        // ★最適化: プロフィール保存後に変数を解放
-        const profileStr = JSON.stringify(profile);
-        localStorage.setItem(`nell_profile_${userId}`, profileStr);
-        
+        localStorage.setItem(`nell_profile_${userId}`, JSON.stringify(profile));
         if (typeof db !== 'undefined' && db !== null) {
             try {
                 await db.collection("users").doc(userId).set({ profile: profile }, { merge: true });
@@ -75,8 +71,6 @@
     Memory.updateProfileFromChat = async function(userId, chatLog) {
         if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
-        
-        // ★最適化: コレクションデータは重いので更新チェックから除外して送信サイズを減らす
         const { collection, ...profileForAnalysis } = currentProfile;
         
         try {
@@ -93,7 +87,7 @@
                 
                 const updatedProfile = {
                     ...newProfile,
-                    collection: collection || [] // 元のコレクションを戻す
+                    collection: collection || [] 
                 };
                 
                 await Memory.saveUserProfile(userId, updatedProfile);
@@ -151,7 +145,7 @@
                 description: description,
                 realDescription: realDescription,
                 location: location,
-                rarity: rarity
+                rarity: rarity // ★保存
             };
 
             profile.collection.unshift(newItem); 
@@ -166,11 +160,6 @@
                 }
             }
             await Memory.saveUserProfile(userId, profile);
-            
-            // ★最適化: 処理が終わったら変数を解放
-            imageUrl = null;
-            imageBase64 = null;
-            
         } catch (e) {
             console.error("[Memory] Add Collection Error:", e);
         }
