@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v381.0: 図鑑軽量化・メモリ最適化版) ---
+// --- js/ui/ui.js (完全版 v381.0: ロビー遷移時の完全停止対応版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -134,18 +134,31 @@ window.backToGate = function() {
 };
 
 window.backToLobby = function(suppressGreeting = false) {
-    switchScreen('screen-lobby');
+    // ★重要: ロビーに戻るとき、すべてのバックグラウンドプロセスを強制停止
     
-    // ★最適化: 不要なバックグラウンド処理を確実に停止
+    // 1. 音声再生の停止 (TTS, LiveStream, SFX)
+    if (typeof window.stopAudioPlayback === 'function') window.stopAudioPlayback(); // Voice Service (Web Audio)
+    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();   // Audio Service (TTS fetch)
+    
+    // 2. 音声認識・WebSocketの停止
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
     if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
+    
+    // 3. カメラの停止
     if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
-    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-
-    // ゲーム停止
+    
+    // 4. ゲームループの停止
     if (typeof window.stopDanmakuGame === 'function') window.stopDanmakuGame();
+    window.gameRunning = false; // カリカリキャッチ用
 
+    // 5. 分析フラグのリセット
     if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
+    
+    // 6. モードのリセット
+    window.currentMode = null;
+
+    // 画面切り替え
+    switchScreen('screen-lobby');
 
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
     if (shouldGreet && typeof currentUser !== 'undefined' && currentUser) {
