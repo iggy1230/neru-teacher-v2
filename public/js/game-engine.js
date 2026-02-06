@@ -1,4 +1,6 @@
-// --- js/game-engine.js (完全版 v379.0: 問題モード会話制限対応版) ---
+--- START OF FILE game-engine.js ---
+
+// --- js/game-engine.js (完全版 v380.0: ウルトラクイズ問題重複回避・住所ルール対応版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -247,7 +249,8 @@ let quizState = {
     nextQuizData: null,
     genre: "全ジャンル",
     level: 1, // ★現在のプレイレベル
-    isFinished: false
+    isFinished: false,
+    history: [] // ★追加: 過去の正解リスト（重複チェック用）
 };
 
 async function fetchQuizData(genre, level = 1) {
@@ -343,6 +346,7 @@ window.startQuizSet = async function(genre, level) {
     quizState.isFinished = false;
     quizState.currentQuizData = null;
     quizState.nextQuizData = null;
+    quizState.history = []; // ★履歴初期化
 
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-level-select').classList.add('hidden');
@@ -382,23 +386,51 @@ window.nextQuiz = async function() {
     nextBtn.classList.add('hidden');
     optionsContainer.innerHTML = ""; 
     
-    // データ取得
+    // ★データ取得と重複チェック
     let quizData = null;
-    if (quizState.nextQuizData) {
-        quizData = quizState.nextQuizData;
-        quizState.nextQuizData = null;
-    } else {
-        try {
-            quizData = await fetchQuizData(quizState.genre, quizState.level);
-        } catch (e) {
-            console.error(e);
-            qText.innerText = "問題が作れなかったにゃ…";
-            setTimeout(() => window.showQuizGame(), 2000);
-            return;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+
+    while (retryCount < MAX_RETRIES) {
+        if (quizState.nextQuizData) {
+            quizData = quizState.nextQuizData;
+            quizState.nextQuizData = null;
+        } else {
+            try {
+                quizData = await fetchQuizData(quizState.genre, quizState.level);
+            } catch (e) {
+                console.error(e);
+                break;
+            }
+        }
+
+        if (quizData && quizData.answer) {
+            // 重複チェック: 履歴に含まれているか
+            const isDuplicate = quizState.history.some(h => h === quizData.answer);
+            if (!isDuplicate) {
+                // 重複していないならOK
+                break;
+            } else {
+                console.log("Duplicate quiz detected. Retrying...", quizData.answer);
+                quizData = null; // 破棄してリトライ
+                retryCount++;
+            }
+        } else {
+            break; // データ不正ならループ抜ける
         }
     }
 
+    if (!quizData) {
+        qText.innerText = "問題が作れなかったにゃ…";
+        setTimeout(() => window.showQuizGame(), 2000);
+        return;
+    }
+
     if (quizData && quizData.question) {
+        // ★履歴に追加 (最大5件)
+        quizState.history.push(quizData.answer);
+        if (quizState.history.length > 5) quizState.history.shift();
+
         window.currentQuiz = quizData; 
         quizState.currentQuizData = quizData;
         
