@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v391.0: 神経衰弱演出強化版) ---
+// --- js/game-engine.js (完全版 v391.1: 神経衰弱演出強化版) ---
 
 // ==========================================
 // 共通ヘルパー
@@ -518,7 +518,7 @@ function checkMatch() {
             
             if (memoryGameState.turn === 'player') {
                 window.updateNellMessage("おっ！やったにゃ！", "happy");
-                // ★修正: プレイヤーが正解した場合のみ、大きく表示＆読み上げ
+                // ★修正: プレイヤーが正解した場合のみ、大きく表示＆読み上げ (async呼び出し)
                 showMatchedBigCard(card1);
             } else {
                 window.updateNellMessage("へへーん！どうだにゃ！", "excited");
@@ -555,8 +555,8 @@ function checkMatch() {
     }
 }
 
-// ★新規: 正解カードを大きく表示する関数
-window.showMatchedBigCard = function(card) {
+// ★新規: 正解カードを大きく表示する関数（async化して発話を待つ）
+window.showMatchedBigCard = async function(card) {
     const overlay = document.getElementById('memory-match-overlay');
     const container = document.getElementById('memory-match-card-container');
     if (!overlay || !container) {
@@ -564,18 +564,27 @@ window.showMatchedBigCard = function(card) {
         return;
     }
     
-    // 解説文を読み上げる
-    let speech = card.description || "やったにゃ！ゲットだにゃ！";
-    window.updateNellMessage(speech, "happy", false, true);
-
     // 元の画像を表示
     container.innerHTML = `<img src="${card.imageUrl}" style="width:100%; height:auto; border-radius:15px; box-shadow:0 0 20px rgba(255,235,59,0.8); border:4px solid #ffeb3b;">`;
     overlay.classList.remove('hidden');
+
+    // 解説文を読み上げる (awaitで完了を待つ)
+    let speech = card.description || "やったにゃ！ゲットだにゃ！";
     
-    // ★修正: 10秒後に自動的に閉じる
+    // 保険のタイマー (極端に長い場合やエラー時は30秒で強制終了)
+    if (window.matchOverlayTimer) clearTimeout(window.matchOverlayTimer);
     window.matchOverlayTimer = setTimeout(() => {
         closeMatchedBigCard();
-    }, 10000);
+    }, 30000);
+
+    // 発話開始＆待機 (speak: true, wait: true の想定)
+    await window.updateNellMessage(speech, "happy", false, true);
+
+    // 読み上げが終わったら自動で閉じる
+    // ただし、既に閉じられていないかチェック（タップでスキップされた場合）
+    if (!overlay.classList.contains('hidden')) {
+        closeMatchedBigCard();
+    }
 };
 
 window.closeMatchedBigCard = function() {
@@ -583,7 +592,7 @@ window.closeMatchedBigCard = function() {
     if (overlay) overlay.classList.add('hidden');
     if (window.matchOverlayTimer) clearTimeout(window.matchOverlayTimer);
     
-    // 読み上げ中断
+    // 読み上げ中断（スキップ時）
     if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
     
     finishMatchProcess();
