@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v389.0: お宝神経衰弱実装版) ---
+// --- js/game-engine.js (完全版 v390.0: 神経衰弱UI改善版) ---
 
 // ==========================================
 // 共通ヘルパー
@@ -307,7 +307,7 @@ window.showRiddleResult = function(isWin) { const controls = document.getElement
 // ... (省略: showMinitestMenu, startMinitest, nextMinitestQuestion, checkMinitestAnswer etc. は元のまま)
 
 // ==========================================
-// ★新規: お宝神経衰弱 (Memory Game)
+// ★新規: お宝神経衰弱 (Memory Game) - 改良版
 // ==========================================
 
 // ゲーム状態管理
@@ -316,11 +316,11 @@ let memoryGameState = {
     turn: 'player', // 'player' | 'nell'
     scores: { player: 0, nell: 0 },
     difficulty: 'weak',
-    nellMemory: {}, // Nellの記憶 { index: imageId }
-    flippedCards: [], // 現在めくられているカードのインデックス
+    nellMemory: {}, 
+    flippedCards: [], 
     matchedPairs: 0,
     totalPairs: 10,
-    isProcessing: false, // アニメーション中などのガード
+    isProcessing: false, 
     rewardMultiplier: 10
 };
 
@@ -328,6 +328,7 @@ window.showMemoryGameMenu = function() {
     window.switchScreen('screen-memory-game');
     document.getElementById('memory-difficulty-select').classList.remove('hidden');
     document.getElementById('memory-game-board').classList.add('hidden');
+    document.getElementById('memory-match-overlay').classList.add('hidden');
     window.updateNellMessage("お宝神経衰弱だにゃ！強さを選んでにゃ！", "excited");
 };
 
@@ -342,20 +343,16 @@ window.startMemoryGame = async function(difficulty) {
     memoryGameState.isProcessing = false;
     memoryGameState.nellMemory = {};
 
-    // 報酬倍率設定
     if (difficulty === 'weak') memoryGameState.rewardMultiplier = 10;
     else if (difficulty === 'normal') memoryGameState.rewardMultiplier = 20;
     else memoryGameState.rewardMultiplier = 50;
 
-    // 図鑑からカードを取得
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
     const collection = profile.collection || [];
     
-    // カードデッキ作成
     const deck = await createMemoryDeck(collection);
     memoryGameState.deck = deck;
 
-    // UI初期化
     document.getElementById('memory-difficulty-select').classList.add('hidden');
     document.getElementById('memory-game-board').classList.remove('hidden');
     updateMemoryScoreUI();
@@ -368,18 +365,15 @@ window.startMemoryGame = async function(difficulty) {
 async function createMemoryDeck(collection) {
     let images = [];
     
-    // 実際のコレクションから最大10枚取得
     if (collection.length > 0) {
-        // シャッフルして取得
         const shuffled = [...collection].sort(() => 0.5 - Math.random());
         images = shuffled.slice(0, 10).map(item => ({
-            id: item.date, // 一意なIDとして使用
+            id: item.date, 
             imageUrl: item.image,
             name: item.name
         }));
     }
 
-    // 足りない分をダミーで埋める
     while (images.length < 10) {
         const dummyId = `dummy_${images.length}`;
         const dummyUrl = await createDummyCardImage(images.length + 1);
@@ -390,18 +384,14 @@ async function createMemoryDeck(collection) {
         });
     }
 
-    // ペアを作成してシャッフル
     let deck = [];
     images.forEach((img, index) => {
-        // 2枚ずつ追加
         deck.push({ ...img, index: null, isFlipped: false, isMatched: false });
         deck.push({ ...img, index: null, isFlipped: false, isMatched: false });
     });
 
-    // シャッフル
     deck.sort(() => 0.5 - Math.random());
     
-    // インデックス付与
     deck.forEach((card, idx) => {
         card.index = idx;
     });
@@ -409,7 +399,6 @@ async function createMemoryDeck(collection) {
     return deck;
 }
 
-// ダミー画像生成（Canvas）
 function createDummyCardImage(num) {
     const canvas = document.createElement('canvas');
     canvas.width = 300;
@@ -436,6 +425,7 @@ function createDummyCardImage(num) {
     return Promise.resolve(canvas.toDataURL());
 }
 
+// ★修正: HTML生成部分を変更（写真ズーム＋名前表示）
 function renderMemoryBoard() {
     const grid = document.getElementById('memory-grid');
     grid.innerHTML = "";
@@ -445,11 +435,13 @@ function renderMemoryBoard() {
         cardEl.className = `memory-card ${card.isFlipped || card.isMatched ? 'flipped' : ''} ${card.isMatched ? 'memory-matched' : ''}`;
         cardEl.onclick = () => handleCardClick(idx);
         
+        // CSSで写真部分だけを切り抜くための構造
         cardEl.innerHTML = `
             <div class="memory-card-inner">
                 <div class="memory-card-front">?</div>
                 <div class="memory-card-back">
-                    <img src="${card.imageUrl}" alt="card">
+                    <div class="memory-card-photo" style="background-image: url('${card.imageUrl}')"></div>
+                    <div class="memory-card-label">${card.name}</div>
                 </div>
             </div>
         `;
@@ -473,7 +465,6 @@ function updateMemoryScoreUI() {
     }
 }
 
-// プレイヤーのクリック処理
 function handleCardClick(index) {
     if (memoryGameState.turn !== 'player') return;
     if (memoryGameState.isProcessing) return;
@@ -481,10 +472,8 @@ function handleCardClick(index) {
     const card = memoryGameState.deck[index];
     if (card.isFlipped || card.isMatched) return;
 
-    // カードをめくる
     flipCard(index);
     
-    // 2枚目なら判定
     if (memoryGameState.flippedCards.length === 2) {
         checkMatch();
     }
@@ -495,13 +484,11 @@ function flipCard(index) {
     card.isFlipped = true;
     memoryGameState.flippedCards.push(index);
     
-    // DOM更新
     const cardEls = document.querySelectorAll('.memory-card');
     if (cardEls[index]) cardEls[index].classList.add('flipped');
     
     if (window.sfxPaddle) window.safePlay(window.sfxPaddle);
 
-    // AIに記憶させる
     rememberCard(index, card.id);
 }
 
@@ -516,42 +503,29 @@ function checkMatch() {
     const isMatch = (card1.id === card2.id);
     
     if (isMatch) {
-        // マッチした場合
         setTimeout(() => {
             card1.isMatched = true;
             card2.isMatched = true;
             memoryGameState.scores[memoryGameState.turn]++;
             memoryGameState.matchedPairs++;
             
-            // エフェクト
             const cardEls = document.querySelectorAll('.memory-card');
             if(cardEls[idx1]) cardEls[idx1].classList.add('memory-matched');
             if(cardEls[idx2]) cardEls[idx2].classList.add('memory-matched');
             
             if (window.sfxMaru) window.safePlay(window.sfxMaru);
             
-            // コメント
             if (memoryGameState.turn === 'player') {
                 window.updateNellMessage("おっ！やったにゃ！", "happy");
             } else {
                 window.updateNellMessage("へへーん！どうだにゃ！", "excited");
             }
 
-            memoryGameState.flippedCards = [];
-            memoryGameState.isProcessing = false;
-            updateMemoryScoreUI();
+            // ★追加: 正解したら大きく表示する処理
+            showMatchedBigCard(card1);
 
-            if (memoryGameState.matchedPairs >= memoryGameState.totalPairs) {
-                endMemoryGame();
-            } else {
-                // 当てた人はもう一度
-                if (memoryGameState.turn === 'nell') {
-                    setTimeout(nellTurn, 1000);
-                }
-            }
         }, 800);
     } else {
-        // ハズレの場合
         setTimeout(() => {
             card1.isFlipped = false;
             card2.isFlipped = false;
@@ -565,7 +539,6 @@ function checkMatch() {
             memoryGameState.flippedCards = [];
             memoryGameState.isProcessing = false;
             
-            // ターン交代
             memoryGameState.turn = (memoryGameState.turn === 'player') ? 'nell' : 'player';
             updateMemoryScoreUI();
             
@@ -579,9 +552,50 @@ function checkMatch() {
     }
 }
 
+// ★新規: 正解カードを大きく表示する関数
+window.showMatchedBigCard = function(card) {
+    const overlay = document.getElementById('memory-match-overlay');
+    const container = document.getElementById('memory-match-card-container');
+    if (!overlay || !container) {
+        finishMatchProcess(); // エラー時はスキップ
+        return;
+    }
+    
+    // 元の画像を表示
+    container.innerHTML = `<img src="${card.imageUrl}" style="width:100%; height:auto; border-radius:15px; box-shadow:0 0 20px rgba(255,235,59,0.8); border:4px solid #ffeb3b;">`;
+    overlay.classList.remove('hidden');
+    
+    // 3秒後に自動的に閉じる（タップでも閉じれる）
+    window.matchOverlayTimer = setTimeout(() => {
+        closeMatchedBigCard();
+    }, 3000);
+};
+
+window.closeMatchedBigCard = function() {
+    const overlay = document.getElementById('memory-match-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    if (window.matchOverlayTimer) clearTimeout(window.matchOverlayTimer);
+    
+    finishMatchProcess();
+};
+
+// マッチ演出後の処理再開
+function finishMatchProcess() {
+    memoryGameState.flippedCards = [];
+    memoryGameState.isProcessing = false;
+    updateMemoryScoreUI();
+
+    if (memoryGameState.matchedPairs >= memoryGameState.totalPairs) {
+        endMemoryGame();
+    } else {
+        if (memoryGameState.turn === 'nell') {
+            setTimeout(nellTurn, 1000);
+        }
+    }
+}
+
 // AIロジック
 function rememberCard(index, id) {
-    // 難易度に応じて記憶するか決める
     let chance = 0;
     if (memoryGameState.difficulty === 'weak') chance = 0.3;
     if (memoryGameState.difficulty === 'normal') chance = 0.7;
@@ -595,8 +609,6 @@ function rememberCard(index, id) {
 function nellTurn() {
     if (memoryGameState.turn !== 'nell') return;
     
-    // 1枚目を選ぶ
-    // 記憶の中にペアがあるか探す
     let pick1 = -1;
     let pick2 = -1;
     
@@ -604,20 +616,13 @@ function nellTurn() {
         .filter(c => !c.isMatched)
         .map(c => c.index);
         
-    // 強さ「強」の場合、記憶にあるペアを確実に取る
-    // 「普通」の場合、たまに見逃す
-    // 「弱」の場合、ほとんどランダム
-    
-    // 記憶にあるカードのリスト
     const knownIndices = Object.keys(memoryGameState.nellMemory).map(Number).filter(idx => !memoryGameState.deck[idx].isMatched);
     
-    // ペア探索
     for (let i = 0; i < knownIndices.length; i++) {
         for (let j = i + 1; j < knownIndices.length; j++) {
             const idxA = knownIndices[i];
             const idxB = knownIndices[j];
             if (memoryGameState.nellMemory[idxA] === memoryGameState.nellMemory[idxB]) {
-                // ペア発見
                 pick1 = idxA;
                 pick2 = idxB;
                 break;
@@ -626,38 +631,29 @@ function nellTurn() {
         if (pick1 !== -1) break;
     }
     
-    // ペアが見つからなかった場合、または難易度によるミス
     let mistakeRate = 0;
     if (memoryGameState.difficulty === 'weak') mistakeRate = 0.8;
     if (memoryGameState.difficulty === 'normal') mistakeRate = 0.3;
     
     if (Math.random() < mistakeRate) {
-        pick1 = -1; pick2 = -1; // ペアを知ってても忘れたふり
+        pick1 = -1; pick2 = -1;
     }
 
-    // まだ決まってない場合
     if (pick1 === -1) {
-        // 未知のカードからランダムに1枚引く
         const unknownIndices = unMatchedIndices.filter(idx => !memoryGameState.nellMemory[idx]);
-        
         if (unknownIndices.length > 0) {
             pick1 = unknownIndices[Math.floor(Math.random() * unknownIndices.length)];
         } else {
-            // 全部知ってるけどペアがない場合（ありえないが念のため）
             pick1 = unMatchedIndices[Math.floor(Math.random() * unMatchedIndices.length)];
         }
     }
     
-    // 1枚目をめくる
     flipCard(pick1);
     
     setTimeout(() => {
-        // 2枚目を選ぶ
         if (pick2 !== -1) {
-            // 既にペアを知っている
             flipCard(pick2);
         } else {
-            // 1枚目のIDと一致するカードを記憶しているか？
             const card1Id = memoryGameState.deck[pick1].id;
             const matchInMemory = Object.keys(memoryGameState.nellMemory).find(idx => 
                 Number(idx) !== pick1 && 
@@ -666,10 +662,8 @@ function nellTurn() {
             );
             
             if (matchInMemory && Math.random() > mistakeRate) {
-                // 記憶にあった！
                 flipCard(Number(matchInMemory));
             } else {
-                // ランダムに選ぶ（pick1以外）
                 const available = unMatchedIndices.filter(idx => idx !== pick1);
                 const randomPick = available[Math.floor(Math.random() * available.length)];
                 flipCard(randomPick);
@@ -687,8 +681,6 @@ function endMemoryGame() {
     
     const pScore = memoryGameState.scores.player;
     const nScore = memoryGameState.scores.nell;
-    
-    // 報酬計算
     const reward = pScore * memoryGameState.rewardMultiplier;
     
     if (pScore > nScore) {
