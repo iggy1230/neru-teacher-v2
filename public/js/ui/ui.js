@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v393.0: UIエラー修正版) ---
+// --- js/ui/ui.js (完全版 v394.0: エラー修正・堅牢化版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -519,7 +519,10 @@ window.renderMapMarkers = async function() {
 // ==========================================
 
 window.openMemoryManager = function() {
-    if (!currentUser) return;
+    if (!currentUser) {
+        alert("まだ登校していないにゃ。まずはログインしてにゃ！");
+        return;
+    }
     const modal = document.getElementById('memory-manager-modal');
     if (modal) {
         modal.classList.remove('hidden');
