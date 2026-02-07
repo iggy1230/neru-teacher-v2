@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v391.1: 画像表示修正版) --- */
+/* --- style.css (完全版 v392.0: 画像位置修正・解説待ち対応版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1205,9 +1205,9 @@ button { font-family: inherit; }
 .memory-card-photo {
     width: 100%;
     height: 70%; /* 写真エリアを大きく確保 */
-    background-size: contain; /* ★修正: 全体が見えるようにcontainへ変更 */
+    background-size: cover; /* ★修正: coverで枠いっぱいに表示 */
     background-repeat: no-repeat;
-    background-position: center; 
+    background-position: center; /* 中央表示 */
     border-bottom: 1px solid #eee;
     background-color: #fff; /* ★修正: 余白ができたときのために白背景 */
 }
