@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v396.0: グローバル変数参照修正版) ---
+// --- js/ui/ui.js (完全版 v397.0: グローバル変数参照修正版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
