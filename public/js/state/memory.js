@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v394.0: メモリ管理版) ---
+// --- js/state/memory.js (v396.0: グローバル変数参照修正版) ---
 
 (function(global) {
     const Memory = {};
