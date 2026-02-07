@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v396.0: グローバル変数参照修正版) ---
+// --- js/state/memory.js (v398.0: DB参照修正版) ---
 
 (function(global) {
     const Memory = {};
@@ -39,9 +39,9 @@
 
     Memory.getUserProfile = async function(userId) {
         let profile = null;
-        if (typeof db !== 'undefined' && db !== null) {
+        if (typeof window.db !== 'undefined' && window.db !== null) {
             try {
-                const doc = await db.collection("users").doc(userId).get();
+                const doc = await window.db.collection("users").doc(userId).get();
                 if (doc.exists && doc.data().profile) {
                     profile = doc.data().profile;
                 }
@@ -64,9 +64,9 @@
         const profileStr = JSON.stringify(profile);
         localStorage.setItem(`nell_profile_${userId}`, profileStr);
         
-        if (typeof db !== 'undefined' && db !== null) {
+        if (typeof window.db !== 'undefined' && window.db !== null) {
             try {
-                await db.collection("users").doc(userId).set({ profile: profile }, { merge: true });
+                await window.db.collection("users").doc(userId).set({ profile: profile }, { merge: true });
             } catch(e) { console.error("Firestore Profile Save Error:", e); }
         }
     };
@@ -121,13 +121,12 @@
     };
 
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null, rarity = 1) {
-        console.log(`[Memory] addToCollection: ${itemName}, Rarity: ${rarity}`);
         try {
             const profile = await Memory.getUserProfile(userId);
             if (!Array.isArray(profile.collection)) profile.collection = [];
             
             let imageUrl = imageBase64; 
-            if (window.fireStorage && typeof db !== 'undefined' && db !== null) {
+            if (window.fireStorage && typeof window.db !== 'undefined' && window.db !== null) {
                 try {
                     const blob = base64ToBlob(imageBase64);
                     const timestamp = Date.now();
@@ -135,7 +134,6 @@
                     const storageRef = window.fireStorage.ref().child(storagePath);
                     const snapshot = await storageRef.put(blob);
                     imageUrl = await snapshot.ref.getDownloadURL(); 
-                    console.log("Image uploaded to Storage:", imageUrl);
                 } catch (uploadError) {
                     console.warn("Storage upload failed, falling back to Base64", uploadError);
                 }
@@ -163,9 +161,6 @@
                 }
             }
             await Memory.saveUserProfile(userId, profile);
-            
-            imageUrl = null;
-            imageBase64 = null;
             
         } catch (e) {
             console.error("[Memory] Add Collection Error:", e);
