@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v381.0: メモリ最適化版) ---
+// --- js/state/memory.js (v394.0: メモリ管理版) ---
 
 (function(global) {
     const Memory = {};
@@ -61,7 +61,6 @@
     Memory.saveUserProfile = async function(userId, profile) {
         if (Array.isArray(profile)) profile = profile[0] || Memory.createEmptyProfile();
         
-        // ★最適化: プロフィール保存後に変数を解放
         const profileStr = JSON.stringify(profile);
         localStorage.setItem(`nell_profile_${userId}`, profileStr);
         
@@ -76,7 +75,6 @@
         if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
         
-        // ★最適化: コレクションデータは重いので更新チェックから除外して送信サイズを減らす
         const { collection, ...profileForAnalysis } = currentProfile;
         
         try {
@@ -93,7 +91,7 @@
                 
                 const updatedProfile = {
                     ...newProfile,
-                    collection: collection || [] // 元のコレクションを戻す
+                    collection: collection || [] 
                 };
                 
                 await Memory.saveUserProfile(userId, updatedProfile);
@@ -122,7 +120,6 @@
         return context;
     };
 
-    // ★修正: rarity 引数を追加
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null, rarity = 1) {
         console.log(`[Memory] addToCollection: ${itemName}, Rarity: ${rarity}`);
         try {
@@ -167,7 +164,6 @@
             }
             await Memory.saveUserProfile(userId, profile);
             
-            // ★最適化: 処理が終わったら変数を解放
             imageUrl = null;
             imageBase64 = null;
             
