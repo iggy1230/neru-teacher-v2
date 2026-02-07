@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v381.0: ロビー遷移時の完全停止対応版) ---
+// --- js/ui/ui.js (完全版 v393.0: UIエラー修正版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -39,8 +39,6 @@ window.updateVolumeUI = function() {
 
 window.applyVolumeToAll = function() {
     const targetVol = window.isMuted ? 0 : window.appVolume;
-    
-    // 1. Audio Elements
     if (window.audioList) {
         window.audioList.forEach(audio => {
             if (audio === window.sfxBunseki) {
@@ -50,8 +48,6 @@ window.applyVolumeToAll = function() {
             }
         });
     }
-    
-    // 2. Web Audio API Master Gain
     if (window.masterGainNode && window.audioCtx) {
         window.masterGainNode.gain.setValueAtTime(targetVol, window.audioCtx.currentTime);
     }
@@ -88,13 +84,8 @@ window.formatCollectionNumber = function(num) {
 // ==========================================
 
 window.switchScreen = function(to) {
-    // ★最適化: 画面切り替え時に古い画面の重い要素をクリアする
     document.querySelectorAll('.screen').forEach(s => {
         s.classList.add('hidden');
-        // 図鑑画面から抜ける場合、中身を空にしてメモリを解放
-        if (s.id === 'screen-map' && to !== 'screen-map') {
-            // Leafletマップのメモリリーク対策は別途実施
-        }
     });
 
     const target = document.getElementById(to);
@@ -134,31 +125,17 @@ window.backToGate = function() {
 };
 
 window.backToLobby = function(suppressGreeting = false) {
-    // ★重要: ロビーに戻るとき、すべてのバックグラウンドプロセスを強制停止
+    switchScreen('screen-lobby');
     
-    // 1. 音声再生の停止 (TTS, LiveStream, SFX)
-    if (typeof window.stopAudioPlayback === 'function') window.stopAudioPlayback(); // Voice Service (Web Audio)
-    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();   // Audio Service (TTS fetch)
-    
-    // 2. 音声認識・WebSocketの停止
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
     if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
-    
-    // 3. カメラの停止
     if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
-    
-    // 4. ゲームループの停止
+    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
     if (typeof window.stopDanmakuGame === 'function') window.stopDanmakuGame();
-    window.gameRunning = false; // カリカリキャッチ用
+    window.gameRunning = false; 
 
-    // 5. 分析フラグのリセット
     if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
-    
-    // 6. モードのリセット
     window.currentMode = null;
-
-    // 画面切り替え
-    switchScreen('screen-lobby');
 
     const shouldGreet = (typeof suppressGreeting === 'boolean') ? !suppressGreeting : true;
     if (shouldGreet && typeof currentUser !== 'undefined' && currentUser) {
@@ -253,7 +230,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection) - ★最適化済み
+// 図鑑 (Collection)
 // ==========================================
 
 window.openCollectionDetailByIndex = function(originalIndex) {
@@ -300,7 +277,6 @@ window.showCollection = async function() {
                 </div>
             </div>
 
-            <!-- カード型グリッド -->
             <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
@@ -313,7 +289,6 @@ window.showCollection = async function() {
     window.renderCollectionList();
 };
 
-// ★改善: 少しずつ描画する（チャンクレンダリング）でフリーズを防止
 window.renderCollectionList = async function() {
     const grid = document.getElementById('collection-grid');
     const countBadge = document.getElementById('collection-count-badge');
@@ -331,10 +306,7 @@ window.renderCollectionList = async function() {
         return;
     }
 
-    // ソート用のデータ作成（軽量化）
     let items = collection.map((item, index) => ({
-        // 画像はBase64で重いので、この時点では参照のみにしておく手もあるが、
-        // 既存ロジックを大きく変えずにレンダリング側で対処する。
         ...item,
         originalIndex: index,
         number: totalCount - index
@@ -353,19 +325,17 @@ window.renderCollectionList = async function() {
         });
     }
 
-    // ★Chunked Rendering Logic
-    const CHUNK_SIZE = 12; // 一度に描画する数
+    const CHUNK_SIZE = 12; 
     let currentIndex = 0;
 
     function renderChunk() {
-        if (!document.getElementById('collection-grid')) return; // モーダルが閉じられていたら停止
+        if (!document.getElementById('collection-grid')) return;
 
         const fragment = document.createDocumentFragment();
         const chunk = items.slice(currentIndex, currentIndex + CHUNK_SIZE);
 
         chunk.forEach(item => {
             const div = document.createElement('div');
-            // content-visibility: auto で描画負荷をブラウザに任せる
             div.style.cssText = "background:white; border-radius:8px; padding:4px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:1px solid #ddd; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; aspect-ratio: 0.68; transition:transform 0.1s; overflow:hidden; content-visibility: auto;";
             
             div.onclick = () => window.showCollectionDetail(item, item.originalIndex, item.number); 
@@ -374,7 +344,6 @@ window.renderCollectionList = async function() {
 
             const img = document.createElement('img');
             img.src = item.image;
-            // ★最適化: 遅延読み込みと非同期デコード
             img.loading = "lazy";
             img.decoding = "async";
             img.style.cssText = "width:100%; height:100%; object-fit:cover; border-radius:4px;";
@@ -392,7 +361,6 @@ window.renderCollectionList = async function() {
         currentIndex += CHUNK_SIZE;
 
         if (currentIndex < items.length) {
-            // 次のフレームで続きを描画（UIブロック防止）
             requestAnimationFrame(renderChunk);
         }
     }
@@ -411,7 +379,6 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
-    // ★画像のみ表示、他のリスト要素は隠れているのでDOMは比較的軽い
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -445,7 +412,6 @@ window.closeCollection = function() {
     const modal = document.getElementById('collection-modal');
     if (modal) {
         modal.classList.add('hidden');
-        // ★メモリ対策: モーダルを閉じるときに中身を空にして画像を解放する
         setTimeout(() => {
             if (modal.classList.contains('hidden')) {
                 modal.innerHTML = "";
@@ -502,7 +468,6 @@ window.showMap = async function(targetLat, targetLon) {
 window.renderMapMarkers = async function() {
     if (!window.mapInstance || !window.NellMemory || !currentUser) return;
     
-    // 既存マーカーのクリア
     window.mapInstance.eachLayer((layer) => {
         if (layer instanceof L.Marker) {
             window.mapInstance.removeLayer(layer);
@@ -513,8 +478,6 @@ window.renderMapMarkers = async function() {
     const collection = profile.collection || [];
     
     let hasMarkers = false;
-    
-    // ★最適化: マーカーが多すぎる場合は最新の50件に制限する
     const displayCollection = collection.slice(0, 50);
     
     displayCollection.forEach((item, index) => {
@@ -523,7 +486,6 @@ window.renderMapMarkers = async function() {
             
             const icon = L.divIcon({
                 className: 'custom-div-icon',
-                // アイコン画像も遅延させる
                 html: `<div class="map-pin-icon" style="background-image: url('${item.image}');"></div>`,
                 iconSize: [50, 50],
                 iconAnchor: [25, 25],
@@ -731,7 +693,6 @@ function renderLogView(container) {
     `;
     container.appendChild(ctrlDiv);
 
-    // ログが多い場合は直近50件のみ表示（メモリ対策）
     const displayHistory = [...history].reverse().slice(0, 50);
 
     displayHistory.forEach((item, index) => {
@@ -809,7 +770,6 @@ window.addLogItem = function(role, text) {
     const container = document.getElementById('log-content');
     if (!container) return;
     
-    // ログが多すぎる場合は古いものを削除
     if (container.children.length > 50) {
         container.removeChild(container.firstChild);
     }
@@ -848,10 +808,15 @@ window.updateNellMessage = async function(t, mood = "normal", saveToMemory = fal
     const minitestScreen = document.getElementById('screen-minitest');
     const isMinitestHidden = minitestScreen ? minitestScreen.classList.contains('hidden') : true;
 
+    // 神経衰弱モード用
+    const memoryScreen = document.getElementById('screen-memory-game');
+    const isMemoryHidden = memoryScreen ? memoryScreen.classList.contains('hidden') : true;
+
     let targetId = 'nell-text';
     if (!isGameHidden) targetId = 'nell-text-game';
     else if (!isRiddleHidden) targetId = 'nell-text-riddle';
     else if (!isMinitestHidden) targetId = 'nell-text-minitest';
+    else if (!isMemoryHidden) targetId = 'nell-text-memory';
     
     const el = document.getElementById(targetId);
     
