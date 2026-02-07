@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v390.0: 神経衰弱UI改善版) ---
+// --- js/game-engine.js (完全版 v391.0: 神経衰弱演出強化版) ---
 
 // ==========================================
 // 共通ヘルパー
@@ -350,6 +350,7 @@ window.startMemoryGame = async function(difficulty) {
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
     const collection = profile.collection || [];
     
+    // ★修正: デッキ生成時に description も含める
     const deck = await createMemoryDeck(collection);
     memoryGameState.deck = deck;
 
@@ -370,7 +371,8 @@ async function createMemoryDeck(collection) {
         images = shuffled.slice(0, 10).map(item => ({
             id: item.date, 
             imageUrl: item.image,
-            name: item.name
+            name: item.name,
+            description: item.description // ★説明文を追加
         }));
     }
 
@@ -380,7 +382,8 @@ async function createMemoryDeck(collection) {
         images.push({
             id: dummyId,
             imageUrl: dummyUrl,
-            name: `No.${images.length}`
+            name: `No.${images.length}`,
+            description: "これはダミーカードだにゃ！ハズレだにゃ〜。" // ★ダミーの説明
         });
     }
 
@@ -425,7 +428,6 @@ function createDummyCardImage(num) {
     return Promise.resolve(canvas.toDataURL());
 }
 
-// ★修正: HTML生成部分を変更（写真ズーム＋名前表示）
 function renderMemoryBoard() {
     const grid = document.getElementById('memory-grid');
     grid.innerHTML = "";
@@ -435,7 +437,6 @@ function renderMemoryBoard() {
         cardEl.className = `memory-card ${card.isFlipped || card.isMatched ? 'flipped' : ''} ${card.isMatched ? 'memory-matched' : ''}`;
         cardEl.onclick = () => handleCardClick(idx);
         
-        // CSSで写真部分だけを切り抜くための構造
         cardEl.innerHTML = `
             <div class="memory-card-inner">
                 <div class="memory-card-front">?</div>
@@ -517,15 +518,17 @@ function checkMatch() {
             
             if (memoryGameState.turn === 'player') {
                 window.updateNellMessage("おっ！やったにゃ！", "happy");
+                // ★修正: プレイヤーが正解した場合のみ、大きく表示＆読み上げ
+                showMatchedBigCard(card1);
             } else {
                 window.updateNellMessage("へへーん！どうだにゃ！", "excited");
+                // ネル先生の場合はすぐに次へ
+                finishMatchProcess();
             }
-
-            // ★追加: 正解したら大きく表示する処理
-            showMatchedBigCard(card1);
 
         }, 800);
     } else {
+        // ★修正: 不正解時のウェイトを延長 (1200 -> 2500)
         setTimeout(() => {
             card1.isFlipped = false;
             card2.isFlipped = false;
@@ -548,7 +551,7 @@ function checkMatch() {
             } else {
                 window.updateNellMessage("キミの番だにゃ！", "normal");
             }
-        }, 1200);
+        }, 2500);
     }
 }
 
@@ -557,24 +560,31 @@ window.showMatchedBigCard = function(card) {
     const overlay = document.getElementById('memory-match-overlay');
     const container = document.getElementById('memory-match-card-container');
     if (!overlay || !container) {
-        finishMatchProcess(); // エラー時はスキップ
+        finishMatchProcess(); 
         return;
     }
     
+    // 解説文を読み上げる
+    let speech = card.description || "やったにゃ！ゲットだにゃ！";
+    window.updateNellMessage(speech, "happy", false, true);
+
     // 元の画像を表示
     container.innerHTML = `<img src="${card.imageUrl}" style="width:100%; height:auto; border-radius:15px; box-shadow:0 0 20px rgba(255,235,59,0.8); border:4px solid #ffeb3b;">`;
     overlay.classList.remove('hidden');
     
-    // 3秒後に自動的に閉じる（タップでも閉じれる）
+    // ★修正: 10秒後に自動的に閉じる
     window.matchOverlayTimer = setTimeout(() => {
         closeMatchedBigCard();
-    }, 3000);
+    }, 10000);
 };
 
 window.closeMatchedBigCard = function() {
     const overlay = document.getElementById('memory-match-overlay');
     if (overlay) overlay.classList.add('hidden');
     if (window.matchOverlayTimer) clearTimeout(window.matchOverlayTimer);
+    
+    // 読み上げ中断
+    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
     
     finishMatchProcess();
 };
