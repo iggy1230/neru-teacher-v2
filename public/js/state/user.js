@@ -1,7 +1,7 @@
-// --- js/state/user.js (完全版 v375.0: レベル対応版) ---
+// --- js/state/user.js (完全版 v395.0: グローバル変数強化版) ---
 
 // Firebase初期化
-let app, auth, db, storage; // storageを追加
+let app, auth, db, storage;
 if (typeof firebaseConfig === 'undefined') {
     console.warn("firebase-config.js が読み込まれていないか、設定されていません。");
 } else {
@@ -9,20 +9,21 @@ if (typeof firebaseConfig === 'undefined') {
         app = firebase.initializeApp(firebaseConfig);
         auth = firebase.auth();
         db = firebase.firestore();
-        storage = firebase.storage(); // Storage初期化
+        storage = firebase.storage();
     } else if (typeof firebase !== 'undefined') {
         app = firebase.app();
         auth = firebase.auth();
         db = firebase.firestore();
-        storage = firebase.storage(); // Storage初期化
+        storage = firebase.storage();
     }
 }
 
-// グローバルに公開（memory.js等から使うため）
 window.fireStorage = storage;
 
-let users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
-let currentUser = null;
+// ★変更: windowオブジェクトに明示的にアタッチして、どこからでも確実に参照できるようにする
+window.users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
+window.currentUser = null;
+
 let modelsLoaded = false;
 let enrollFile = null;
 
@@ -30,7 +31,6 @@ window.isEditMode = false;
 window.isEditingInitialized = false;
 window.isGoogleEnrollment = false;
 
-// パス修正
 const sfxDoor = new Audio('assets/sounds/system/class_door1.mp3');
 const idBase = new Image(); idBase.crossOrigin = "Anonymous"; 
 idBase.src = 'assets/images/items/student-id-base.png?' + new Date().getTime();
@@ -50,14 +50,13 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (auth) {
         auth.onAuthStateChanged(async (user) => {
-            if (user && !currentUser) {
+            if (user && !window.currentUser) {
                 const doc = await db.collection("users").doc(user.uid).get();
                 if (doc.exists) {
-                    currentUser = doc.data();
-                    if (currentUser.isGoogleUser === undefined) currentUser.isGoogleUser = true;
-                    // クイズレベルの初期化
-                    if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
-                    login(currentUser, true); 
+                    window.currentUser = doc.data();
+                    if (window.currentUser.isGoogleUser === undefined) window.currentUser.isGoogleUser = true;
+                    if (!window.currentUser.quizLevels) window.currentUser.quizLevels = { "全ジャンル": 1 };
+                    login(window.currentUser, true); 
                 }
             }
         });
@@ -65,10 +64,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 window.logoutProcess = async function() {
-    if (auth && currentUser && currentUser.isGoogleUser) {
+    if (auth && window.currentUser && window.currentUser.isGoogleUser) {
         try { await auth.signOut(); } catch(e) { console.error("Logout Error:", e); }
     }
-    currentUser = null;
+    window.currentUser = null;
 };
 
 window.startGoogleLogin = function() {
@@ -79,13 +78,12 @@ window.startGoogleLogin = function() {
             const user = result.user;
             const doc = await db.collection("users").doc(user.uid).get();
             if (doc.exists) {
-                currentUser = doc.data();
-                currentUser.isGoogleUser = true; 
-                // クイズレベルの初期化
-                if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 };
-                login(currentUser, true);
+                window.currentUser = doc.data();
+                window.currentUser.isGoogleUser = true; 
+                if (!window.currentUser.quizLevels) window.currentUser.quizLevels = { "全ジャンル": 1 };
+                login(window.currentUser, true);
             } else {
-                currentUser = { id: user.uid, isGoogleUser: true, quizLevels: { "全ジャンル": 1 } };
+                window.currentUser = { id: user.uid, isGoogleUser: true, quizLevels: { "全ジャンル": 1 } };
                 window.isGoogleEnrollment = true;
                 alert("はじめましてだにゃ！\nGoogleアカウントで入学手続きをするにゃ！");
                 showEnrollment();
@@ -105,7 +103,6 @@ function resetPreviewForEditing() {
     if (!window.isEditMode || window.isEditingInitialized) return;
     window.isEditingInitialized = true;
     const baseImg = document.getElementById('id-base-preview');
-    // パス修正
     if (baseImg) baseImg.src = 'assets/images/items/student-id-base.png';
     const nameEl = document.querySelector('.id-name-text');
     const gradeEl = document.querySelector('.id-grade-text');
@@ -114,10 +111,10 @@ function resetPreviewForEditing() {
     const slot = document.getElementById('id-photo-slot');
     if (slot) {
         slot.style.display = 'block';
-        if (!enrollFile && currentUser && currentUser.photo) {
+        if (!enrollFile && window.currentUser && window.currentUser.photo) {
             slot.innerHTML = "";
             const img = document.createElement('img');
-            img.src = currentUser.photo;
+            img.src = window.currentUser.photo;
             img.style.position = "absolute";
             img.style.width = "327.87%"; img.style.height = "222.22%"; 
             img.style.left = "-18.03%"; img.style.top = "-79.44%";    
@@ -146,38 +143,37 @@ window.showEnrollment = function() {
     if (title) title.innerText = "🎒 入学手続き"; if (btn) btn.innerText = "入学する！"; if (delBtn) delBtn.classList.add('hidden'); 
     if (nameInput) nameInput.value = ""; if (gradeInput) gradeInput.value = "";
     if (slot) { slot.innerHTML = ""; slot.style.display = 'block'; } 
-    // パス修正
     if (baseImg) baseImg.src = "assets/images/items/student-id-base.png";
     const nameEl = document.querySelector('.id-name-text'); const gradeEl = document.querySelector('.id-grade-text');
     if (nameEl) nameEl.style.display = 'block'; if (gradeEl) gradeEl.style.display = 'block'; enrollFile = null; updateIDPreviewText();
 };
 
 window.startEditProfile = function() {
-    if (!currentUser) return; window.isEditMode = true; window.isEditingInitialized = false; switchScreen('screen-enrollment'); if (typeof loadFaceModels === 'function') loadFaceModels();
+    if (!window.currentUser) return; window.isEditMode = true; window.isEditingInitialized = false; switchScreen('screen-enrollment'); if (typeof loadFaceModels === 'function') loadFaceModels();
     const title = document.getElementById('enroll-title'); const btn = document.getElementById('complete-btn'); const delBtn = document.getElementById('delete-user-btn');
     const nameInput = document.getElementById('new-student-name'); const gradeInput = document.getElementById('new-student-grade');
     const slot = document.getElementById('id-photo-slot'); const baseImg = document.getElementById('id-base-preview');
     if (title) title.innerText = "✏️ 学生証の編集"; if (btn) btn.innerText = "更新する！"; if (delBtn) delBtn.classList.remove('hidden'); 
-    if (nameInput) nameInput.value = currentUser.name; if (gradeInput) gradeInput.value = currentUser.grade;
-    if (baseImg) baseImg.src = currentUser.photo; if (slot) { slot.style.display = 'none'; slot.innerHTML = ""; }
+    if (nameInput) nameInput.value = window.currentUser.name; if (gradeInput) gradeInput.value = window.currentUser.grade;
+    if (baseImg) baseImg.src = window.currentUser.photo; if (slot) { slot.style.display = 'none'; slot.innerHTML = ""; }
     const nameEl = document.querySelector('.id-name-text'); const gradeEl = document.querySelector('.id-grade-text');
     if (nameEl) nameEl.style.display = 'none'; if (gradeEl) gradeEl.style.display = 'none'; enrollFile = null; updateIDPreviewText();
 };
 
 window.deleteCurrentUser = async function() {
-    if (!currentUser) return;
-    if (confirm(`本当に${currentUser.name}さんの学生証を削除するにゃ？\n（復元できないにゃ）`)) {
-        if (currentUser.isGoogleUser && db) {
+    if (!window.currentUser) return;
+    if (confirm(`本当に${window.currentUser.name}さんの学生証を削除するにゃ？\n（復元できないにゃ）`)) {
+        if (window.currentUser.isGoogleUser && db) {
             try {
-                await db.collection("users").doc(currentUser.id).delete();
-                await db.collection("memories").doc(currentUser.id).delete();
+                await db.collection("users").doc(window.currentUser.id).delete();
+                await db.collection("memories").doc(window.currentUser.id).delete();
                 auth.signOut();
             } catch(e) { console.error("Firestore Delete Error:", e); alert("削除に失敗したにゃ..."); return; }
         } else {
-            users = users.filter(u => u.id !== currentUser.id);
-            try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); renderUserList(); } catch(err) {}
+            window.users = window.users.filter(u => u.id !== window.currentUser.id);
+            try { localStorage.setItem('nekoneko_users', JSON.stringify(window.users)); renderUserList(); } catch(err) {}
         }
-        currentUser = null; alert("削除したにゃ..."); switchScreen('screen-gate');
+        window.currentUser = null; alert("削除したにゃ..."); switchScreen('screen-gate');
     }
 };
 
@@ -276,11 +272,9 @@ function closeEnrollCamera() { const modal = document.getElementById('camera-mod
 async function renderForSave() {
     const img = new Image(); img.crossOrigin = "Anonymous"; 
     try { await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; 
-        // パス修正
         img.src = 'assets/images/items/student-id-base.png?' + new Date().getTime(); 
     }); } catch (e) { return null; }
     
-    // ★修正: 容量削減のため幅を300pxに縮小
     const BASE_W = 300; 
     const scaleFactor = BASE_W / img.width; 
     const canvas = document.createElement('canvas');
@@ -333,12 +327,11 @@ async function renderForSave() {
                 } catch(aiErr) { console.error("AI Decoration Failed (Non-fatal):", aiErr); }
             }
         } catch(e) { console.error(e); }
-    } else if (window.isEditMode && currentUser) {
-        try { const currentImg = new Image(); currentImg.src = currentUser.photo; await new Promise(r => currentImg.onload = r); const sX = currentImg.width * 0.055; const sY = currentImg.height * 0.3575; const sW = currentImg.width * 0.305; const sH = currentImg.height * 0.45; const dX = 35 * rx; const dY = 143 * ry; const dW = 195 * rx; const dH = 180 * ry; ctx.drawImage(currentImg, sX, sY, sW, sH, dX, dY, dW, dH); } catch(e) {}
+    } else if (window.isEditMode && window.currentUser) {
+        try { const currentImg = new Image(); currentImg.src = window.currentUser.photo; await new Promise(r => currentImg.onload = r); const sX = currentImg.width * 0.055; const sY = currentImg.height * 0.3575; const sW = currentImg.width * 0.305; const sH = currentImg.height * 0.45; const dX = 35 * rx; const dY = 143 * ry; const dW = 195 * rx; const dH = 180 * ry; ctx.drawImage(currentImg, sX, sY, sW, sH, dX, dY, dW, dH); } catch(e) {}
     }
     const nameVal = document.getElementById('new-student-name').value; const gradeVal = document.getElementById('new-student-grade').value; ctx.fillStyle = "#333"; const fontSize = 32 * rx; ctx.font = `bold ${fontSize}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; const textX = 346 * rx; if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
     
-    // ★修正: PNG形式に戻す (サイズ縮小により容量対策済み)
     try { return canvas.toDataURL('image/png'); } catch (e) { return null; }
 }
 
@@ -352,47 +345,44 @@ async function processAndCompleteEnrollment() {
 
     try {
         let finalPhoto = await renderForSave(); 
-        // パス修正
-        if (!finalPhoto) finalPhoto = (window.isEditMode && currentUser) ? currentUser.photo : "assets/images/items/student-id-base.png";
+        if (!finalPhoto) finalPhoto = (window.isEditMode && window.currentUser) ? window.currentUser.photo : "assets/images/items/student-id-base.png";
         
-        // クイズレベルの初期化を含むユーザーデータ作成
         const defaultQuizLevels = { "全ジャンル": 1 };
 
         let updatedUser;
-        if (window.isGoogleEnrollment || (currentUser && currentUser.isGoogleUser)) {
-            const uid = currentUser.id;
+        if (window.isGoogleEnrollment || (window.currentUser && window.currentUser.isGoogleUser)) {
+            const uid = window.currentUser.id;
             updatedUser = { 
                 id: uid, 
                 name, 
                 grade, 
                 photo: finalPhoto, 
                 isGoogleUser: true, 
-                karikari: (currentUser && currentUser.karikari) || 100, 
-                history: (currentUser && currentUser.history) || {}, 
-                mistakes: (currentUser && currentUser.mistakes) || [], 
-                attendance: (currentUser && currentUser.attendance) || {}, 
-                memory: (currentUser && currentUser.memory) || "", 
-                lastLogin: (currentUser && currentUser.lastLogin) || "", 
-                streak: (currentUser && currentUser.streak) || 0,
-                quizLevels: (currentUser && currentUser.quizLevels) || defaultQuizLevels
+                karikari: (window.currentUser && window.currentUser.karikari) || 100, 
+                history: (window.currentUser && window.currentUser.history) || {}, 
+                mistakes: (window.currentUser && window.currentUser.mistakes) || [], 
+                attendance: (window.currentUser && window.currentUser.attendance) || {}, 
+                memory: (window.currentUser && window.currentUser.memory) || "", 
+                lastLogin: (window.currentUser && window.currentUser.lastLogin) || "", 
+                streak: (window.currentUser && window.currentUser.streak) || 0,
+                quizLevels: (window.currentUser && window.currentUser.quizLevels) || defaultQuizLevels
             };
             if (db) await db.collection("users").doc(uid).set(updatedUser, { merge: true });
-            currentUser = updatedUser; window.isGoogleEnrollment = false; updateNellMessage(`${currentUser.name}さんの学生証ができたにゃ！`, "excited"); switchScreen('screen-lobby');
+            window.currentUser = updatedUser; window.isGoogleEnrollment = false; updateNellMessage(`${window.currentUser.name}さんの学生証ができたにゃ！`, "excited"); switchScreen('screen-lobby');
         } else {
-            if (window.isEditMode && currentUser) {
-                const idx = users.findIndex(u => u.id === currentUser.id);
+            if (window.isEditMode && window.currentUser) {
+                const idx = window.users.findIndex(u => u.id === window.currentUser.id);
                 if (idx !== -1) { 
-                    users[idx].name = name; 
-                    users[idx].grade = grade; 
-                    users[idx].photo = finalPhoto; 
-                    // クイズレベルの維持または初期化
-                    if (!users[idx].quizLevels) users[idx].quizLevels = defaultQuizLevels;
+                    window.users[idx].name = name; 
+                    window.users[idx].grade = grade; 
+                    window.users[idx].photo = finalPhoto; 
+                    if (!window.users[idx].quizLevels) window.users[idx].quizLevels = defaultQuizLevels;
                     
-                    currentUser = users[idx]; 
-                    localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
+                    window.currentUser = window.users[idx]; 
+                    localStorage.setItem('nekoneko_users', JSON.stringify(window.users)); 
                     const avatar = document.getElementById('current-student-avatar'); 
-                    if (avatar) avatar.src = currentUser.photo; 
-                    updateNellMessage(`${currentUser.name}さんの情報を更新したにゃ！`, "happy"); 
+                    if (avatar) avatar.src = window.currentUser.photo; 
+                    updateNellMessage(`${window.currentUser.name}さんの情報を更新したにゃ！`, "happy"); 
                     switchScreen('screen-lobby'); 
                 }
             } else {
@@ -411,8 +401,8 @@ async function processAndCompleteEnrollment() {
                     streak: 0,
                     quizLevels: defaultQuizLevels
                 };
-                users.push(newUser); 
-                localStorage.setItem('nekoneko_users', JSON.stringify(users)); 
+                window.users.push(newUser); 
+                localStorage.setItem('nekoneko_users', JSON.stringify(window.users)); 
                 window.justEnrolledId = newUser.id; 
                 renderUserList(); 
                 alert("入学おめでとうにゃ！🌸"); 
@@ -433,32 +423,31 @@ async function processAndCompleteEnrollment() {
     }
 }
 
-function renderUserList() { const list = document.getElementById('user-list'); if(!list) return; list.innerHTML = users.length ? "" : "<p style='text-align:center; width:100%; color:white; font-weight:bold; opacity:0.8;'>まだ誰もいないにゃ</p>"; users.forEach(user => { const div = document.createElement('div'); div.className = "user-card"; div.innerHTML = `<img src="${user.photo}"><div class="card-karikari-badge">🍖${user.karikari || 0}</div>`; div.onclick = () => login(user, false); list.appendChild(div); }); }
+function renderUserList() { const list = document.getElementById('user-list'); if(!list) return; list.innerHTML = window.users.length ? "" : "<p style='text-align:center; width:100%; color:white; font-weight:bold; opacity:0.8;'>まだ誰もいないにゃ</p>"; window.users.forEach(user => { const div = document.createElement('div'); div.className = "user-card"; div.innerHTML = `<img src="${user.photo}"><div class="card-karikari-badge">🍖${user.karikari || 0}</div>`; div.onclick = () => login(user, false); list.appendChild(div); }); }
 
 function login(user, isGoogle = false) { 
     try { sfxDoor.currentTime = 0; sfxDoor.play(); } catch(e){}
-    currentUser = user; 
-    if (!currentUser.attendance) currentUser.attendance = {}; 
-    if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 }; // 念のため
+    window.currentUser = user; 
+    if (!window.currentUser.attendance) window.currentUser.attendance = {}; 
+    if (!window.currentUser.quizLevels) window.currentUser.quizLevels = { "全ジャンル": 1 }; 
     
-    // 出席＆ボーナス判定
     const today = new Date().toISOString().split('T')[0]; 
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
-    if (currentUser.lastLogin !== today) {
-        if (currentUser.lastLogin === yesterday) {
-            currentUser.streak = (currentUser.streak || 0) + 1;
+    if (window.currentUser.lastLogin !== today) {
+        if (window.currentUser.lastLogin === yesterday) {
+            window.currentUser.streak = (window.currentUser.streak || 0) + 1;
         } else {
-            currentUser.streak = 1;
+            window.currentUser.streak = 1;
         }
         
-        currentUser.lastLogin = today;
-        currentUser.attendance[today] = true;
+        window.currentUser.lastLogin = today;
+        window.currentUser.attendance[today] = true;
 
-        if (currentUser.streak >= 3) {
-            currentUser.karikari += 100;
+        if (window.currentUser.streak >= 3) {
+            window.currentUser.karikari += 100;
             setTimeout(() => { 
-                alert(`㊗️ ${currentUser.streak}日連続出席！\nボーナスでカリカリ100個ゲットだにゃ！🍖✨`); 
+                alert(`㊗️ ${window.currentUser.streak}日連続出席！\nボーナスでカリカリ100個ゲットだにゃ！🍖✨`); 
                 showKarikariEffect(100);
             }, 1000);
         }
@@ -481,19 +470,19 @@ function login(user, isGoogle = false) {
 }
 
 async function saveAndSync() { 
-    if (!currentUser) return; 
+    if (!window.currentUser) return; 
     const kCounter = document.getElementById('karikari-count'); 
-    if (kCounter) kCounter.innerText = currentUser.karikari;
+    if (kCounter) kCounter.innerText = window.currentUser.karikari;
     const miniKCounter = document.getElementById('mini-karikari-count');
-    if (miniKCounter) miniKCounter.innerText = currentUser.karikari;
+    if (miniKCounter) miniKCounter.innerText = window.currentUser.karikari;
 
-    if (currentUser.isGoogleUser && db) {
+    if (window.currentUser.isGoogleUser && db) {
         try {
-            await db.collection("users").doc(currentUser.id).set(currentUser, { merge: true });
+            await db.collection("users").doc(window.currentUser.id).set(window.currentUser, { merge: true });
         } catch(e) { console.error("Firestore sync error:", e); }
     } else {
-        const idx = users.findIndex(u => u.id === currentUser.id); 
-        if (idx !== -1) users[idx] = currentUser; 
-        try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); } catch(err) {} 
+        const idx = window.users.findIndex(u => u.id === window.currentUser.id); 
+        if (idx !== -1) window.users[idx] = window.currentUser; 
+        try { localStorage.setItem('nekoneko_users', JSON.stringify(window.users)); } catch(err) {} 
     }
 }
