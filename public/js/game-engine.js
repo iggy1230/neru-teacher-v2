@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v388.0: 神経衰弱修正版) ---
+// --- js/game-engine.js (完全版 v388.1: 神経衰弱修正版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -1602,12 +1602,8 @@ window.showMatchModal = function(card) {
     return new Promise((resolve) => {
         const modal = document.getElementById('memory-match-modal');
         const img = document.getElementById('memory-match-img');
-        const name = document.getElementById('memory-match-name');
-        const desc = document.getElementById('memory-match-desc');
         
         img.src = card.image;
-        name.innerText = card.name;
-        desc.innerText = card.description;
         
         modal.classList.remove('hidden');
         
