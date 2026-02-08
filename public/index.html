@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v392.0: お宝図鑑完全グリッド化) -->
+<!-- index.html (完全版 v393.0: お宝図鑑完全グリッド化) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -23,6 +23,35 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+    
+    <style>
+        .hidden { display: none !important; }
+        .live-chat-video-wrapper { width: 100%; max-width: 320px; aspect-ratio: 4/3; border-radius: 10px; overflow: hidden; border: 4px solid #4a90e2; margin: 10px auto; background: #000; display: none; }
+        .live-chat-video-elem { width: 100%; height: 100%; object-fit: cover; }
+        .embedded-chat-box { margin-top: 20px; padding: 15px; border: 2px dashed #8bc34a; border-radius: 15px; background: #f1f8e9; }
+        .embedded-chalkboard { background: #2e7d32; color: white; padding: 15px; border: 6px solid #8d6e63; border-radius: 8px; margin-top: 15px; font-family: 'Kiwi Maru', serif; min-height: 80px; box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3); white-space: pre-wrap; font-size: 1.1rem; line-height: 1.6; }
+        .text-question-area { display: flex; gap: 5px; margin-bottom: 15px; align-items: center; }
+        .text-question-input { flex: 1; padding: 10px; border: 2px solid #8bc34a; border-radius: 10px; font-size: 1rem; resize: none; height: 50px; }
+        .text-question-btn { background: #8bc34a; color: white; border: none; border-radius: 10px; padding: 0 15px; height: 50px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 0 #558b2f; }
+        .text-question-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #558b2f; }
+        .conversation-log-container { margin-top: 20px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 10px; max-height: 200px; overflow-y: auto; border: 1px solid #ccc; }
+        .log-item { font-size: 0.85rem; margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px dashed #eee; }
+        .log-role { font-weight: bold; margin-right: 5px; }
+        .log-user .log-role { color: #2196f3; }
+        .log-nell .log-role { color: #ff85a1; }
+        #kanji-canvas { border: 4px solid #8d6e63; border-radius: 10px; background: white; touch-action: none; cursor: crosshair; }
+        
+        /* ミニテスト・ウルトラクイズ用ボタン */
+        .minitest-option-btn, .quiz-option-btn {
+            display: block; width: 100%; margin: 8px 0; padding: 15px;
+            border: 2px solid #ddd; border-radius: 10px; background: white;
+            font-size: 1rem; font-weight: bold; color: #333; cursor: pointer;
+            box-shadow: 0 2px 0 #ccc; text-align: left;
+        }
+        .minitest-option-btn:active, .quiz-option-btn:active { transform: translateY(2px); box-shadow: none; }
+        .minitest-correct, .quiz-correct { background: #e8f5e9 !important; border-color: #4caf50 !important; color: #2e7d32 !important; }
+        .minitest-wrong, .quiz-wrong { background: #ffebee !important; border-color: #ef5350 !important; color: #c62828 !important; }
+    </style>
 </head>
 <body>
     <canvas id="hanamaru-canvas"></canvas>
@@ -40,7 +69,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v392.0-GridFix</div>
+            <div class="version-tag">Build: v393.0-GridFix</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -236,6 +265,7 @@
 
             <div id="memory-game-board" class="hidden">
                 <div style="display:flex; justify-content:space-between; margin-bottom:10px; background:rgba(255,255,255,0.8); padding:10px; border-radius:10px;">
+                    <!-- ★修正: ID付与して名前を動的に変更 -->
                     <div style="font-weight:bold; color:#2196f3;"><span id="memory-name-player">キミ</span>: <span id="memory-score-player">0</span></div>
                     <div style="font-weight:bold; color:#ff5252;">ネル先生: <span id="memory-score-nell">0</span></div>
                 </div>
