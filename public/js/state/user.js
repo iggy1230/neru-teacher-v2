@@ -1,4 +1,4 @@
-// --- js/state/user.js (完全版 v398.0: DB共有修正版) ---
+// --- js/state/user.js (完全版 v397.0: グローバル変数安定版) ---
 
 // Firebase初期化
 let app, auth, db, storage;
@@ -18,12 +18,9 @@ if (typeof firebaseConfig === 'undefined') {
     }
 }
 
-// ★重要: 他のファイル(memory.js等)から参照できるようにwindowに紐付ける
-window.db = db;
 window.fireStorage = storage;
-window.auth = auth;
 
-// ユーザーデータ管理
+// ★重要: windowオブジェクトに明示的に定義して、ui.js等から参照可能にする
 window.users = JSON.parse(localStorage.getItem('nekoneko_users')) || [];
 window.currentUser = null;
 
@@ -275,9 +272,11 @@ function closeEnrollCamera() { const modal = document.getElementById('camera-mod
 async function renderForSave() {
     const img = new Image(); img.crossOrigin = "Anonymous"; 
     try { await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; 
+        // パス修正
         img.src = 'assets/images/items/student-id-base.png?' + new Date().getTime(); 
     }); } catch (e) { return null; }
     
+    // ★修正: 容量削減のため幅を300pxに縮小
     const BASE_W = 300; 
     const scaleFactor = BASE_W / img.width; 
     const canvas = document.createElement('canvas');
@@ -336,6 +335,7 @@ async function renderForSave() {
     }
     const nameVal = document.getElementById('new-student-name').value; const gradeVal = document.getElementById('new-student-grade').value; ctx.fillStyle = "#333"; const fontSize = 32 * rx; ctx.font = `bold ${fontSize}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; const textX = 346 * rx; if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
     
+    // ★修正: PNG形式に戻す (サイズ縮小により容量対策済み)
     try { return canvas.toDataURL('image/png'); } catch (e) { return null; }
 }
 
@@ -349,8 +349,10 @@ async function processAndCompleteEnrollment() {
 
     try {
         let finalPhoto = await renderForSave(); 
+        // パス修正
         if (!finalPhoto) finalPhoto = (window.isEditMode && window.currentUser) ? window.currentUser.photo : "assets/images/items/student-id-base.png";
         
+        // クイズレベルの初期化を含むユーザーデータ作成
         const defaultQuizLevels = { "全ジャンル": 1 };
 
         let updatedUser;
@@ -380,6 +382,7 @@ async function processAndCompleteEnrollment() {
                     window.users[idx].name = name; 
                     window.users[idx].grade = grade; 
                     window.users[idx].photo = finalPhoto; 
+                    // クイズレベルの維持または初期化
                     if (!window.users[idx].quizLevels) window.users[idx].quizLevels = defaultQuizLevels;
                     
                     window.currentUser = window.users[idx]; 
@@ -433,8 +436,9 @@ function login(user, isGoogle = false) {
     try { sfxDoor.currentTime = 0; sfxDoor.play(); } catch(e){}
     window.currentUser = user; 
     if (!window.currentUser.attendance) window.currentUser.attendance = {}; 
-    if (!window.currentUser.quizLevels) window.currentUser.quizLevels = { "全ジャンル": 1 }; 
+    if (!window.currentUser.quizLevels) window.currentUser.quizLevels = { "全ジャンル": 1 }; // 念のため
     
+    // 出席＆ボーナス判定
     const today = new Date().toISOString().split('T')[0]; 
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 

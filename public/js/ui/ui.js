@@ -1,6 +1,8 @@
-// --- js/ui/ui.js (完全版 v398.0: グローバル変数参照修正版) ---
-// (内容はv397.0と同じですが、currentUserがwindowから参照されることを前提としています)
+// --- js/ui/ui.js (完全版 v397.0: グローバル変数参照修正版) ---
+
+// カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
+// 図鑑のソートモード
 window.collectionSortMode = 'desc'; 
 
 window.toggleMuteDirect = function() {
