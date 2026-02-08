@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v381.0: ロビー遷移時の完全停止対応版) ---
+// --- js/ui.js (完全版 v395.0: 全コード完全記述版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -150,11 +150,14 @@ window.backToLobby = function(suppressGreeting = false) {
     // 4. ゲームループの停止
     if (typeof window.stopDanmakuGame === 'function') window.stopDanmakuGame();
     window.gameRunning = false; // カリカリキャッチ用
+    
+    // 5. 神経衰弱の停止
+    if (typeof window.stopMemoryGame === 'function') window.stopMemoryGame();
 
-    // 5. 分析フラグのリセット
+    // 6. 分析フラグのリセット
     if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
     
-    // 6. モードのリセット
+    // 7. モードのリセット
     window.currentMode = null;
 
     // 画面切り替え
@@ -320,6 +323,12 @@ window.renderCollectionList = async function() {
     if (!grid) return;
 
     grid.innerHTML = '';
+    
+    if (!window.NellMemory || !currentUser) {
+        grid.innerHTML = '<p>データを読み込めませんでした</p>';
+        return;
+    }
+
     const profile = await window.NellMemory.getUserProfile(currentUser.id);
     const collection = profile.collection || [];
     const totalCount = collection.length;
@@ -584,8 +593,12 @@ window.switchMemoryTab = async function(tab) {
         container.innerHTML = '<p style="text-align:center; padding:20px; color:#888;">読み込み中にゃ...</p>';
         
         if (tab === 'profile') {
-            const profile = await window.NellMemory.getUserProfile(currentUser.id);
-            renderProfileView(container, profile);
+            if (window.NellMemory) {
+                const profile = await window.NellMemory.getUserProfile(currentUser.id);
+                renderProfileView(container, profile);
+            } else {
+                container.innerHTML = '<p style="text-align:center;">エラー: メモリ機能がロードされていません。</p>';
+            }
         } else {
             renderLogView(container);
         }
@@ -966,6 +979,3 @@ window.sendHttpText = async function(context) {
         }
     }
 };
-
-window.sendEmbeddedText = function() { window.sendHttpText('embedded'); };
-window.sendSimpleText = function() { window.sendHttpText('simple'); };
