@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v386.0: お宝神経衰弱追加版) ---
+// --- js/game-engine.js (完全版 v387.0: 神経衰弱修正版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -1346,7 +1346,7 @@ window.createCardDeck = async function() {
     // 8ペア(16枚)を作る
     let selectedItems = [];
     
-    // 足りない分はダミーで埋める
+    // 足りない分はダミーで埋める (フォールバック画像)
     const dummyImages = [
         'assets/images/items/student-id-base.png',
         'assets/images/characters/nell-normal.png',
@@ -1392,14 +1392,20 @@ window.createCardDeck = async function() {
         const cardEl = document.createElement('div');
         cardEl.className = 'memory-card';
         cardEl.id = `memory-card-${card.index}`;
-        cardEl.onclick = () => window.flipCard(card.index);
         
-        // CSSズーム用のスタイル適用
+        // ★修正: onclick属性ではなく、リスナーでバインド (変数のキャプチャミス防止)
+        cardEl.addEventListener('click', () => {
+            window.flipCard(card.index);
+        });
+        
+        // フォールバック付き画像表示
+        const imgSrc = card.image || 'assets/images/items/student-id-base.png';
+        
         cardEl.innerHTML = `
             <div class="memory-card-inner">
                 <div class="memory-card-front">
                     <div class="memory-card-img-container">
-                        <img src="${card.image}" class="memory-card-img">
+                        <img src="${imgSrc}" class="memory-card-img" onerror="this.src='assets/images/characters/nell-normal.png'">
                     </div>
                     <div class="memory-card-name">${card.name}</div>
                 </div>
@@ -1486,7 +1492,7 @@ window.checkMatch = async function() {
         // 不正解
         if (window.safePlay) window.safePlay(window.sfxBatu);
         
-        // 3秒待つ
+        // ★3秒待つ
         setTimeout(() => {
             const el1 = document.getElementById(`memory-card-${card1.index}`);
             const el2 = document.getElementById(`memory-card-${card2.index}`);
