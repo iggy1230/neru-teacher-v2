@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v391.1: お宝図鑑重なり解消版) ---
+// --- js/ui/ui.js (完全版 v392.0: お宝図鑑完全グリッド化) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -253,7 +253,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection) - ★グリッド表示（重なりなし）に変更
+// 図鑑 (Collection) - ★完全グリッド化
 // ==========================================
 
 window.openCollectionDetailByIndex = function(originalIndex) {
@@ -300,8 +300,8 @@ window.showCollection = async function() {
                 </div>
             </div>
 
-            <!-- カード型グリッド: 重なり廃止のためpadding調整 -->
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
+            <!-- カード型グリッド: 重なり廃止のためgapを広げる -->
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:15px; flex: 1; overflow-y:auto; padding:10px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
             
@@ -313,7 +313,7 @@ window.showCollection = async function() {
     window.renderCollectionList();
 };
 
-// ★改善: 少しずつ描画する（チャンクレンダリング）＋標準グリッド表示
+// ★改善: 重なりを完全に廃止し、クリアなグリッド表示にする
 window.renderCollectionList = async function() {
     const grid = document.getElementById('collection-grid');
     const countBadge = document.getElementById('collection-count-badge');
@@ -364,8 +364,8 @@ window.renderCollectionList = async function() {
         chunk.forEach(item => {
             const div = document.createElement('div');
             
-            // ★修正: 重ね合わせ(margin-bottomマイナス)を完全に廃止し、標準的なカード表示にする
-            // タイトルが隠れる問題を根本解決
+            // ★完全修正: 重ね合わせ(margin-bottom)を廃止し、標準的なカード表示にする
+            // Gapは親のgridで制御 (15px)
             div.style.cssText = `
                 background: white;
                 border-radius: 8px;
