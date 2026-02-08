@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v397.0: グローバル変数参照修正版) ---
+// --- js/ui/ui.js (完全版 v399.0: 図鑑ボタン反応修正版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -209,18 +209,25 @@ window.changeCollectionSort = function(select) {
 };
 
 window.showCollection = async function() {
-    if (!window.currentUser) return;
+    // ★修正: ユーザー情報がない場合のハンドリングを追加
+    if (!window.currentUser) {
+        alert("まだ準備中だにゃ。もう少し待ってから押してにゃ！");
+        return;
+    }
+    
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 85vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
+            
             <div style="flex-shrink:0; display:flex; flex-direction:column; gap:8px; margin-bottom:10px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                      <button onclick="closeCollection(); showMap();" class="main-btn" style="width:auto; margin:0; padding:8px 15px; font-size:0.85rem; background:#29b6f6; box-shadow: 0 3px 0 #0288d1;">🗺️ 足あとマップ</button>
                      <div id="collection-count-badge" style="background:#fff; padding:5px 10px; border-radius:15px; font-weight:bold; color:#555; border:1px solid #ccc; font-size:0.9rem;">全 0 件</div>
                 </div>
+                
                 <div style="display:flex; align-items:center; gap:5px; justify-content:flex-end;">
                     <span style="font-size:0.8rem; font-weight:bold; color:#666;">並び替え:</span>
                     <select onchange="changeCollectionSort(this)" style="padding:5px; border-radius:5px; border:1px solid #ccc; font-size:0.8rem;">
@@ -230,9 +237,11 @@ window.showCollection = async function() {
                     </select>
                 </div>
             </div>
+
             <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
+            
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;"><button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div>
         </div>
     `;
@@ -246,7 +255,15 @@ window.renderCollectionList = async function() {
     const countBadge = document.getElementById('collection-count-badge');
     if (!grid) return;
 
+    // 初期化
     grid.innerHTML = '';
+    
+    // ★修正: データ取得の安全性を確保
+    if (!window.NellMemory || !window.currentUser) {
+        grid.innerHTML = '<p style="width:100%; text-align:center; color:#f00;">データを読み込めなかったにゃ...</p>';
+        return;
+    }
+
     const profile = await window.NellMemory.getUserProfile(window.currentUser.id);
     const collection = profile.collection || [];
     const totalCount = collection.length;
