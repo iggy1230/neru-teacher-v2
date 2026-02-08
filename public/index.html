@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v388.1: 神経衰弱レイアウト調整版) -->
+<!-- index.html (完全版 v390.2: プレイヤー名表示対応版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -68,7 +68,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v388.1-MemUI</div>
+            <div class="version-tag">Build: v390.2-UserNM</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -255,7 +255,8 @@
 
             <div id="memory-game-board" class="hidden">
                 <div style="display:flex; justify-content:space-between; margin-bottom:10px; background:rgba(255,255,255,0.8); padding:10px; border-radius:10px;">
-                    <div style="font-weight:bold; color:#2196f3;">キミ: <span id="memory-score-player">0</span></div>
+                    <!-- ★修正: ID付与して名前を動的に変更 -->
+                    <div style="font-weight:bold; color:#2196f3;"><span id="memory-name-player">キミ</span>: <span id="memory-score-player">0</span></div>
                     <div style="font-weight:bold; color:#ff5252;">ネル先生: <span id="memory-score-nell">0</span></div>
                 </div>
                 <div id="memory-grid" class="memory-grid">
