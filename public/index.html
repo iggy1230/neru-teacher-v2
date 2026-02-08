@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v394.0: ボタン削除・JSエラー修正版) -->
+<!-- index.html (完全版 v395.0: 不具合修正・ボタン削除版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -68,7 +68,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v394.0-FixAll</div>
+            <div class="version-tag">Build: v395.0-FinalFix</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -203,7 +203,7 @@
                 <div class="work-area">
                     <div id="upload-controls" class="hidden">
                         <p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p>
-                        <!-- 不要なボタンを削除 -->
+                        <!-- 不要なボタン(モード選択)を削除 -->
                         <div class="upload-buttons-container"><button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800;">📹 アプリで撮影</button><div style="display:flex; gap:10px;"><label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label><label class="camera-btn-large" style="flex:1; background:#4a90e2;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label></div></div>
                     </div>
                     <div id="thinking-view" class="hidden"><img src="assets/images/characters/nell-inspect.png" class="loader-inspect-img" onerror="this.src='assets/images/characters/nell-normal.png'"><div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div><p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p></div>
