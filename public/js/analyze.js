@@ -1,4 +1,4 @@
-// --- js/analyze.js (v342.1: 不要ボタン操作削除版) ---
+// --- js/analyze.js (v343.0: 競合回避・整理版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -248,7 +248,6 @@ window.setSubject = function(s) {
     document.getElementById('subject-selection-view').classList.add('hidden'); 
     document.getElementById('upload-controls').classList.remove('hidden'); 
     window.updateNellMessage(`${window.currentSubject}の問題をみせてにゃ！`, "happy", false); 
-    // 不要なボタン操作を削除
 };
 
 window.setAnalyzeMode = function(type) { window.analysisType = 'precision'; };
@@ -539,9 +538,7 @@ window.updateMarkDisplay = function(id, isCorrect) { const container = document.
 window.updateGradingMessage = function() { 
     let correctCount = 0; 
     window.transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); 
-    
     const total = window.transcribedProblems.length || 1;
-    
     if (correctCount === window.transcribedProblems.length) {
         window.updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited", false); 
     } else if (correctCount >= total * 0.5) {
