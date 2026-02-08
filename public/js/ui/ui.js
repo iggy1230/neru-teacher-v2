@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v389.0: お宝図鑑レイアウト修正版) ---
+// --- js/ui/ui.js (完全版 v389.1: お宝図鑑ホバー修正版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -300,8 +300,8 @@ window.showCollection = async function() {
                 </div>
             </div>
 
-            <!-- カード型グリッド -->
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;">
+            <!-- カード型グリッド: padding-topを追加してホバー時の見切れ防止 -->
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:60px 10px 40px 10px;">
                 <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
             </div>
             
@@ -364,8 +364,7 @@ window.renderCollectionList = async function() {
         chunk.forEach(item => {
             const div = document.createElement('div');
             
-            // ★修正: margin-bottomで少し重ねて「カードフォルダ」感を出してタイトルと画像を見えるようにする
-            // content-visibility: auto はレイアウト崩れの原因になるため削除
+            // ★修正: margin-bottomを -15px に変更して重なりを緩和
             div.style.cssText = `
                 background: white;
                 border-radius: 8px;
@@ -382,13 +381,14 @@ window.renderCollectionList = async function() {
                 aspect-ratio: 0.68;
                 transition: transform 0.2s, z-index 0s;
                 overflow: hidden;
-                margin-bottom: -40px; /* ★ここを調整: 下部（解説エリア）を次のカードで隠す */
+                margin-bottom: -15px; /* ★ここを調整: 重なりを減らす */
                 z-index: 1;
             `;
             
             // ホバー/タップ時に前面に出して全体を表示
             div.onmouseenter = () => {
-                div.style.transform = "translateY(-50px) scale(1.05)";
+                // ★修正: 移動量を -20px に抑える
+                div.style.transform = "translateY(-20px) scale(1.05)";
                 div.style.zIndex = "1000";
                 div.style.boxShadow = "0 10px 20px rgba(0,0,0,0.3)";
             };
