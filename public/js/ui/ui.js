@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v381.0: ロビー遷移時の完全停止対応版) ---
+// --- js/ui/ui.js (完全版 v389.0: お宝図鑑レイアウト修正版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -253,7 +253,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection) - ★最適化済み
+// 図鑑 (Collection) - ★レイアウト調整済み
 // ==========================================
 
 window.openCollectionDetailByIndex = function(originalIndex) {
@@ -313,7 +313,7 @@ window.showCollection = async function() {
     window.renderCollectionList();
 };
 
-// ★改善: 少しずつ描画する（チャンクレンダリング）でフリーズを防止
+// ★改善: 少しずつ描画する（チャンクレンダリング）＋レイアウト調整
 window.renderCollectionList = async function() {
     const grid = document.getElementById('collection-grid');
     const countBadge = document.getElementById('collection-count-badge');
@@ -331,10 +331,8 @@ window.renderCollectionList = async function() {
         return;
     }
 
-    // ソート用のデータ作成（軽量化）
+    // ソート用のデータ作成
     let items = collection.map((item, index) => ({
-        // 画像はBase64で重いので、この時点では参照のみにしておく手もあるが、
-        // 既存ロジックを大きく変えずにレンダリング側で対処する。
         ...item,
         originalIndex: index,
         number: totalCount - index
@@ -365,16 +363,45 @@ window.renderCollectionList = async function() {
 
         chunk.forEach(item => {
             const div = document.createElement('div');
-            // content-visibility: auto で描画負荷をブラウザに任せる
-            div.style.cssText = "background:white; border-radius:8px; padding:4px; box-shadow:0 3px 6px rgba(0,0,0,0.15); text-align:center; border:1px solid #ddd; position:relative; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:flex-start; aspect-ratio: 0.68; transition:transform 0.1s; overflow:hidden; content-visibility: auto;";
+            
+            // ★修正: margin-bottomで少し重ねて「カードフォルダ」感を出してタイトルと画像を見えるようにする
+            // content-visibility: auto はレイアウト崩れの原因になるため削除
+            div.style.cssText = `
+                background: white;
+                border-radius: 8px;
+                padding: 4px;
+                box-shadow: 0 3px 6px rgba(0,0,0,0.15);
+                text-align: center;
+                border: 1px solid #ddd;
+                position: relative;
+                cursor: pointer;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-start;
+                aspect-ratio: 0.68;
+                transition: transform 0.2s, z-index 0s;
+                overflow: hidden;
+                margin-bottom: -40px; /* ★ここを調整: 下部（解説エリア）を次のカードで隠す */
+                z-index: 1;
+            `;
+            
+            // ホバー/タップ時に前面に出して全体を表示
+            div.onmouseenter = () => {
+                div.style.transform = "translateY(-50px) scale(1.05)";
+                div.style.zIndex = "1000";
+                div.style.boxShadow = "0 10px 20px rgba(0,0,0,0.3)";
+            };
+            div.onmouseleave = () => {
+                div.style.transform = "translateY(0) scale(1.0)";
+                div.style.zIndex = "1";
+                div.style.boxShadow = "0 3px 6px rgba(0,0,0,0.15)";
+            };
             
             div.onclick = () => window.showCollectionDetail(item, item.originalIndex, item.number); 
-            div.onmousedown = () => div.style.transform = "scale(0.95)";
-            div.onmouseup = () => div.style.transform = "scale(1.0)";
 
             const img = document.createElement('img');
             img.src = item.image;
-            // ★最適化: 遅延読み込みと非同期デコード
             img.loading = "lazy";
             img.decoding = "async";
             img.style.cssText = "width:100%; height:100%; object-fit:cover; border-radius:4px;";
@@ -392,7 +419,6 @@ window.renderCollectionList = async function() {
         currentIndex += CHUNK_SIZE;
 
         if (currentIndex < items.length) {
-            // 次のフレームで続きを描画（UIブロック防止）
             requestAnimationFrame(renderChunk);
         }
     }
@@ -411,7 +437,6 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
-    // ★画像のみ表示、他のリスト要素は隠れているのでDOMは比較的軽い
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
