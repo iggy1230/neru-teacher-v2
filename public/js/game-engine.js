@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v388.1: 神経衰弱修正版) ---
+// --- js/game-engine.js (完全版 v389.0: 神経衰弱ロジック修正版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -1343,13 +1343,17 @@ window.createCardDeck = async function() {
         }
     }
     
-    // 8ペア(16枚)を作る
+    // ★重要: 所持カードが多い場合は、所持カードのみからランダム選出する
+    // コレクションをシャッフルしてから候補を選ぶ
+    let availableItems = [...collection];
+    availableItems.sort(() => Math.random() - 0.5);
+    
     let selectedItems = [];
     
-    // ★修正: ダミー画像を確実に存在するパスに変更
+    // ダミー画像の定義 (所持カードが8枚未満の場合のみ使用)
     const dummyImages = [
         'assets/images/characters/nell-normal.png',
-        'assets/images/characters/nell-happy.png', // 推測: なければnormalにフォールバック
+        'assets/images/characters/nell-happy.png',
         'assets/images/characters/nell-thinking.png',
         'assets/images/characters/nell-excited.png',
         'assets/images/items/student-id-base.png',
@@ -1361,10 +1365,11 @@ window.createCardDeck = async function() {
     
     for (let i = 0; i < 8; i++) {
         let item;
-        if (i < collection.length) {
-            item = collection[i];
+        if (i < availableItems.length) {
+            // 所持カードを使用
+            item = availableItems[i];
         } else {
-            // ダミー生成
+            // 足りない分はダミー生成
             const dummyIdx = i % dummyImages.length;
             item = {
                 name: `お宝(仮)${i+1}`,
@@ -1394,7 +1399,6 @@ window.createCardDeck = async function() {
         cardEl.className = 'memory-card';
         cardEl.id = `memory-card-${card.index}`;
         
-        // ★修正: onclick属性ではなく、リスナーでバインド (変数のキャプチャミス防止)
         cardEl.addEventListener('click', () => {
             window.flipCard(card.index);
         });
@@ -1493,7 +1497,7 @@ window.checkMatch = async function() {
         // 不正解
         if (window.safePlay) window.safePlay(window.sfxBatu);
         
-        // ★3秒待つ
+        // 3秒待つ
         setTimeout(() => {
             const el1 = document.getElementById(`memory-card-${card1.index}`);
             const el2 = document.getElementById(`memory-card-${card2.index}`);
