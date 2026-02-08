@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v389.0: 音声送信安定化・完全版) ---
+// --- js/voice-service.js (完全版 v388.0: 自己ループ防止・エコー対策強化版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -25,9 +25,11 @@ function shouldInterrupt(text) {
         currentNellText = nellTextEl.innerText.replace(/\s+/g, "");
     }
 
-    // ★自己発話フィルター
+    // ★自己発話フィルター: 認識されたテキストが、現在のセリフに含まれていたら「自分の声」とみなして無視（中断しない）
+    // (例: セリフ「からあげ弁当だにゃ」 -> 認識「からあげ弁当」 -> 無視)
     const cleanInput = cleanText.replace(/\s+/g, "");
     if (currentNellText.length > 0 && currentNellText.includes(cleanInput)) {
+        console.log(`[Echo Cancel] Self-voice detected: "${cleanInput}" in "${currentNellText}"`);
         return false; // 中断しない
     }
 
@@ -69,14 +71,9 @@ function isSelfEcho(text) {
 }
 
 // ==========================================
-// 常時聞き取り (Speech Recognition - HTTPチャット用)
+// 常時聞き取り (Speech Recognition - PC/Android用)
 // ==========================================
 window.startAlwaysOnListening = function() {
-    // WebSocketモード(chat-free)中は、こちらの音声認識は使わない（競合回避）
-    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
-        return;
-    }
-
     if (!('webkitSpeechRecognition' in window)) {
         console.warn("Speech Recognition not supported.");
         // iPhone警告 (一度だけ)
@@ -113,35 +110,50 @@ window.startAlwaysOnListening = function() {
             }
         }
 
+        // PC/Android版: ネル先生が話している最中の処理
         if (window.isNellSpeaking) {
             const textToCheck = finalTranscript || interimTranscript;
+            
             if (shouldInterrupt(textToCheck)) {
                 console.log("[Interruption] Stopping audio.");
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
                 window.stopAudioPlayback();
             } else {
-                return;
+                return; // 割り込み条件を満たさないなら無視
             }
         }
 
         if (finalTranscript && finalTranscript.trim() !== "") {
             const text = finalTranscript;
-            if (isSelfEcho(text)) return;
+            
+            // ★自己発話（エコー）チェック
+            if (isSelfEcho(text)) {
+                console.log(`[Ignored] Self-echo detected: ${text}`);
+                return;
+            }
 
             console.log(`[User Said] ${text}`);
 
-            // 各モードの判定
+            // 1. クイズモードの場合の回答判定
             if (window.currentMode === 'quiz' && typeof window.checkQuizAnswer === 'function') {
-                if (window.checkQuizAnswer(text)) return; 
+                const isAnswer = window.checkQuizAnswer(text);
+                if (isAnswer) return; 
             }
+            
+            // 2. 漢字ドリル（読み問題）の判定
             if (window.currentMode === 'kanji' && typeof window.checkKanjiReading === 'function') {
-                if (window.checkKanjiReading(text)) return; 
-            }
-            if (window.currentMode === 'riddle' && typeof window.checkRiddleAnswer === 'function') {
-                if (window.checkRiddleAnswer(text)) return;
+                const isCorrect = window.checkKanjiReading(text);
+                if (isCorrect) return; 
             }
 
-            // HTTPチャット送信
+            // 3. なぞなぞモードの判定
+            if (window.currentMode === 'riddle' && typeof window.checkRiddleAnswer === 'function') {
+                const isCorrect = window.checkRiddleAnswer(text);
+                if (isCorrect) return;
+            }
+
+            // --- 通常の会話・チャット処理 ---
+            
             let targetId = 'user-speech-text-embedded';
             if (window.currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
             
@@ -163,14 +175,20 @@ window.startAlwaysOnListening = function() {
                 } catch(e) {}
             }
             
+            // 問題データの取得（あれば）
             let currentQuizData = null;
             let currentRiddleData = null;
             let currentMinitestData = null;
 
-            if (window.currentMode === 'quiz' && window.currentQuiz) currentQuizData = window.currentQuiz;
-            else if (window.currentMode === 'riddle' && window.currentRiddle) currentRiddleData = window.currentRiddle;
-            else if (window.currentMode === 'minitest' && window.currentMinitest) currentMinitestData = window.currentMinitest;
-            else if (window.currentMode === 'kanji' && window.currentMinitest) currentMinitestData = window.currentMinitest;
+            if (window.currentMode === 'quiz' && window.currentQuiz) {
+                currentQuizData = window.currentQuiz;
+            } else if (window.currentMode === 'riddle' && window.currentRiddle) {
+                currentRiddleData = window.currentRiddle;
+            } else if (window.currentMode === 'minitest' && window.currentMinitest) {
+                currentMinitestData = window.currentMinitest;
+            } else if (window.currentMode === 'kanji' && window.currentMinitest) { 
+                currentMinitestData = window.currentMinitest;
+            }
 
             try {
                 window.continuousRecognition.stop(); 
@@ -250,7 +268,7 @@ window.stopAlwaysOnListening = function() {
 };
 
 // ==========================================
-// リアルタイムチャット (WebSocket - Gemini Realtime API用)
+// リアルタイムチャット (WebSocket - iPhone/Safari用)
 // ==========================================
 
 window.stopLiveChat = function() {
@@ -261,13 +279,9 @@ window.stopLiveChat = function() {
     window.isLiveChatManuallyStopped = true;
 
     if (window.connectionTimeout) clearTimeout(window.connectionTimeout); 
-    
-    // Web Audio API & MediaStream の停止
+    if (window.recognition) try{window.recognition.stop()}catch(e){} 
     if (window.mediaStream) window.mediaStream.getTracks().forEach(t=>t.stop()); 
-    if (window.workletNode) { 
-        try { window.workletNode.port.postMessage('stop'); } catch(e){}
-        try { window.workletNode.disconnect(); } catch(e){}
-    } 
+    if (window.workletNode) { window.workletNode.port.postMessage('stop'); window.workletNode.disconnect(); } 
     if (window.liveSocket) {
         window.liveSocket.close(); 
     }
@@ -312,9 +326,6 @@ window.stopLiveChat = function() {
 window.startLiveChat = async function(context = 'main') { 
     if (context === 'main' && window.currentMode === 'chat-free') context = 'free';
     if (context !== 'free') return;
-
-    // HTTPチャット用の音声認識が動いていたら止める
-    window.stopAlwaysOnListening();
 
     window.isLiveChatManuallyStopped = false;
 
@@ -420,8 +431,6 @@ window.startLiveChat = async function(context = 'main') {
                     } 
                     if(typeof window.updateNellMessage === 'function') window.updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
                     window.isRecognitionActive = true; 
-                    
-                    // 音声送信開始 (WebSocketモードではSpeechRecognitionは使わない)
                     window.startMicrophone(); 
                     return;
                 }
@@ -449,6 +458,7 @@ window.startLiveChat = async function(context = 'main') {
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage("あれ？切れちゃったにゃ。つなぎ直すにゃ！", "thinking", false, false);
                 
                 if (window.mediaStream) window.mediaStream.getTracks().forEach(t=>t.stop());
+                if (window.recognition) try{window.recognition.stop()}catch(e){}
                 
                 setTimeout(() => {
                     if (window.currentMode === 'chat-free') {
@@ -470,26 +480,46 @@ window.startLiveChat = async function(context = 'main') {
     } 
 };
 
-// WebSocketモード用 (Gemini Realtime APIへ音声送信)
 window.startMicrophone = async function() { 
     try { 
-        // 1. webkitSpeechRecognition はここでは使わない (競合防止)
+        if ('webkitSpeechRecognition' in window) { 
+            window.recognition = new webkitSpeechRecognition(); 
+            window.recognition.continuous = true; 
+            window.recognition.interimResults = true; 
+            window.recognition.lang = 'ja-JP'; 
+            
+            window.recognition.onresult = (event) => { 
+                let currentText = "";
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    currentText += event.results[i][0].transcript;
+                }
+                
+                if (window.isNellSpeaking) {
+                    if (shouldInterrupt(currentText)) {
+                        console.log("[LiveChat Interruption]", currentText);
+                        window.stopAudioPlayback();
+                    }
+                }
 
-        const useVideo = (window.currentMode !== 'chat-free');
+                for (let i = event.resultIndex; i < event.results.length; ++i) { 
+                    if (event.results[i].isFinal) { 
+                        const userText = event.results[i][0].transcript;
+                        if(typeof window.saveToNellMemory === 'function') window.saveToNellMemory('user', userText); 
+                        window.streamTextBuffer = ""; 
+                        const el = document.getElementById('user-speech-text-free'); 
+                        if(el) el.innerText = userText; 
+                    }
+                } 
+            }; 
+            window.recognition.onend = () => { if (window.isRecognitionActive && window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) try{window.recognition.start()}catch(e){} }; 
+            window.recognition.start(); 
+        } 
         
-        // エコーキャンセル等のオプションを強化
-        const constraints = {
-            audio: {
-                sampleRate: 16000,
-                channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            },
-            video: useVideo ? { facingMode: "environment" } : false
-        };
-
-        window.mediaStream = await navigator.mediaDevices.getUserMedia(constraints); 
+        const useVideo = (window.currentMode !== 'chat-free');
+        window.mediaStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { sampleRate: 16000, channelCount: 1 }, 
+            video: useVideo ? { facingMode: "environment" } : false 
+        }); 
         
         if (useVideo) {
             let videoId = 'live-chat-video-free';
@@ -502,32 +532,7 @@ window.startMicrophone = async function() {
             }
         }
 
-        // バッファサイズを4096に増やして送信頻度を下げる
-        const processorCode = `
-        class PcmProcessor extends AudioWorkletProcessor { 
-            constructor() { 
-                super(); 
-                this.bufferSize = 4096; 
-                this.buffer = new Float32Array(this.bufferSize); 
-                this.index = 0; 
-            } 
-            process(inputs, outputs, parameters) { 
-                const input = inputs[0]; 
-                if (input && input.length > 0) { 
-                    const channel = input[0]; 
-                    for (let i = 0; i < channel.length; i++) { 
-                        this.buffer[this.index++] = channel[i]; 
-                        if (this.index >= this.bufferSize) { 
-                            this.port.postMessage(this.buffer); 
-                            this.index = 0; 
-                        } 
-                    } 
-                } 
-                return true; 
-            } 
-        } 
-        registerProcessor('pcm-processor', PcmProcessor);`; 
-
+        const processorCode = `class PcmProcessor extends AudioWorkletProcessor { constructor() { super(); this.bufferSize = 2048; this.buffer = new Float32Array(this.bufferSize); this.index = 0; } process(inputs, outputs, parameters) { const input = inputs[0]; if (input.length > 0) { const channel = input[0]; for (let i = 0; i < channel.length; i++) { this.buffer[this.index++] = channel[i]; if (this.index >= this.bufferSize) { this.port.postMessage(this.buffer); this.index = 0; } } } return true; } } registerProcessor('pcm-processor', PcmProcessor);`; 
         const blob = new Blob([processorCode], { type: 'application/javascript' }); 
         await window.audioContext.audioWorklet.addModule(URL.createObjectURL(blob)); 
         const source = window.audioContext.createMediaStreamSource(window.mediaStream); 
@@ -538,34 +543,27 @@ window.startMicrophone = async function() {
             if (window.isMicMuted) return;
             if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) return; 
             
-            // ネル先生が話している最中は音声データを送らない（エコー防止）
+            // ★【iPhone対策】ネル先生が話している最中は、マイクデータをサーバーに送らない（エコーバック防止）
+            // マイク停止ではなくデータ送信だけ止めるので、話し終われば即再開される
             if (window.isNellSpeaking) {
                 return;
             }
 
-            // ノイズゲート処理
+            // ノイズゲート処理 (小さな音は無視)
             const float32Data = event.data;
             let sum = 0;
-            // 処理軽減のため間引いて計算
-            for (let i = 0; i < float32Data.length; i += 8) { 
+            for (let i = 0; i < float32Data.length; i += 4) { 
                 sum += float32Data[i] * float32Data[i];
             }
-            const rms = Math.sqrt(sum / (float32Data.length / 8));
+            const rms = Math.sqrt(sum / (float32Data.length / 4));
             
-            if (rms < 0.005) return; 
+            if (rms < 0.005) return; // 閾値調整
 
-            // ダウンサンプリングと送信
-            const downsampled = window.downsampleBuffer(float32Data, window.audioContext.sampleRate, 16000); 
-            const pcm16 = window.floatTo16BitPCM(downsampled);
-            const base64 = window.arrayBufferToBase64(pcm16);
-            
-            window.liveSocket.send(JSON.stringify({ base64Audio: base64 })); 
+            const downsampled = window.downsampleBuffer(event.data, window.audioContext.sampleRate, 16000); 
+            window.liveSocket.send(JSON.stringify({ base64Audio: window.arrayBufferToBase64(window.floatTo16BitPCM(downsampled)) })); 
         }; 
     } catch(e) {
         console.warn("Audio/Camera Error:", e);
-        if(typeof window.updateNellMessage === 'function') {
-            window.updateNellMessage("マイクが使えないみたいだにゃ...", "sad");
-        }
     } 
 };
 
@@ -603,45 +601,6 @@ window.playLivePcmAudio = function(base64) {
     window.nextStartTime += buffer.duration; 
 };
 
-window.floatTo16BitPCM = function(float32Array) { 
-    const buffer = new ArrayBuffer(float32Array.length * 2); 
-    const view = new DataView(buffer); 
-    let offset = 0; 
-    for (let i = 0; i < float32Array.length; i++, offset += 2) { 
-        let s = Math.max(-1, Math.min(1, float32Array[i])); 
-        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); 
-    } 
-    return buffer; 
-};
-
-window.downsampleBuffer = function(buffer, sampleRate, outSampleRate) { 
-    if (outSampleRate >= sampleRate) return buffer; 
-    const ratio = sampleRate / outSampleRate; 
-    const newLength = Math.round(buffer.length / ratio); 
-    const result = new Float32Array(newLength); 
-    let offsetResult = 0, offsetBuffer = 0; 
-    while (offsetResult < result.length) { 
-        const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); 
-        let accum = 0, count = 0; 
-        for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { 
-            accum += buffer[i]; 
-            count++; 
-        } 
-        result[offsetResult] = accum / count; 
-        offsetResult++; 
-        offsetBuffer = nextOffsetBuffer; 
-    } 
-    return result; 
-};
-
-// ★高速化: チャンク処理でBase64変換
-window.arrayBufferToBase64 = function(buffer) { 
-    let binary = ''; 
-    const bytes = new Uint8Array(buffer); 
-    const len = bytes.byteLength;
-    const CHUNK_SIZE = 0x8000; // 32KB
-    for (let i = 0; i < len; i += CHUNK_SIZE) {
-        binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CHUNK_SIZE, len)));
-    }
-    return window.btoa(binary); 
-};
+window.floatTo16BitPCM = function(float32Array) { const buffer = new ArrayBuffer(float32Array.length * 2); const view = new DataView(buffer); let offset = 0; for (let i = 0; i < float32Array.length; i++, offset += 2) { let s = Math.max(-1, Math.min(1, float32Array[i])); view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true); } return buffer; };
+window.downsampleBuffer = function(buffer, sampleRate, outSampleRate) { if (outSampleRate >= sampleRate) return buffer; const ratio = sampleRate / outSampleRate; const newLength = Math.round(buffer.length / ratio); const result = new Float32Array(newLength); let offsetResult = 0, offsetBuffer = 0; while (offsetResult < result.length) { const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio); let accum = 0, count = 0; for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) { accum += buffer[i]; count++; } result[offsetResult] = accum / count; offsetResult++; offsetBuffer = nextOffsetBuffer; } return result; };
+window.arrayBufferToBase64 = function(buffer) { let binary = ''; const bytes = new Uint8Array(buffer); for (let i = 0; i < bytes.byteLength; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); };
