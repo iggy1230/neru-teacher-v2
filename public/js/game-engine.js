@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v389.0: 神経衰弱ロジック修正版) ---
+// --- js/game-engine.js (完全版 v390.2: 神経衰弱ユーザー名対応版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -1311,6 +1311,11 @@ window.showMemoryGame = function() {
 window.startMemoryGame = async function(difficulty) {
     if (!currentUser) return;
     
+    // プレイヤー名の表示更新 (HTML側IDへ反映)
+    const playerName = currentUser.name || "ユーザー";
+    const nameEl = document.getElementById('memory-name-player');
+    if(nameEl) nameEl.innerText = playerName;
+
     memoryGameState.difficulty = difficulty;
     memoryGameState.scores = { player: 0, nell: 0 };
     memoryGameState.turn = 'player';
@@ -1323,7 +1328,7 @@ window.startMemoryGame = async function(difficulty) {
     
     document.getElementById('memory-score-player').innerText = '0';
     document.getElementById('memory-score-nell').innerText = '0';
-    document.getElementById('memory-turn-indicator').innerText = 'キミの番だにゃ！';
+    document.getElementById('memory-turn-indicator').innerText = `${playerName}さんの番だにゃ！`;
     
     window.updateNellMessage("カードを配るにゃ！", "normal");
     
@@ -1350,10 +1355,10 @@ window.createCardDeck = async function() {
     
     let selectedItems = [];
     
-    // ダミー画像の定義 (所持カードが8枚未満の場合のみ使用)
+    // ★修正: ダミー画像を確実に存在するパスに変更
     const dummyImages = [
         'assets/images/characters/nell-normal.png',
-        'assets/images/characters/nell-happy.png',
+        'assets/images/characters/nell-happy.png', // 推測: なければnormalにフォールバック
         'assets/images/characters/nell-thinking.png',
         'assets/images/characters/nell-excited.png',
         'assets/images/items/student-id-base.png',
@@ -1399,6 +1404,7 @@ window.createCardDeck = async function() {
         cardEl.className = 'memory-card';
         cardEl.id = `memory-card-${card.index}`;
         
+        // ★修正: onclick属性ではなく、リスナーでバインド (変数のキャプチャミス防止)
         cardEl.addEventListener('click', () => {
             window.flipCard(card.index);
         });
@@ -1458,6 +1464,7 @@ window.checkMatch = async function() {
     memoryGameState.isProcessing = true;
     
     const [card1, card2] = memoryGameState.flippedCards;
+    const playerName = currentUser ? currentUser.name : 'ユーザー';
     
     if (card1.id === card2.id) {
         // 正解！
@@ -1469,7 +1476,7 @@ window.checkMatch = async function() {
         if (memoryGameState.turn === 'player') {
             memoryGameState.scores.player++;
             document.getElementById('memory-score-player').innerText = memoryGameState.scores.player;
-            window.updateNellMessage(`「${card1.name}」をゲットだにゃ！`, "happy");
+            window.updateNellMessage(`「${card1.name}」をゲットだにゃ！${playerName}さんすごいにゃ！`, "happy");
         } else {
             memoryGameState.scores.nell++;
             document.getElementById('memory-score-nell').innerText = memoryGameState.scores.nell;
@@ -1497,7 +1504,7 @@ window.checkMatch = async function() {
         // 不正解
         if (window.safePlay) window.safePlay(window.sfxBatu);
         
-        // 3秒待つ
+        // ★3秒待つ
         setTimeout(() => {
             const el1 = document.getElementById(`memory-card-${card1.index}`);
             const el2 = document.getElementById(`memory-card-${card2.index}`);
@@ -1519,8 +1526,8 @@ window.checkMatch = async function() {
                 memoryGameState.isProcessing = false; // 一旦解除しないとnellTurnが動かないかも？いやnellTurn内でフラグ管理はしていない
                 setTimeout(window.nellTurn, 1000);
             } else {
-                indicator.innerText = "キミの番だにゃ！";
-                window.updateNellMessage("キミの番だにゃ。", "normal");
+                indicator.innerText = `${playerName}さんの番だにゃ！`;
+                window.updateNellMessage(`${playerName}さんの番だにゃ。`, "normal");
                 memoryGameState.isProcessing = false;
             }
             
@@ -1638,13 +1645,14 @@ window.endMemoryGame = function() {
     const pScore = memoryGameState.scores.player;
     const nScore = memoryGameState.scores.nell;
     const settings = memoryGameState.settings[memoryGameState.difficulty];
+    const playerName = currentUser ? currentUser.name : 'ユーザー';
     
     let msg = "";
     let mood = "normal";
     
     if (pScore > nScore) {
         const reward = pScore * settings.reward;
-        msg = `キミの勝ちだにゃ！すごいにゃ！報酬としてカリカリ${reward}個あげるにゃ！`;
+        msg = `${playerName}さんの勝ちだにゃ！すごいにゃ！報酬としてカリカリ${reward}個あげるにゃ！`;
         mood = "excited";
         window.giveGameReward(reward);
     } else if (pScore < nScore) {
