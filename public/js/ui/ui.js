@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v392.0: お宝図鑑完全グリッド化) ---
+// --- js/ui/ui.js (完全版 v393.0: お宝図鑑グリッド表示・重なり完全撤廃版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -253,7 +253,7 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection) - ★完全グリッド化
+// 図鑑 (Collection) - ★完全グリッド化 (重なり排除)
 // ==========================================
 
 window.openCollectionDetailByIndex = function(originalIndex) {
@@ -280,6 +280,7 @@ window.showCollection = async function() {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
+    // ★修正: gapを15pxに設定し、カード間の距離を確保
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 85vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
@@ -382,7 +383,7 @@ window.renderCollectionList = async function() {
                 aspect-ratio: 0.68;
                 transition: transform 0.1s;
                 overflow: hidden;
-                margin-bottom: 0; /* ★マージンリセット */
+                margin: 0; /* ★マージンリセット */
                 z-index: 1;
             `;
             
