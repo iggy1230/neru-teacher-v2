@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v385.1: 不要ボタン削除版) -->
+<!-- index.html (完全版 v393.0: 神経衰弱追加・不具合対策版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -68,7 +68,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v385.1-UIFix</div>
+            <div class="version-tag">Build: v393.0-MemoryFix</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -188,6 +188,7 @@
                 <button onclick="showQuizGame()" class="main-btn blue-btn" style="background:#42a5f5; box-shadow:0 4px 0 #1e88e5;">🎤 ネル先生ウルトラクイズ</button>
                 <button onclick="showRiddleGame()" class="main-btn pink-btn" style="background:#e91e63; box-shadow:0 4px 0 #ad1457;">❓ ネル先生のなぞなぞ</button>
                 <button onclick="showKanjiMenu()" class="main-btn purple-btn" style="background:#ab47bc; box-shadow:0 4px 0 #7b1fa2;">✍️ ネル先生の漢字ドリル</button>
+                <button onclick="showMemoryGameMenu()" class="main-btn green-btn" style="background:#2e7d32; box-shadow:0 4px 0 #1b5e20;">🃏 お宝神経衰弱</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
         </section>
@@ -200,7 +201,7 @@
                 <div id="subject-selection-view" class="hidden"><div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"><button onclick="setSubject('こくご')" class="main-btn pink-btn">こくご</button><button onclick="setSubject('さんすう')" class="main-btn blue-btn">さんすう</button><button onclick="setSubject('りか')" class="main-btn orange-btn">りか</button><button onclick="setSubject('しゃかい')" class="main-btn gray-btn">しゃかい</button></div></div>
                 <div id="chalkboard" class="chalkboard hidden"></div>
                 <div class="work-area">
-                    <div id="upload-controls" class="hidden"><p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p><div class="upload-buttons-container"><button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800;">📹 アプリで撮影</button><div style="display:flex; gap:10px;"><label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label><label class="camera-btn-large" style="flex:1; background:#4a90e2;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label></div></div></div>
+                    <div id="upload-controls" class="hidden"><p style="text-align:center; margin-bottom:10px;">宿題をみせてね！</p><div style="display:flex; justify-content:center; gap:10px; margin-bottom:15px;"><button id="mode-btn-fast" onclick="setAnalyzeMode('fast')" class="main-btn pink-btn" style="width:45%;">🚀 サクサク</button><button id="mode-btn-precision" onclick="setAnalyzeMode('precision')" class="main-btn gray-btn" style="width:45%;">🧐 じっくり</button></div><div class="upload-buttons-container"><button id="start-webcam-btn" class="camera-btn-large" style="background:#ff9800;">📹 アプリで撮影</button><div style="display:flex; gap:10px;"><label class="camera-btn-large" style="flex:1;">📷 標準カメラ<input type="file" id="hw-input-camera" accept="image/*" style="display:none;"></label><label class="camera-btn-large" style="flex:1; background:#4a90e2;">📁 アルバム<input type="file" id="hw-input-album" accept="image/*" style="display:none;"></label></div></div></div>
                     <div id="thinking-view" class="hidden"><img src="assets/images/characters/nell-inspect.png" class="loader-inspect-img" onerror="this.src='assets/images/characters/nell-normal.png'"><div class="progress-container"><div id="progress-bar" class="progress-bar"></div></div><p id="thinking-status">考え中... <span id="progress-percent">0</span>%</p></div>
                     <div id="problem-selection-view" class="hidden"><div class="problem-selection-card"><div class="problem-scroll-area" id="transcribed-problem-list"></div><div style="text-align:center; margin-top:20px;"><button onclick="pressAllSolved()" class="main-btn orange-btn">✨ ぜんぶわかったにゃ！</button></div></div></div>
                     <div id="final-view" class="hidden"><div id="grade-sheet-container" class="hidden"><div class="glass-card" id="problem-list-grade" style="background:white; border-radius:15px; padding:10px;"></div></div><div id="hint-detail-container" class="hidden"><div class="hint-btns"><div class="hint-step-badge" id="hint-step-label">考え方</div><button onclick="showNextHint()" id="next-hint-btn" class="main-btn blue-btn">次のヒント！</button><button onclick="revealAnswer()" id="reveal-answer-btn" class="main-btn orange-btn hidden">答えを見る🐾</button><div id="answer-display-area" class="answer-box hidden">ネル先生の答え：<br><span id="final-answer-text"></span></div></div><button onclick="pressThanks()" class="main-btn pink-btn">✨ ありがとう！</button><button onclick="backToProblemSelection()" class="main-btn gray-btn" style="margin-top: 10px;">他の問題を見る</button></div></div>
@@ -241,10 +242,8 @@
         <section id="screen-quiz" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-quiz"></div><div class="chat-bubble"><p id="nell-text-quiz">ウルトラクイズに挑戦だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#42a5f5;">🎤 ウルトラクイズ</h2>
-            
-            <!-- ジャンル選択エリア -->
             <div id="quiz-genre-select" class="glass-card" style="text-align:center; padding:20px;">
-                <p style="font-weight:bold; margin-bottom:15px; font-size:1.1rem;">ジャンルを選んでにゃ！</p>
+                <p style="font-weight:bold; margin-bottom:15px;">ジャンルを選んでにゃ！</p>
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                     <button id="btn-quiz-all" onclick="showLevelSelection('全ジャンル')" class="main-btn pink-btn" style="grid-column: span 2;">全ジャンル</button>
                     <button id="btn-quiz-general" onclick="showLevelSelection('一般知識')" class="main-btn blue-btn">一般知識</button>
@@ -252,49 +251,34 @@
                     <button id="btn-quiz-entertainment" onclick="showLevelSelection('芸能・スポーツ')" class="main-btn green-btn">芸能・スポーツ</button>
                     <button id="btn-quiz-history" onclick="showLevelSelection('歴史・地理・社会')" class="main-btn purple-btn">歴史・地理・社会</button>
                     <button id="btn-quiz-game" onclick="showLevelSelection('ゲーム')" class="main-btn yellow-btn">ゲーム</button>
-                    <!-- ★修正: 配置変更 -->
                     <button id="btn-quiz-minecraft" onclick="showLevelSelection('マインクラフト')" class="main-btn green-btn" style="background:#4caf50;">マインクラフト</button>
                     <button id="btn-quiz-roblox" onclick="showLevelSelection('ロブロックス')" class="main-btn red-btn" style="background:#e53935;">ロブロックス</button>
                     <button id="btn-quiz-pokemon" onclick="showLevelSelection('ポケモン')" class="main-btn blue-btn" style="background:#0288d1;">ポケモン</button>
                 </div>
             </div>
-
-            <!-- ★新規: レベル選択エリア (デフォルト非表示) -->
             <div id="quiz-level-select" class="glass-card hidden" style="text-align:center; padding:20px;">
                 <p style="font-weight:bold; margin-bottom:15px; font-size:1.1rem;">レベルを選ぶにゃ！</p>
-                <div id="level-buttons-container" style="display:flex; flex-direction:column; gap:10px;">
-                    <!-- JSでボタン生成 -->
-                </div>
+                <div id="level-buttons-container" style="display:flex; flex-direction:column; gap:10px;"></div>
                 <button onclick="backToQuizGenre()" class="main-btn gray-btn" style="margin-top:15px;">ジャンル選択に戻る</button>
             </div>
-
-            <!-- クイズプレイエリア -->
             <div id="quiz-game-area" class="glass-card hidden" style="text-align:center; padding:20px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                     <span id="quiz-genre-label" style="background:#eee; padding:3px 8px; border-radius:10px; font-size:0.8rem; color:#666;">ジャンル</span>
                     <span id="quiz-progress" style="font-weight:bold; color:#42a5f5;">1/5 問目</span>
                 </div>
-                
                 <p id="quiz-question-text" style="font-size:1.2rem; font-weight:bold; color:#333; min-height:80px; display:flex; align-items:center; justify-content:center;">読み込み中...</p>
-                
-                <!-- 選択肢ボタンエリア -->
                 <div id="quiz-options-container" style="margin-top:10px;"></div>
-
                 <div id="quiz-mic-status" style="margin-top:10px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
                 <p style="font-size:0.9rem; color:#666; margin-top:5px;">マイクで答えてもOKだにゃ！</p>
-                
-                <!-- 正解表示エリア -->
                 <div id="quiz-answer-display" class="hidden" style="margin-top:15px; padding:10px; background:#e3f2fd; border-radius:10px; border:2px solid #2196f3; color:#0d47a1; font-weight:bold;">
                     正解は... <span id="quiz-answer-text" style="font-size:1.5rem; display:block;"></span>
                 </div>
-
                 <div id="quiz-controls" style="display:flex; gap:10px; justify-content:center; margin-top:15px;">
                     <button onclick="requestQuizHint()" class="main-btn green-btn" style="flex:1;">💡 ヒント</button>
                     <button onclick="giveUpQuiz()" class="main-btn gray-btn" style="flex:1;">🏳️ ギブアップ</button>
                     <button id="next-quiz-btn" onclick="nextQuiz()" class="main-btn blue-btn hidden" style="flex:1;">次の問題へ</button>
                 </div>
             </div>
-
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
@@ -302,27 +286,50 @@
         <section id="screen-riddle" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-riddle"></div><div class="chat-bubble"><p id="nell-text-riddle">なぞなぞを出すにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#e91e63;">❓ なぞなぞ</h2>
-            
             <div class="glass-card" style="text-align:center; padding:20px;">
                 <p id="riddle-question-text" style="font-size:1.3rem; font-weight:bold; color:#333; min-height:100px; display:flex; align-items:center; justify-content:center;">スタートボタンを押してにゃ！</p>
-                
                 <div id="riddle-mic-status" style="margin-top:10px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
                 <p style="font-size:0.9rem; color:#666; margin-top:5px;">マイクに向かって答えを言ってね！</p>
-
-                <!-- 正解表示エリア -->
                 <div id="riddle-answer-display" class="hidden" style="margin-top:15px; padding:10px; background:#fce4ec; border-radius:10px; border:2px solid #e91e63; color:#880e4f; font-weight:bold;">
                     正解は... <span id="riddle-answer-text" style="font-size:1.5rem; display:block;"></span>
                 </div>
-
                 <div id="riddle-controls" style="display:none; gap:10px; justify-content:center; margin-top:15px;">
                     <button onclick="giveUpRiddle()" class="main-btn gray-btn" style="flex:1;">答えを見る</button>
                     <button id="next-riddle-btn" onclick="nextRiddle()" class="main-btn pink-btn hidden" style="flex:1;">次の問題</button>
                 </div>
-                
                 <button id="start-riddle-btn" onclick="startRiddle()" class="main-btn pink-btn">スタート！</button>
             </div>
-
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
+        </section>
+
+        <!-- ★新規: お宝神経衰弱 (Memory Game) -->
+        <section id="screen-memory-game" class="screen hidden">
+            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-memory"></div><div class="chat-bubble"><p id="nell-text-memory">お宝神経衰弱で勝負だにゃ！</p></div></div>
+            <h2 class="section-title" style="margin-top:10px; color:#2e7d32;">🃏 お宝神経衰弱</h2>
+            
+            <!-- 難易度選択 -->
+            <div id="memory-difficulty-select" class="glass-card" style="text-align:center; padding:20px;">
+                <p style="font-weight:bold; margin-bottom:15px; font-size:1.1rem;">ネル先生の強さを選んでにゃ！</p>
+                <button onclick="startMemoryGame('weak')" class="main-btn green-btn" style="background:#81c784;">弱い (1ペア10個)</button>
+                <button onclick="startMemoryGame('normal')" class="main-btn orange-btn" style="background:#ffb74d;">普通 (1ペア20個)</button>
+                <button onclick="startMemoryGame('strong')" class="main-btn red-btn" style="background:#e57373;">強い (1ペア50個)</button>
+            </div>
+
+            <!-- ゲーム盤面 -->
+            <div id="memory-game-board" class="glass-card hidden" style="padding:10px; text-align:center;">
+                <div style="display:flex; justify-content:space-around; margin-bottom:10px; font-weight:bold; font-size:1.1rem;">
+                    <div style="color:#2196f3;">あなた: <span id="memory-score-player">0</span></div>
+                    <div style="color:#ff5252;">ネル先生: <span id="memory-score-nell">0</span></div>
+                </div>
+                <div id="memory-turn-indicator" style="margin-bottom:10px; font-weight:bold; background:#e8f5e9; padding:5px; border-radius:10px; color:#2e7d32;">あなたの番です</div>
+                
+                <div id="memory-grid" class="memory-grid">
+                    <!-- Cards will be generated here -->
+                </div>
+            </div>
+
+            <!-- ★重要: stopMemoryGame() を呼んでから戻る -->
+            <button onclick="stopMemoryGame(); backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
         <!-- 10. 漢字ドリル画面 -->
@@ -330,33 +337,25 @@
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-kanji"></div><div class="chat-bubble"><p id="nell-text-kanji">漢字の練習だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#ab47bc;">✍️ 漢字ドリル</h2>
             <div class="glass-card" style="text-align:center; padding:15px;">
-                <!-- モード選択メニュー -->
                 <div id="kanji-menu-container">
                     <p style="font-weight:bold; margin-bottom:15px;">どの練習をする？</p>
                     <button onclick="startKanjiSet('reading')" class="main-btn blue-btn" style="background:#29b6f6;">📖 読み (5問)</button>
                     <button onclick="startKanjiSet('writing')" class="main-btn orange-btn" style="background:#ff7043;">✍️ 書き取り (5問)</button>
                 </div>
-
-                <!-- ゲームエリア -->
                 <div id="kanji-game-container" class="hidden">
                     <p id="kanji-progress" style="font-size:0.9rem; color:#888; text-align:right;">1/5問目</p>
                     <p id="kanji-question-text" style="font-size:1.5rem; font-weight:900; color:#4a148c; margin-bottom:10px;">読み込み中...</p>
-                    
                     <canvas id="kanji-canvas" width="300" height="300" class="hidden"></canvas>
-                    
                     <div id="kanji-mic-container" class="hidden" style="height:200px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
                         <div style="font-size:4rem;">🎤</div>
                         <p style="margin-top:10px; font-weight:bold; color:#e91e63;">声で答えを言ってにゃ！</p>
                     </div>
-
                     <div id="kanji-controls" style="display:none; gap:10px; margin-top:10px; flex-wrap:wrap;">
                         <button id="clear-kanji-btn" onclick="clearKanjiCanvas()" class="main-btn gray-btn" style="flex:1;">消す</button>
                         <button id="check-kanji-btn" onclick="checkKanji()" class="main-btn purple-btn" style="flex:1;">採点！</button>
                         <button id="giveup-kanji-btn" onclick="giveUpKanji()" class="main-btn gray-btn" style="flex:1;">🏳️ ギブアップ</button>
                     </div>
-                    
                     <button id="next-kanji-btn" onclick="nextKanjiQuestion()" class="main-btn" style="background:#ec407a; margin-top:10px; display:none;">次の問題</button>
-
                     <div id="kanji-answer-display" class="hidden" style="margin-top:15px; padding:10px; background:#f3e5f5; border-radius:10px; border:2px solid #9c27b0; color:#4a148c; font-weight:bold;">
                         正解は... <span id="kanji-answer-text" style="font-size:2rem; display:block;"></span>
                     </div>
@@ -381,23 +380,14 @@
         </section>
     </div>
 
-    <!-- モーダル類 -->
-    <div id="inline-whiteboard" class="hidden whiteboard-overlay"><div class="whiteboard-board"><p style="margin:0 0 10px 0; color:#8d6e63; font-weight:bold;">ネル先生のメモ</p><div id="whiteboard-content" class="whiteboard-text"></div><button onclick="document.getElementById('inline-whiteboard').classList.add('hidden')" class="close-board-btn">✖ 閉じる</button></div></div>
-    <div id="camera-modal" class="camera-modal hidden"><div class="camera-container"><video id="camera-video" autoplay playsinline></video><div class="camera-guide-box"><p>枠に合わせてにゃ</p></div></div><div class="camera-controls"><button id="camera-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="camera-shutter-btn" class="camera-shutter-btn"></button></div><canvas id="camera-canvas" style="display:none;"></canvas></div>
-    <div id="cropper-modal" class="camera-modal hidden"><div class="cropper-wrapper"><canvas id="crop-canvas"></canvas><svg id="crop-lines" style="position:absolute; top:0; left:0; pointer-events:none; width:100%; height:100%;"></svg><div id="handle-tl" class="crop-handle" style="top:0; left:0;"></div><div id="handle-tr" class="crop-handle" style="top:0; right:0;"></div><div id="handle-br" class="crop-handle" style="bottom:0; right:0;"></div><div id="handle-bl" class="crop-handle" style="bottom:0; left:0;"></div></div><div class="camera-controls"><button id="cropper-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="cropper-ok-btn" class="main-btn pink-btn" style="width:120px;">決定！</button></div></div>
-    <div id="memory-manager-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content"><h3 style="text-align:center; margin:0 0 10px 0; flex-shrink: 0; color:#5c6bc0;">📝 プロフィール</h3><div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:2px solid #eee; padding-bottom:5px; flex-shrink: 0;"><button class="memory-tab active" onclick="switchMemoryTab('profile')" id="tab-profile">ネル先生のメモ</button><button class="memory-tab" onclick="switchMemoryTab('logs')" id="tab-logs">会話ログ</button></div><div id="memory-view-profile" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;"><p style="font-size:0.8rem; color:#666; flex-shrink: 0; text-align:center;">ネル先生が覚えているキミのことだにゃ。</p><div id="profile-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div></div><div id="memory-view-logs" class="hidden" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;"><p style="font-size:0.8rem; color:#666; flex-shrink: 0; text-align:center;">直近の会話ログだにゃ。</p><div id="memory-list-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div></div><button onclick="closeMemoryManager()" class="main-btn gray-btn" style="margin-top:10px; flex-shrink: 0;">閉じる</button></div></div>
-    <div id="collection-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;"><h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
-    <button onclick="closeCollection(); showMap();" class="main-btn" style="margin-bottom:10px; background:#29b6f6; box-shadow: 0 4px 0 #0288d1; padding:10px; font-size:0.9rem;">🗺️ 足あとマップを見る</button>
-    <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;"></div><div style="text-align:center; margin-top:15px; flex-shrink: 0;"><button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div></div></div>
-    <div id="timer-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content" style="height: auto; max-height: auto;"><h3 style="text-align:center; margin:0 0 10px 0; color:#ff7043;">⏱️ ネル先生タイマー</h3><div class="timer-box" style="margin: 0; box-shadow: none; border: none;"><div id="modal-timer-display" class="timer-display" style="font-size: 3rem;">00:00</div>
-    <div class="timer-controls" style="margin-top: 15px;">
-        <button onclick="setTimer(0.5)" class="timer-btn">+30秒</button>
-        <button onclick="setTimer(1)" class="timer-btn">+1分</button>
-        <button onclick="setTimer(10)" class="timer-btn">+10分</button>
-        <button onclick="setTimer(30)" class="timer-btn">+30分</button>
-        <button onclick="resetTimer()" class="timer-btn" style="background:#b0bec5;">リセット</button>
+    <!-- ★新規: 神経衰弱マッチ演出用オーバーレイ -->
+    <div id="memory-match-overlay" class="hidden" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:9999; display:flex; flex-direction:column; align-items:center; justify-content:center; animation: fadeIn 0.3s;" onclick="closeMatchedBigCard()">
+        <div style="font-size:3rem; color:#ffeb3b; font-weight:900; text-shadow:2px 2px 0 #ff5722; margin-bottom:20px; animation: bounce 0.5s infinite alternate;">ゲット！</div>
+        <div id="memory-match-card-container" style="width:80%; max-width:350px;">
+            <!-- Big card image will be injected here -->
+        </div>
+        <p style="color:white; margin-top:10px; font-weight:bold;">タップして閉じる</p>
     </div>
-    <button id="timer-toggle-btn" onclick="toggleTimer()" class="main-btn pink-btn" style="margin-top:20px; width:100%;">スタート！</button></div><div style="text-align:center; margin-top:15px;"><button onclick="closeTimerModal()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div></div></div>
 
     <script src="js/config/firebase-config.js"></script>
     <script src="js/constants.js"></script>
