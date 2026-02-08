@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v390.0: お宝図鑑グリッド表示修正版) ---
+// --- js/ui/ui.js (完全版 v391.1: お宝図鑑重なり解消版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -364,7 +364,8 @@ window.renderCollectionList = async function() {
         chunk.forEach(item => {
             const div = document.createElement('div');
             
-            // ★修正: 重ね合わせを廃止し、標準的なカード表示にする
+            // ★修正: 重ね合わせ(margin-bottomマイナス)を完全に廃止し、標準的なカード表示にする
+            // タイトルが隠れる問題を根本解決
             div.style.cssText = `
                 background: white;
                 border-radius: 8px;
@@ -381,7 +382,7 @@ window.renderCollectionList = async function() {
                 aspect-ratio: 0.68;
                 transition: transform 0.1s;
                 overflow: hidden;
-                margin-bottom: 0; /* マージンリセット */
+                margin-bottom: 0; /* ★マージンリセット */
                 z-index: 1;
             `;
             
@@ -395,6 +396,11 @@ window.renderCollectionList = async function() {
             img.loading = "lazy";
             img.decoding = "async";
             img.style.cssText = "width:100%; height:100%; object-fit:cover; border-radius:4px;";
+            
+            // 画像エラー時はカードを非表示にする
+            img.onerror = () => {
+                div.style.display = 'none';
+            };
             
             const infoDiv = document.createElement('div');
             infoDiv.style.cssText = "position:absolute; bottom:0; left:0; width:100%; background:rgba(255,255,255,0.8); padding:2px; font-size:0.7rem; font-weight:bold; color:#555;";
