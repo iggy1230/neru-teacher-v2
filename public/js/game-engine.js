@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v387.0: 神経衰弱修正版) ---
+// --- js/game-engine.js (完全版 v388.0: 神経衰弱修正版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -1346,16 +1346,17 @@ window.createCardDeck = async function() {
     // 8ペア(16枚)を作る
     let selectedItems = [];
     
-    // 足りない分はダミーで埋める (フォールバック画像)
+    // ★修正: ダミー画像を確実に存在するパスに変更
     const dummyImages = [
-        'assets/images/items/student-id-base.png',
         'assets/images/characters/nell-normal.png',
-        'assets/images/items/nikukyuhanko.png',
-        'assets/images/ui/card_frame1.png',
-        'assets/images/items/enpitu.png',
+        'assets/images/characters/nell-happy.png', // 推測: なければnormalにフォールバック
+        'assets/images/characters/nell-thinking.png',
+        'assets/images/characters/nell-excited.png',
+        'assets/images/items/student-id-base.png',
         'assets/images/characters/nell-kokugo.png',
         'assets/images/characters/nell-sansu.png',
-        'assets/images/characters/nell-rika.png'
+        'assets/images/characters/nell-rika.png',
+        'assets/images/characters/nell-shakai.png'
     ];
     
     for (let i = 0; i < 8; i++) {
@@ -1399,7 +1400,7 @@ window.createCardDeck = async function() {
         });
         
         // フォールバック付き画像表示
-        const imgSrc = card.image || 'assets/images/items/student-id-base.png';
+        const imgSrc = card.image || 'assets/images/characters/nell-normal.png';
         
         cardEl.innerHTML = `
             <div class="memory-card-inner">
