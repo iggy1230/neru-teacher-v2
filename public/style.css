@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v389.0: 神経衰弱レイアウト修正版) --- */
+/* --- style.css (完全版 v388.1: 神経衰弱レイアウト調整版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1150,13 +1150,12 @@ button { font-family: inherit; }
     margin-top: 5px;
     padding: 5px;
     perspective: 1000px;
-    /* 画面高さの60%に制限して1画面に収める */
-    height: 60vh;
+    /* 画面高さの60% -> 70% に拡張してカードを縦長にする */
+    height: 70vh;
     max-height: 500px; /* PCなど大画面対策 */
 }
 
 .memory-card {
-    /* aspect-ratioは削除して親グリッドセルに合わせる */
     width: 100%;
     height: 100%;
     background-color: #fff; /* 透明化防止 */
@@ -1218,8 +1217,8 @@ button { font-family: inherit; }
 /* 写真部分のズーム表示設定 */
 .memory-card-img-container {
     width: 100%;
-    height: 75%;
-    overflow: hidden; /* 画像はみ出し防止はここでやる */
+    height: 70%; /* 名前エリア拡張のため縮小 (75% -> 70%) */
+    overflow: hidden; /* 画像はみ出し防止 */
     position: relative;
     background: #f0f0f0;
     border-bottom: 1px solid #eee;
@@ -1237,17 +1236,19 @@ button { font-family: inherit; }
 }
 
 .memory-card-name {
-    height: 25%;
+    height: 30%; /* 名前エリア拡張 (25% -> 30%) */
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.6rem;
+    font-size: 0.55rem; /* 少し文字を小さくして収める */
     font-weight: bold;
     color: #333;
-    padding: 2px;
+    padding: 1px 2px;
     line-height: 1.1;
     word-break: break-all;
     background: #fff;
     border-bottom-left-radius: 5px;
     border-bottom-right-radius: 5px;
+    text-align: center;
+    overflow: hidden;
 }
