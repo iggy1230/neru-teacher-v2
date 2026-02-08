@@ -24,7 +24,7 @@ app.use(express.static(publicDir));
 // --- AI Model Constants ---
 const MODEL_HOMEWORK = "gemini-3-pro-preview";
 const MODEL_FAST = "gemini-2.5-flash"; 
-const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
+const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-12-2025";
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -634,6 +634,12 @@ app.post('/identify-item', async (req, res) => {
         送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
         
         ${locationInfo}
+
+        【★最重要ルール: 場所の整合性 (厳守)】
+        - **画像検索の結果、見た目が有名な観光地（例: 奈良の公園、東京のタワー）に似ていても、提供された「住所」や「現在地」がそれらの場所と異なる場合は、絶対にその観光地名を採用しないでください。**
+        - 必ず「提供された住所（${address || '現在地'}）」の中に存在する施設（公園、店、建物）として特定してください。
+        - もし住所の中に該当する公園や施設があれば、その施設名（例: 「市民の森公園」「〇〇小学校」）を正解として扱い、その施設内にあるものとして解説してください。
+        - 結論として、**「画像の特徴（視覚情報）」よりも「現在地（位置情報）」を優先して特定を行ってください。**
 
         【特定と命名のルール】
         1. **店舗・建物の場合 (最優先)**: 画像が「お店の外観」「看板」「建物」で、位置情報が利用可能な場合は、Google検索を駆使して**必ず「チェーン名 + 支店名」まで特定して** \`itemName\` に設定してください（例: 「セブン-イレブン」ではなく「セブン-イレブン 世田谷猫屋敷店」、「マクドナルド」ではなく「マクドナルド 国道1号店」）。
