@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v387.0: 神経衰弱修正版) --- */
+/* --- style.css (完全版 v388.0: 神経衰弱UI調整版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1145,18 +1145,19 @@ button { font-family: inherit; }
 .memory-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 5px;
-    margin-top: 15px;
+    gap: 4px;
+    margin-top: 5px;
     padding: 5px;
     perspective: 1000px;
 }
 
 .memory-card {
-    aspect-ratio: 0.75;
-    background-color: transparent;
+    aspect-ratio: 0.85; /* 少し高さを減らす */
+    background-color: #fff; /* ★透明化防止のため背景色追加 */
     cursor: pointer;
     position: relative;
     user-select: none;
+    border-radius: 5px;
 }
 
 .memory-card-inner {
@@ -1182,9 +1183,9 @@ button { font-family: inherit; }
     backface-visibility: hidden;
     border-radius: 5px;
     overflow: hidden; /* ★Safari対策ではみ出し防止 */
-    
     /* ★Safariでの3Dバグ対策 */
     transform: translateZ(0); 
+    background: #fff; /* 裏映り防止 */
 }
 
 .memory-card-back {
@@ -1212,7 +1213,7 @@ button { font-family: inherit; }
 /* 写真部分のズーム表示設定 */
 .memory-card-img-container {
     width: 100%;
-    height: 70%;
+    height: 75%; /* 画像エリアを少し拡大 */
     overflow: hidden;
     position: relative;
     background: #f0f0f0; /* 画像なし時の背景 */
@@ -1229,11 +1230,11 @@ button { font-family: inherit; }
 }
 
 .memory-card-name {
-    height: 30%;
+    height: 25%; /* 名前エリアを縮小 */
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.65rem;
+    font-size: 0.6rem; /* フォントサイズ縮小 */
     font-weight: bold;
     color: #333;
     padding: 2px;
