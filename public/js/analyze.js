@@ -1,4 +1,4 @@
-// --- js/analyze.js (v343.0: 競合回避・整理版) ---
+// --- js/analyze.js (v343.0: 完全版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
