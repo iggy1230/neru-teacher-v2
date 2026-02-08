@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v386.0: お宝神経衰弱追加版) -->
+<!-- index.html (完全版 v387.0: 神経衰弱修正版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -68,7 +68,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v386.0-MemGame</div>
+            <div class="version-tag">Build: v387.0-MemFix</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -238,9 +238,12 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- ★新規: お宝神経衰弱 -->
+        <!-- ★新規: お宝神経衰弱 (ボタン修正版) -->
         <section id="screen-memory-game" class="screen hidden">
-            <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-memory"></div><div class="chat-bubble"><p id="nell-text-memory">神経衰弱で勝負にゃ！</p></div></div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div class="nell-chat" style="flex:1;"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-memory"></div><div class="chat-bubble"><p id="nell-text-memory">神経衰弱で勝負にゃ！</p></div></div>
+                <button onclick="backToLobby()" class="main-btn gray-btn" style="width:auto; margin:0 0 15px 10px; padding:10px; font-size:0.85rem;">やめる</button>
+            </div>
             <h2 class="section-title" style="margin-top:10px; color:#4caf50;">🃏 お宝神経衰弱</h2>
 
             <div id="memory-difficulty-select" class="glass-card" style="text-align:center; padding:20px;">
@@ -427,13 +430,13 @@
 
     <!-- お宝神経衰弱用モーダル -->
     <div id="memory-match-modal" class="memory-modal-overlay hidden">
-        <div class="memory-modal-content" style="background:#fff9c4; border: 4px solid #ffca28; text-align:center;">
+        <div class="memory-modal-content" style="background:#fff9c4; border: 4px solid #ffca28; text-align:center; width: 90%; max-width: 320px;">
             <h2 style="color:#e65100; margin:0 0 10px 0;">✨ ゲット！ ✨</h2>
-            <div id="memory-match-card-display" style="width:200px; height:200px; margin:0 auto; border-radius:10px; overflow:hidden; border:2px solid #fff; box-shadow:0 4px 8px rgba(0,0,0,0.2);">
-                <img id="memory-match-img" src="" style="width:100%; height:100%; object-fit:cover;">
+            <div id="memory-match-card-display" style="width:100%; aspect-ratio:0.75; margin:0 auto; border-radius:10px; overflow:hidden; border:2px solid #fff; box-shadow:0 4px 8px rgba(0,0,0,0.2);">
+                <img id="memory-match-img" src="" style="width:100%; height:100%; object-fit:contain;">
             </div>
-            <h3 id="memory-match-name" style="margin:10px 0; font-size:1.5rem; color:#333;"></h3>
-            <p id="memory-match-desc" style="font-size:0.9rem; color:#666; margin-bottom:15px; min-height:3em;"></p>
+            <h3 id="memory-match-name" style="margin:10px 0 5px 0; font-size:1.2rem; color:#333;"></h3>
+            <p id="memory-match-desc" style="font-size:0.85rem; color:#666; margin-bottom:15px; min-height:2em; line-height:1.4;"></p>
             <button onclick="skipMemoryExplanation()" class="main-btn orange-btn">次へスキップ ▶</button>
         </div>
     </div>

@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v386.0: お宝神経衰弱追加版) --- */
+/* --- style.css (完全版 v387.0: 神経衰弱修正版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1181,7 +1181,10 @@ button { font-family: inherit; }
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
     border-radius: 5px;
-    overflow: hidden;
+    overflow: hidden; /* ★Safari対策ではみ出し防止 */
+    
+    /* ★Safariでの3Dバグ対策 */
+    transform: translateZ(0); 
 }
 
 .memory-card-back {
@@ -1192,6 +1195,7 @@ button { font-family: inherit; }
     justify-content: center;
     font-size: 2rem;
     border: 2px solid #fff;
+    z-index: 2; /* 裏面をデフォルトで手前に */
 }
 
 .memory-card-front {
@@ -1202,6 +1206,7 @@ button { font-family: inherit; }
     justify-content: flex-start;
     border: 2px solid #ddd;
     position: relative;
+    z-index: 1;
 }
 
 /* 写真部分のズーム表示設定 */
@@ -1210,6 +1215,8 @@ button { font-family: inherit; }
     height: 70%;
     overflow: hidden;
     position: relative;
+    background: #f0f0f0; /* 画像なし時の背景 */
+    border-bottom: 1px solid #eee;
 }
 
 .memory-card-img {
@@ -1233,5 +1240,4 @@ button { font-family: inherit; }
     line-height: 1.1;
     word-break: break-all;
     background: #fff;
-    border-top: 1px solid #eee;
 }
