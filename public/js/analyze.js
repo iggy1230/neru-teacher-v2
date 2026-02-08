@@ -1,4 +1,4 @@
-// --- js/analyze.js (v342.0: 競合回避・整理版) ---
+// --- js/analyze.js (v342.1: 不要ボタン操作削除版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -248,10 +248,7 @@ window.setSubject = function(s) {
     document.getElementById('subject-selection-view').classList.add('hidden'); 
     document.getElementById('upload-controls').classList.remove('hidden'); 
     window.updateNellMessage(`${window.currentSubject}の問題をみせてにゃ！`, "happy", false); 
-    const btnFast = document.getElementById('mode-btn-fast');
-    const btnPrec = document.getElementById('mode-btn-precision');
-    if (btnFast) { btnFast.innerText = "📷 ネル先生に宿題を見せる"; btnFast.className = "main-btn"; btnFast.style.background = "#ff85a1"; btn.style.width = "100%"; btnFast.onclick = null; }
-    if (btnPrec) btnPrec.style.display = "none";
+    // 不要なボタン操作を削除
 };
 
 window.setAnalyzeMode = function(type) { window.analysisType = 'precision'; };
