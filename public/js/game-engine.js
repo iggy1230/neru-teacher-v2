@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v390.2: 神経衰弱ユーザー名対応版) ---
+// --- js/game-engine.js (完全版 v401.0: クイズジャンル追加版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -514,7 +514,7 @@ window.showQuizGame = function() {
     window.currentMode = 'quiz';
     
     const levels = (currentUser && currentUser.quizLevels) ? currentUser.quizLevels : {};
-    const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", "マインクラフト", "ロブロックス", "ポケモン"];
+    const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", "マインクラフト", "ロブロックス", "ポケモン", "魔法陣グルグル", "ジョジョの奇妙な冒険"];
     const idMap = {
         "全ジャンル": "btn-quiz-all",
         "一般知識": "btn-quiz-general",
@@ -524,7 +524,9 @@ window.showQuizGame = function() {
         "ゲーム": "btn-quiz-game",
         "マインクラフト": "btn-quiz-minecraft",
         "ロブロックス": "btn-quiz-roblox",
-        "ポケモン": "btn-quiz-pokemon"
+        "ポケモン": "btn-quiz-pokemon",
+        "魔法陣グルグル": "btn-quiz-guruguru",
+        "ジョジョの奇妙な冒険": "btn-quiz-jojo"
     };
 
     genres.forEach(g => {
