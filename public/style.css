@@ -1234,8 +1234,8 @@ button { font-family: inherit; }
     width: 100%;
     height: 100%;
     object-fit: cover;
-    /* 画像を下に移動させるために object-position を 10% に微調整 */
-    object-position: center 10%; 
+    /* 画像を下に移動させるために object-position を 5% に変更（上端基準に近づける） */
+    object-position: center 5%; 
     transform: scale(1.6);
     transform-origin: center center;
 }
