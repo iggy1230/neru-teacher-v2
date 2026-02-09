@@ -1,4 +1,4 @@
-// --- js/game-engine.js (完全版 v401.0: クイズジャンル追加版) ---
+// --- js/game-engine.js (v402.0: クイズ重複フォールバック追加版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -625,6 +625,7 @@ window.nextQuiz = async function() {
     let quizData = null;
     let retryCount = 0;
     const MAX_RETRIES = 3;
+    let fallbackData = null; // ★追加: 重複していてもとりあえず確保しておくデータ
 
     while (retryCount < MAX_RETRIES) {
         if (quizState.nextQuizData) {
@@ -640,6 +641,7 @@ window.nextQuiz = async function() {
         }
 
         if (quizData && quizData.answer) {
+            fallbackData = quizData; // ★確保
             const isDuplicate = quizState.history.some(h => h === quizData.answer);
             if (!isDuplicate) {
                 break;
@@ -651,6 +653,12 @@ window.nextQuiz = async function() {
         } else {
             break; 
         }
+    }
+    
+    // ★追加: リトライしてもダメなら重複データを使う
+    if (!quizData && fallbackData) {
+        console.log("Max retries reached. Using duplicate data.");
+        quizData = fallbackData;
     }
 
     if (!quizData) {
