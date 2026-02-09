@@ -96,6 +96,8 @@ function fixPronunciation(text) {
     t = t.replace(/＝/g, "わ");
     t = t.replace(/×/g, "かける");
     t = t.replace(/÷/g, "わる");
+    // ★追加: 固有名詞の読み修正
+    t = t.replace(/はね丸/g, "ハネマル");
     return t;
 }
 
@@ -343,7 +345,9 @@ app.post('/chat-dialogue', async (req, res) => {
         let systemPrompt = `
         あなたは猫の「ネル先生」です。相手は「${name}」さん。
         現在は ${currentDateTime} です。
-        相手を呼ぶときは必ず「${name}さん」と呼んでください。
+        【最重要ルール: 呼び方】
+        **相手を呼ぶときは必ず「${name}さん」と呼んでください。**
+        **絶対に呼び捨てにしてはいけません。**
         `;
 
         let problemContext = null;
@@ -635,6 +639,9 @@ app.post('/identify-item', async (req, res) => {
         
         ${locationInfo}
 
+        【★最重要ルール: 呼び方】
+        **相手を呼ぶときは必ず「${name}さん」と呼んでください。絶対に呼び捨てにしてはいけません。**
+
         【★最重要ルール: 場所の整合性 (厳守)】
         - **画像検索の結果、見た目が有名な観光地（例: 奈良の公園、東京のタワー）に似ていても、提供された「住所」や「現在地」がそれらの場所と異なる場合は、絶対にその観光地名を採用しないでください。**
         - 必ず「提供された住所（${address || '現在地'}）」の中に存在する施設（公園、店、建物）として特定してください。
@@ -762,9 +769,9 @@ app.post('/game-reaction', async (req, res) => {
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。語尾は「にゃ」。`;
+            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。必ず「${name}さん」と呼ぶこと。呼び捨て禁止。語尾は「にゃ」。`;
         } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。語尾は「にゃ」。`;
+            prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。必ず「${name}さん」と呼ぶこと。呼び捨て禁止。語尾は「にゃ」。`;
         } else {
             return res.json({ reply: "ナイスにゃ！", mood: "excited" });
         }
