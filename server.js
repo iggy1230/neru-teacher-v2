@@ -149,6 +149,7 @@ app.post('/generate-quiz', async (req, res) => {
         【重要：禁止事項】
         - **挨拶不要。すぐに問題文から始めてください。**
         - **なぞなぞは禁止です。**
+        - **毎回異なるキャラクター、異なるエピソードから出題してください。有名な主人公だけでなく、サブキャラクターや特定の名シーンについての問題も歓迎します。**
 
         【出力形式】
         **必ず以下のJSON形式の文字列のみを出力してください。** 
@@ -166,18 +167,14 @@ app.post('/generate-quiz', async (req, res) => {
         const result = await model.generateContent(prompt);
         let text = result.response.text();
         
-        // ★修正: JSON抽出ロジックの強化
-        // マークダウン記法を削除
+        // JSON抽出ロジック
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-
-        // 最初と最後の波括弧を探して、その範囲を抽出する (余計な会話文を除去)
         const firstBrace = text.indexOf('{');
         const lastBrace = text.lastIndexOf('}');
         if (firstBrace !== -1 && lastBrace !== -1) {
             text = text.substring(firstBrace, lastBrace + 1);
         }
 
-        // 念のためJSONパース可能かチェック
         let jsonResponse;
         try {
             jsonResponse = JSON.parse(text);
@@ -235,7 +232,7 @@ app.post('/generate-riddle', async (req, res) => {
         1. **子供が絶対に知っている単語**を答えにしてください。
         2. 問題文は、リズムよく、子供が聞いてワクワクするような言い回しにしてください。
         3. 答えは「名詞（モノの名前）」で終わるものに限定してください。
-        4. 難しすぎる知識や、マニアックな単語は禁止です。
+        4.難しすぎる知識や、マニアックな単語は禁止です。
         5. 挨拶不要。すぐに問題文のみを出力してください。
 
         【出力JSONフォーマット】
