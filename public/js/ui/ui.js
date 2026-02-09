@@ -361,6 +361,7 @@ window.renderCollectionList = async function() {
 
         chunk.forEach(item => {
             const div = document.createElement('div');
+            div.className = "collection-grid-item"; // ★重要: CSSクラスを付与
             
             // ★修正: 完全なグリッドアイテムとしてのスタイル
             // 重なりを排除し、名称と画像のみを表示するデザイン
@@ -389,6 +390,7 @@ window.renderCollectionList = async function() {
             
             // 名称表示ラベル (画像の下にオーバーレイ)
             const nameDiv = document.createElement('div');
+            nameDiv.className = "info-badge"; // CSSクラスも併用
             nameDiv.innerText = item.name;
             nameDiv.style.cssText = `
                 position: absolute; 
