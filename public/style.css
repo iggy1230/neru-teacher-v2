@@ -1218,27 +1218,43 @@ button { font-family: inherit; }
     z-index: 1;
 }
 
-/* 写真部分のズーム表示設定 (画像のみ見せる調整) */
+/* 写真部分のズーム表示設定 */
 .memory-card-img-container {
     width: 100%;
-    height: 100%; /* 全画面に拡張 */
-    overflow: hidden; 
+    height: 75%; /* 名前エリア拡張のため縮小 (75% -> 70%) */
+    overflow: hidden; /* 画像はみ出し防止 */
     position: relative;
     background: #f0f0f0;
-    border-radius: 5px; /* 全体の角丸 */
+    border-bottom: 1px solid #eee;
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
 }
 
 .memory-card-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: center 25%; /* 写真の中心位置を調整 */
-    transform: scale(2.0);     /* 大幅に拡大して枠を消す */
-    transform-origin: center center;
+    object-position: center 0%;
+    transform: scale(1.05);
+    transform-origin: center top;
 }
 
 .memory-card-name {
-    display: none; /* 名称は非表示 */
+    height: 25%; /* 名前エリア拡張 (25% -> 30%) */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.55rem; /* 少し文字を小さくして収める */
+    font-weight: bold;
+    color: #333;
+    padding: 1px 2px;
+    line-height: 1.1;
+    word-break: break-all;
+    background: #fff;
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
+    text-align: center;
+    overflow: hidden;
 }
 
 /* ミニテスト・ウルトラクイズ用ボタン */
