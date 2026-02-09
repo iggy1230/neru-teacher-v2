@@ -98,6 +98,7 @@ function fixPronunciation(text) {
     t = t.replace(/÷/g, "わる");
     // ★追加: 固有名詞の読み修正
     t = t.replace(/はね丸/g, "ハネマル");
+    t = t.replace(/はね丸くん/g, "ハネマルクン");
     return t;
 }
 
