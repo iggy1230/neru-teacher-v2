@@ -1,4 +1,4 @@
-// --- js/voice-service.js (v390.0: WebSocketマイク競合対策・完全版) ---
+// --- js/voice-service.js (v391.0: マイク感度調整版) ---
 
 // ==========================================
 // 音声再生・停止
@@ -18,17 +18,15 @@ function shouldInterrupt(text) {
     const cleanText = text.trim();
     if (cleanText.length === 0) return false;
     
-    // 現在のネル先生のセリフを取得（自己発話判定用）
     let currentNellText = "";
     const nellTextEl = document.getElementById('nell-text') || document.getElementById('nell-text-game') || document.getElementById('nell-text-quiz') || document.getElementById('nell-text-riddle') || document.getElementById('nell-text-minitest');
     if (nellTextEl) {
         currentNellText = nellTextEl.innerText.replace(/\s+/g, "");
     }
 
-    // ★自己発話フィルター
     const cleanInput = cleanText.replace(/\s+/g, "");
     if (currentNellText.length > 0 && currentNellText.includes(cleanInput)) {
-        return false; // 中断しない
+        return false; 
     }
 
     const stopKeywords = [
@@ -37,29 +35,24 @@ function shouldInterrupt(text) {
     ];
     
     const isStopCommand = stopKeywords.some(w => cleanText.includes(w));
-    
-    // 15文字以上の長いフレーズなら割り込み許可
     const isLongEnough = cleanText.length >= 15;
     
     return isStopCommand || isLongEnough;
 }
 
-// 自己発話判定（会話送信用）
 function isSelfEcho(text) {
     if (!text) return false;
     let currentNellText = "";
-    // 現在表示中のすべてのネル先生セリフ要素をチェック
     const ids = ['nell-text', 'nell-text-game', 'nell-text-quiz', 'nell-text-riddle', 'nell-text-minitest'];
     for (const id of ids) {
         const el = document.getElementById(id);
-        if (el && el.offsetParent !== null) { // 表示されているものだけ
+        if (el && el.offsetParent !== null) {
             currentNellText = el.innerText.replace(/\s+/g, "");
             break; 
         }
     }
     
     const cleanInput = text.replace(/\s+/g, "");
-    // 入力がセリフの一部、またはセリフが入力の一部ならエコーとみなす
     if (currentNellText.length > 0) {
         if (currentNellText.includes(cleanInput) || cleanInput.includes(currentNellText)) {
             return true;
@@ -72,15 +65,12 @@ function isSelfEcho(text) {
 // 常時聞き取り (Speech Recognition - HTTPチャット用)
 // ==========================================
 window.startAlwaysOnListening = function() {
-    // ★重要: WebSocket接続中（放課後おしゃべりタイム）は、Web Speech APIを絶対に起動させない
     if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
-        console.log("[VoiceService] WebSocket active: Web Speech API start blocked.");
         return;
     }
 
     if (!('webkitSpeechRecognition' in window)) {
         console.warn("Speech Recognition not supported.");
-        // iPhone警告 (一度だけ)
         if (window.currentMode === 'simple-chat' || window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') {
              if (!window.isNellSpeaking && !window.iosAlertShown) {
                  window.iosAlertShown = true; 
@@ -117,7 +107,6 @@ window.startAlwaysOnListening = function() {
         if (window.isNellSpeaking) {
             const textToCheck = finalTranscript || interimTranscript;
             if (shouldInterrupt(textToCheck)) {
-                console.log("[Interruption] Stopping audio.");
                 if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
                 window.stopAudioPlayback();
             } else {
@@ -129,9 +118,6 @@ window.startAlwaysOnListening = function() {
             const text = finalTranscript;
             if (isSelfEcho(text)) return;
 
-            console.log(`[User Said] ${text}`);
-
-            // 各モードの判定
             if (window.currentMode === 'quiz' && typeof window.checkQuizAnswer === 'function') {
                 if (window.checkQuizAnswer(text)) return; 
             }
@@ -142,7 +128,6 @@ window.startAlwaysOnListening = function() {
                 if (window.checkRiddleAnswer(text)) return;
             }
 
-            // HTTPチャット送信
             let targetId = 'user-speech-text-embedded';
             if (window.currentMode === 'simple-chat') targetId = 'user-speech-text-simple';
             
@@ -263,7 +248,6 @@ window.stopLiveChat = function() {
 
     if (window.connectionTimeout) clearTimeout(window.connectionTimeout); 
     
-    // Web Audio API & MediaStream の停止
     if (window.mediaStream) window.mediaStream.getTracks().forEach(t=>t.stop()); 
     if (window.workletNode) { 
         try { window.workletNode.port.postMessage('stop'); } catch(e){}
@@ -314,11 +298,8 @@ window.startLiveChat = async function(context = 'main') {
     if (context === 'main' && window.currentMode === 'chat-free') context = 'free';
     if (context !== 'free') return;
 
-    // ★重要: WebSocket開始前に、HTTP用の音声認識を強制停止
     window.stopAlwaysOnListening();
-
     window.isLiveChatManuallyStopped = false;
-
     window.activeChatContext = context;
     const btnId = 'mic-btn-free';
     const btn = document.getElementById(btnId);
@@ -342,13 +323,28 @@ window.startLiveChat = async function(context = 'main') {
         
         if (window.initAudioContext) await window.initAudioContext(); 
         
-        if (!window.audioContext && window.audioCtx) {
-            window.audioContext = window.audioCtx;
-        } else if (!window.audioContext) {
-             window.audioContext = new (window.AudioContext || window.webkitAudioContext)(); 
+        // ★修正: AudioContext作成時にサンプリングレートを指定（16000Hz推奨）
+        if (!window.audioContext) {
+             const AudioContext = window.AudioContext || window.webkitAudioContext;
+             try {
+                 window.audioContext = new AudioContext({ sampleRate: 16000 });
+             } catch(e) {
+                 // オプション指定がサポートされていない場合のフォールバック
+                 window.audioContext = new AudioContext();
+             }
+        } else if (window.audioContext && window.audioContext.state === 'closed') {
+             // 閉じていたら作り直す
+             const AudioContext = window.AudioContext || window.webkitAudioContext;
+             try {
+                 window.audioContext = new AudioContext({ sampleRate: 16000 });
+             } catch(e) {
+                 window.audioContext = new AudioContext();
+             }
         }
         
-        await window.audioContext.resume(); 
+        if (window.audioContext.state === 'suspended') {
+            await window.audioContext.resume(); 
+        }
         window.nextStartTime = window.audioContext.currentTime; 
         
         const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:'; 
@@ -422,7 +418,6 @@ window.startLiveChat = async function(context = 'main') {
                     if(typeof window.updateNellMessage === 'function') window.updateNellMessage("お待たせ！なんでも話してにゃ！", "happy", false, false); 
                     window.isRecognitionActive = true; 
                     
-                    // 音声送信開始 (WebSocketモードではSpeechRecognitionは使わない)
                     window.startMicrophone(); 
                     return;
                 }
@@ -448,9 +443,7 @@ window.startLiveChat = async function(context = 'main') {
             console.log("WS Closed. Manual Stop:", window.isLiveChatManuallyStopped);
             if (!window.isLiveChatManuallyStopped) {
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage("あれ？切れちゃったにゃ。つなぎ直すにゃ！", "thinking", false, false);
-                
                 if (window.mediaStream) window.mediaStream.getTracks().forEach(t=>t.stop());
-                
                 setTimeout(() => {
                     if (window.currentMode === 'chat-free') {
                         window.startLiveChat('free');
@@ -472,14 +465,12 @@ window.startLiveChat = async function(context = 'main') {
 };
 
 // WebSocketモード用 (Gemini Realtime APIへ音声送信)
-// ★修正: ここでは SpeechRecognition を一切起動せず、マイク入力(getUserMedia)のみを行う
 window.startMicrophone = async function() { 
     try { 
         console.log("[VoiceService] Starting Microphone for WebSocket...");
 
         const useVideo = (window.currentMode !== 'chat-free');
         
-        // エコーキャンセル等のオプションを強化
         const constraints = {
             audio: {
                 sampleRate: 16000,
@@ -504,7 +495,7 @@ window.startMicrophone = async function() {
             }
         }
 
-        // バッファサイズを4096に増やして送信頻度を下げる
+        // バッファサイズ 4096 (0.25秒分)
         const processorCode = `
         class PcmProcessor extends AudioWorkletProcessor { 
             constructor() { 
@@ -542,28 +533,25 @@ window.startMicrophone = async function() {
             if (window.isMicMuted) return;
             if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) return; 
             
-            // ネル先生が話している最中は音声データを送らない（エコー防止）
             if (window.isNellSpeaking) {
                 return;
             }
 
-            // ノイズゲート処理
             const float32Data = event.data;
             let sum = 0;
-            // 処理軽減のため間引いて計算
             for (let i = 0; i < float32Data.length; i += 8) { 
                 sum += float32Data[i] * float32Data[i];
             }
             const rms = Math.sqrt(sum / (float32Data.length / 8));
             
-            // ★ログ追加: 音量レベルを確認 (適度に間引く)
+            // ★ログ: 確認用
             if (Math.random() < 0.05) {
                 console.log(`[Mic Input] RMS: ${rms.toFixed(5)}`);
             }
 
-            if (rms < 0.005) return; 
+            // ★修正: 閾値を大幅に緩和 (0.005 -> 0.001)
+            if (rms < 0.001) return; 
 
-            // ダウンサンプリングと送信
             const downsampled = window.downsampleBuffer(float32Data, window.audioContext.sampleRate, 16000); 
             const pcm16 = window.floatTo16BitPCM(downsampled);
             const base64 = window.arrayBufferToBase64(pcm16);
@@ -580,7 +568,10 @@ window.startMicrophone = async function() {
 
 window.playLivePcmAudio = function(base64) { 
     if (!window.audioContext || window.ignoreIncomingAudio) return; 
-    if (!window.audioContext && window.audioCtx) window.audioContext = window.audioCtx;
+    // ここは再初期化せず、既存のコンテキストを使う
+    if (window.audioContext.state === 'suspended') {
+        window.audioContext.resume().catch(()=>{});
+    }
 
     const binary = window.atob(base64); 
     const bytes = new Uint8Array(binary.length); 
@@ -643,12 +634,11 @@ window.downsampleBuffer = function(buffer, sampleRate, outSampleRate) {
     return result; 
 };
 
-// ★高速化: チャンク処理でBase64変換
 window.arrayBufferToBase64 = function(buffer) { 
     let binary = ''; 
     const bytes = new Uint8Array(buffer); 
     const len = bytes.byteLength;
-    const CHUNK_SIZE = 0x8000; // 32KB
+    const CHUNK_SIZE = 0x8000; 
     for (let i = 0; i < len; i += CHUNK_SIZE) {
         binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + CHUNK_SIZE, len)));
     }
