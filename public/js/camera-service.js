@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v396.0: チャット画像EXIF位置情報対応版) ---
+// --- js/camera-service.js (v397.0: お宝位置情報優先＆放課後アルバム対応版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -173,6 +173,7 @@ window.handleTreasureFile = async function(file) {
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
             const base64Data = compressedDataUrl.split(',')[1];
+            // 画像から位置情報が取れた場合は providedLocation として渡す
             await window.analyzeTreasureImage(base64Data, locationData);
             if (btn) {
                 btn.innerHTML = "<span>📁</span> アルバム";
@@ -249,9 +250,18 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
     if(typeof window.updateNellMessage === 'function') { window.updateNellMessage("ん？何を見つけたのかにゃ…？", "thinking", false, true); }
 
     try {
+        // ★修正: providedLocation（画像EXIF由来）がある場合は、現在地の住所(address)を送らないようにする
+        // これにより、サーバー側は座標(location)を優先して場所を特定するようになる
+        const addressToSend = providedLocation ? null : window.currentAddress;
+
         const res = await fetch('/identify-item', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: base64Data, name: currentUser ? currentUser.name : "生徒", location: locationData, address: window.currentAddress })
+            body: JSON.stringify({ 
+                image: base64Data, 
+                name: currentUser ? currentUser.name : "生徒", 
+                location: locationData, 
+                address: addressToSend // ここを修正
+            })
         });
         if (!res.ok) throw new Error("サーバー通信エラーだにゃ");
         const data = await res.json();
@@ -300,6 +310,106 @@ window.captureAndIdentifyItem = async function() {
         if (btn) { btn.innerHTML = "<span>📷</span> 撮影"; btn.style.backgroundColor = "#ff85a1"; btn.disabled = false; }
     }
 };
+
+// ==========================================
+// ★放課後おしゃべりタイム (WebSocket) 用のアルバム送信機能
+// ==========================================
+
+window.uploadFreeChatImage = function() {
+    // WebSocket接続確認
+    if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) {
+        return alert("まずは「おはなしする」ボタンを押して、ネル先生とつながってにゃ！");
+    }
+    const input = document.getElementById('free-chat-image-upload');
+    if (input) input.click();
+};
+
+window.handleFreeChatImageFile = async function(file) {
+    if (!file) return;
+    if (!window.liveSocket || window.liveSocket.readyState !== WebSocket.OPEN) {
+        return alert("接続が切れちゃってるにゃ。もう一度「おはなしする」を押してにゃ。");
+    }
+
+    const btn = document.getElementById('upload-free-btn');
+    const originalText = btn ? btn.innerText : "📁 アルバム";
+    if (btn) {
+        btn.innerText = "📡 送信中...";
+        btn.style.backgroundColor = "#ccc";
+        btn.disabled = true;
+    }
+
+    // EXIFから位置情報を取得（念のため）
+    let locationInfo = "";
+    try {
+        const loc = await getGpsFromExif(file);
+        if (loc) {
+            // WebSocketでの位置情報の伝え方はプロンプトに埋め込むのが確実
+            locationInfo = `（この写真の位置情報: 緯度${loc.lat}, 経度${loc.lon}）`;
+        }
+    } catch (e) {}
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const img = new Image();
+        img.onload = async () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 800;
+            const scale = Math.min(1, MAX_WIDTH / img.width);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+            const base64Data = compressedDataUrl.split(',')[1];
+
+            // プレビュー表示
+            const flash = document.createElement('div');
+            flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
+            document.body.appendChild(flash);
+            setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+
+            const notif = document.createElement('div');
+            notif.innerText = `📝 写真を送ったにゃ！`;
+            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #8bc34a; color:#558b2f; padding:10px 20px; border-radius:30px; font-weight:bold; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 4px 10px rgba(0,0,0,0.2);";
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 2000);
+
+            // WebSocket送信
+            if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) {
+                let promptText = `（ユーザーが画像を見せました${locationInfo}）この画像の内容について、子供にもわかるように楽しくおしゃべりしてください。`;
+                window.liveSocket.send(JSON.stringify({ 
+                    clientContent: { 
+                        turns: [{ 
+                            role: "user", 
+                            parts: [ 
+                                { text: promptText }, 
+                                { inlineData: { mime_type: "image/jpeg", data: base64Data } } 
+                            ] 
+                        }], 
+                        turnComplete: true 
+                    } 
+                }));
+            }
+
+            if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, false);
+
+            if (btn) {
+                btn.innerText = originalText;
+                btn.style.backgroundColor = "#4a90e2";
+                btn.disabled = false;
+            }
+            const input = document.getElementById('free-chat-image-upload');
+            if(input) input.value = '';
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+};
+
+// ==========================================
+// 宿題カメラ
+// ==========================================
 
 window.startHomeworkWebcam = async function() {
     const modal = document.getElementById('camera-modal'); const video = document.getElementById('camera-video'); const shutter = document.getElementById('camera-shutter-btn'); const cancel = document.getElementById('camera-cancel-btn');
