@@ -1,4 +1,4 @@
-// --- js/camera-service.js (完全版 v394.0: 個別指導アルバム対応版) ---
+// --- js/camera-service.js (v396.0: チャット画像EXIF位置情報対応版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -386,17 +386,11 @@ window.captureAndSendLiveImageHttp = async function(context = 'embedded') {
     const flash = document.createElement('div'); flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;"; document.body.appendChild(flash); setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
     if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
     let memoryContext = ""; if (window.NellMemory && currentUser) { try { memoryContext = await window.NellMemory.generateContextString(currentUser.id); } catch(e) {} }
-    try {
-        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
-        const res = await fetch('/chat-dialogue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: base64Data, text: "この写真に写っているものについて解説してください", name: currentUser ? currentUser.name : "生徒", history: window.chatSessionHistory, location: window.currentLocation, address: window.currentAddress, memoryContext: memoryContext }) });
-        if (!res.ok) throw new Error("Server response not ok"); const data = await res.json();
-        const speechText = data.speech || data.reply || "教えてあげるにゃ！";
-        if(typeof window.addLogItem === 'function') window.addLogItem('nell', speechText); if(typeof window.addToSessionHistory === 'function') window.addToSessionHistory('nell', speechText);
-        if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(speechText, "happy", true, true);
-        let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple'; const embedBoard = document.getElementById(boardId); if (embedBoard && data.board && data.board.trim() !== "") { embedBoard.innerText = data.board; embedBoard.classList.remove('hidden'); }
-    } catch(e) { console.error("HTTP Image Error:", e); if(typeof window.updateNellMessage === 'function') window.updateNellMessage("よく見えなかったにゃ…もう一回お願いにゃ！", "thinking", false, true); } finally {
-        window.isLiveImageSending = false; if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); if (btn) { btn.innerHTML = "<span>📷</span> カメラで見せて質問"; btn.style.backgroundColor = activeColor; } if (window.isAlwaysListening) { try { window.continuousRecognition.start(); } catch(e){} }
-    }
+    
+    // ★ここを変更: window.sendImageToChatAPI を呼び出す (引数を合わせる)
+    await window.sendImageToChatAPI(base64Data, context);
+    
+    window.isLiveImageSending = false; if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); if (btn) { btn.innerHTML = "<span>📷</span> カメラで見せて質問"; btn.style.backgroundColor = activeColor; } if (window.isAlwaysListening) { try { window.continuousRecognition.start(); } catch(e){} }
 };
 
 window.uploadChatImage = function(context = 'embedded') {
@@ -410,6 +404,17 @@ window.handleChatImageFile = async function(file, context = 'embedded') {
     const btn = document.getElementById(btnId);
     if(btn) { btn.innerHTML = "<span>📡</span> 解析中..."; btn.style.backgroundColor = "#ccc"; btn.disabled = true; }
     
+    // ★追加: EXIFから位置情報を取得 (非同期)
+    let imageLocation = null;
+    try {
+        imageLocation = await getGpsFromExif(file);
+        if (imageLocation) {
+            console.log("Image Location Found:", imageLocation);
+        }
+    } catch(e) {
+        console.log("No EXIF GPS found or error", e);
+    }
+
     const reader = new FileReader();
     reader.onload = async (e) => {
         const img = new Image();
@@ -417,7 +422,10 @@ window.handleChatImageFile = async function(file, context = 'embedded') {
             const canvas = document.createElement('canvas'); const MAX_WIDTH = 800; const scale = Math.min(1, MAX_WIDTH / img.width); canvas.width = img.width * scale; canvas.height = img.height * scale;
             const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6); const base64Data = compressedDataUrl.split(',')[1];
-            await window.sendImageToChatAPI(base64Data, context);
+            
+            // ★変更: 位置情報を渡す
+            await window.sendImageToChatAPI(base64Data, context, imageLocation);
+            
             if(btn) { btn.innerHTML = "<span>📁</span> アルバム"; btn.style.backgroundColor = "#4a90e2"; btn.disabled = false; }
             let inputId; if(context === 'embedded') inputId = 'embedded-image-upload'; else if(context === 'simple') inputId = 'simple-image-upload';
             const input = document.getElementById(inputId); if(input) input.value = '';
@@ -427,14 +435,30 @@ window.handleChatImageFile = async function(file, context = 'embedded') {
     reader.readAsDataURL(file);
 };
 
-window.sendImageToChatAPI = async function(base64Data, context) {
+// ★変更: imageLocation 引数を追加
+window.sendImageToChatAPI = async function(base64Data, context, imageLocation = null) {
     if(typeof window.addLogItem === 'function') window.addLogItem('user', '（画像送信）');
     let memoryContext = ""; if (window.NellMemory && currentUser) { try { memoryContext = await window.NellMemory.generateContextString(currentUser.id); } catch(e) {} }
+    
+    // ★追加: 位置情報の優先順位ロジック
+    // 画像の位置情報があればそれを優先し、現在地住所は送らない（場所の混同を防ぐため）
+    const useImageLocation = !!imageLocation;
+    const finalLocation = imageLocation || window.currentLocation;
+    const finalAddress = useImageLocation ? null : window.currentAddress;
+
     try {
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
         const res = await fetch('/chat-dialogue', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: base64Data, text: "この写真に写っているものについて解説してください", name: currentUser ? currentUser.name : "生徒", history: window.chatSessionHistory, location: window.currentLocation, address: window.currentAddress, memoryContext: memoryContext })
+            body: JSON.stringify({ 
+                image: base64Data, 
+                text: "この写真に写っているものについて解説してください", 
+                name: currentUser ? currentUser.name : "生徒", 
+                history: window.chatSessionHistory, 
+                location: finalLocation, // 画像位置情報または現在地
+                address: finalAddress,   // 画像位置を使う場合はnull
+                memoryContext: memoryContext 
+            })
         });
         if (!res.ok) throw new Error("Server response not ok"); const data = await res.json();
         const speechText = data.speech || data.reply || "教えてあげるにゃ！";
