@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v399.0: 神経衰弱画像位置調整版) --- */
+/* --- style.css (完全版 v400.0: 神経衰弱レイアウト修正版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1218,33 +1218,33 @@ button { font-family: inherit; }
     z-index: 1;
 }
 
-/* 写真部分のズーム表示設定 */
+/* 写真部分のズーム表示設定 (画像のみ見せる調整) */
 .memory-card-img-container {
     width: 100%;
-    height: 75%; /* 名前エリア拡張のため縮小 (75% -> 70%) */
-    overflow: hidden; /* 画像はみ出し防止 */
+    height: 75%; /* 75%に調整して名称エリアを確保 */
+    overflow: hidden; 
     position: relative;
     background: #f0f0f0;
-    border-bottom: 1px solid #eee;
     border-top-left-radius: 5px;
     border-top-right-radius: 5px;
+    border-bottom: 1px solid #eee;
 }
 
 .memory-card-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: center 0%;
-    transform: scale(1.05);
-    transform-origin: center top;
+    object-position: center 25%; /* 写真の中心位置を調整 */
+    transform: scale(1.6);     /* カード枠を消す程度に拡大 */
+    transform-origin: center center;
 }
 
 .memory-card-name {
-    height: 25%; /* 名前エリア拡張 (25% -> 30%) */
+    height: 25%; /* 名称エリア */
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.55rem; /* 少し文字を小さくして収める */
+    font-size: 0.55rem;
     font-weight: bold;
     color: #333;
     padding: 1px 2px;
