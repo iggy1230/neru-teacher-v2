@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v402.0: クイズ重複フォールバック追加版) ---
+// --- js/game-engine.js (v403.0: クイズ自動リトライ強化版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -624,40 +624,48 @@ window.nextQuiz = async function() {
     
     let quizData = null;
     let retryCount = 0;
-    const MAX_RETRIES = 3;
-    let fallbackData = null; // ★追加: 重複していてもとりあえず確保しておくデータ
+    const MAX_RETRIES = 5; // ★変更: リトライ回数を5回に増加
+    let fallbackData = null; // ★追加: 失敗時のフォールバックデータ
 
     while (retryCount < MAX_RETRIES) {
-        if (quizState.nextQuizData) {
+        // 次の問題データがプリフェッチされているか確認（フォールバックがない場合のみ使用）
+        if (quizState.nextQuizData && !fallbackData) {
             quizData = quizState.nextQuizData;
             quizState.nextQuizData = null;
         } else {
             try {
                 quizData = await fetchQuizData(quizState.genre, quizState.level);
             } catch (e) {
-                console.error(e);
-                break;
+                console.error("Fetch Error:", e);
+                // 通信エラー時もリトライ継続するため、quizDataをnullにしておく
+                quizData = null;
             }
         }
 
-        if (quizData && quizData.answer) {
-            fallbackData = quizData; // ★確保
-            const isDuplicate = quizState.history.some(h => h === quizData.answer);
-            if (!isDuplicate) {
-                break;
-            } else {
-                console.log("Duplicate quiz detected. Retrying...", quizData.answer);
-                quizData = null; 
-                retryCount++;
-            }
+        if (quizData && quizData.question && quizData.answer) {
+             // 少なくとも1つ有効なデータが取れたらフォールバック用に保持
+             if (!fallbackData) fallbackData = quizData;
+
+             const isDuplicate = quizState.history.some(h => h === quizData.answer);
+             if (!isDuplicate) {
+                 break; // 成功：ループを抜ける
+             } else {
+                 console.log("Duplicate quiz detected. Retrying...", quizData.answer);
+                 quizData = null; // 重複していたら破棄して次へ
+             }
         } else {
-            break; 
+             console.log("Invalid quiz data or fetch error. Retrying...", quizData);
+             quizData = null;
         }
+        
+        retryCount++;
+        // サーバー負荷軽減のため少し待つ
+        await new Promise(r => setTimeout(r, 1000));
     }
     
-    // ★追加: リトライしてもダメなら重複データを使う
+    // ★追加: リトライ上限に達しても新しい問題が取れなかった場合、フォールバック（重複データ）を使用
     if (!quizData && fallbackData) {
-        console.log("Max retries reached. Using duplicate data.");
+        console.log("Max retries reached. Using duplicate/fallback data.");
         quizData = fallbackData;
     }
 
