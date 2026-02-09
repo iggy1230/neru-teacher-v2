@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (完全版 v395.0: 図鑑グリッド表示改修版) ---
+// --- js/ui/ui.js (v399.0: 図鑑ナビゲーション追加版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -253,9 +253,10 @@ window.updateProgress = function(p) {
 };
 
 // ==========================================
-// 図鑑 (Collection) - ★グリッド表示（重なりなし・名称表示）
+// 図鑑 (Collection) - ★グリッド表示・ナビゲーション付き
 // ==========================================
 
+// ★修正: 総数を取得して渡すように変更
 window.openCollectionDetailByIndex = function(originalIndex) {
     if (!window.NellMemory || !currentUser) return;
     window.NellMemory.getUserProfile(currentUser.id).then(profile => {
@@ -265,7 +266,9 @@ window.openCollectionDetailByIndex = function(originalIndex) {
                 modal.classList.remove('hidden');
             }
             const collectionNumber = profile.collection.length - originalIndex;
-            window.showCollectionDetail(profile.collection[originalIndex], originalIndex, collectionNumber);
+            const totalCount = profile.collection.length;
+            // 詳細表示へ（totalCountも渡す）
+            window.showCollectionDetail(profile.collection[originalIndex], originalIndex, collectionNumber, totalCount);
         }
     });
 };
@@ -280,7 +283,6 @@ window.showCollection = async function() {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
-    // ★レイアウト修正: 隙間(gap)を少し広げ、アイテムの最小幅を確保
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 85vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
@@ -361,10 +363,8 @@ window.renderCollectionList = async function() {
 
         chunk.forEach(item => {
             const div = document.createElement('div');
-            div.className = "collection-grid-item"; // ★重要: CSSクラスを付与
+            div.className = "collection-grid-item"; 
             
-            // ★修正: 完全なグリッドアイテムとしてのスタイル
-            // 重なりを排除し、名称と画像のみを表示するデザイン
             div.style.cssText = `
                 background: white;
                 border-radius: 8px;
@@ -373,13 +373,13 @@ window.renderCollectionList = async function() {
                 cursor: pointer;
                 position: relative;
                 overflow: hidden;
-                aspect-ratio: 0.68; /* カード比率 */
+                aspect-ratio: 0.68;
                 display: flex;
                 flex-direction: column;
                 margin: 0;
             `;
             
-            div.onclick = () => window.showCollectionDetail(item, item.originalIndex, item.number); 
+            div.onclick = () => window.openCollectionDetailByIndex(item.originalIndex); // originalIndexを使う
 
             // 画像表示 (全体を表示)
             const img = document.createElement('img');
@@ -388,29 +388,7 @@ window.renderCollectionList = async function() {
             img.decoding = "async";
             img.style.cssText = "width:100%; height:100%; object-fit:contain; display:block; background-color: #f9f9f9;";
             
-            // 名称表示ラベル (画像の下にオーバーレイ)
-            const nameDiv = document.createElement('div');
-            nameDiv.className = "info-badge"; // CSSクラスも併用
-            nameDiv.innerText = item.name;
-            nameDiv.style.cssText = `
-                position: absolute; 
-                bottom: 0; 
-                left: 0; 
-                width: 100%;
-                background: rgba(255,255,255,0.9);
-                color: #333; 
-                font-weight: bold; 
-                font-size: 0.8rem;
-                padding: 4px; 
-                text-align: center;
-                white-space: nowrap; 
-                overflow: hidden; 
-                text-overflow: ellipsis;
-                border-top: 1px solid #eee;
-            `;
-
             div.appendChild(img);
-            div.appendChild(nameDiv);
             fragment.appendChild(div);
         });
 
@@ -425,7 +403,8 @@ window.renderCollectionList = async function() {
     renderChunk();
 };
 
-window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
+// ★修正: totalCount を受け取り、ナビゲーションボタンを表示する
+window.showCollectionDetail = function(item, originalIndex, collectionNumber, totalCount) {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
@@ -434,6 +413,35 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
     let mapBtnHtml = "";
     if (item.location && item.location.lat && item.location.lon) {
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
+    }
+
+    // ナビゲーションボタンの生成
+    // originalIndex は 0 が最新。
+    // 左ボタン (Newer): index - 1
+    // 右ボタン (Older): index + 1
+    
+    let leftBtnHtml = "";
+    if (originalIndex > 0) {
+        leftBtnHtml = `
+            <button onclick="window.openCollectionDetailByIndex(${originalIndex - 1})" 
+                style="position:absolute; left:10px; top:50%; transform:translateY(-50%); 
+                width:40px; height:40px; border-radius:50%; border:none; background:rgba(255,255,255,0.8); 
+                font-size:1.5rem; color:#555; box-shadow:0 2px 5px rgba(0,0,0,0.2); cursor:pointer; z-index:10;">
+                ◀
+            </button>
+        `;
+    }
+
+    let rightBtnHtml = "";
+    if (originalIndex < totalCount - 1) {
+        rightBtnHtml = `
+            <button onclick="window.openCollectionDetailByIndex(${originalIndex + 1})" 
+                style="position:absolute; right:10px; top:50%; transform:translateY(-50%); 
+                width:40px; height:40px; border-radius:50%; border:none; background:rgba(255,255,255,0.8); 
+                font-size:1.5rem; color:#555; box-shadow:0 2px 5px rgba(0,0,0,0.2); cursor:pointer; z-index:10;">
+                ▶
+            </button>
+        `;
     }
 
     modal.innerHTML = `
@@ -446,8 +454,10 @@ window.showCollectionDetail = function(item, originalIndex, collectionNumber) {
                 <button onclick="deleteCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff5252;">削除</button>
             </div>
             
-            <div style="flex:1; overflow-y:auto; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px;">
+            <div style="flex:1; overflow-y:auto; background:transparent; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px; position:relative;">
+                ${leftBtnHtml}
                 <img src="${item.image}" decoding="async" style="width:auto; max-width:100%; height:auto; max-height:100%; object-fit:contain; border-radius:15px; box-shadow:0 10px 25px rgba(0,0,0,0.4);">
+                ${rightBtnHtml}
             </div>
             
             <div style="text-align:center; margin-top:10px; flex-shrink:0;">
