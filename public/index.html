@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v397.0: 放課後おしゃべりタイムアルバム対応版) -->
+<!-- index.html (完全版 v401.0: クイズジャンル追加版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -40,7 +40,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v397.0-TreasureFix</div>
+            <div class="version-tag">Build: v401.0-QuizUpdate</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -302,6 +302,9 @@
                     <button id="btn-quiz-minecraft" onclick="showLevelSelection('マインクラフト')" class="main-btn green-btn" style="background:#4caf50;">マインクラフト</button>
                     <button id="btn-quiz-roblox" onclick="showLevelSelection('ロブロックス')" class="main-btn red-btn" style="background:#e53935;">ロブロックス</button>
                     <button id="btn-quiz-pokemon" onclick="showLevelSelection('ポケモン')" class="main-btn blue-btn" style="background:#0288d1;">ポケモン</button>
+                    <!-- ここに追加 -->
+                    <button id="btn-quiz-guruguru" onclick="showLevelSelection('魔法陣グルグル')" class="main-btn pink-btn" style="background:#f06292;">魔法陣グルグル</button>
+                    <button id="btn-quiz-jojo" onclick="showLevelSelection('ジョジョの奇妙な冒険')" class="main-btn purple-btn" style="background:#7b1fa2;">ジョジョの奇妙な冒険</button>
                 </div>
             </div>
 
@@ -434,7 +437,7 @@
     <div id="memory-manager-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content"><h3 style="text-align:center; margin:0 0 10px 0; flex-shrink: 0; color:#5c6bc0;">📝 プロフィール</h3><div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:2px solid #eee; padding-bottom:5px; flex-shrink: 0;"><button class="memory-tab active" onclick="switchMemoryTab('profile')" id="tab-profile">ネル先生のメモ</button><button class="memory-tab" onclick="switchMemoryTab('logs')" id="tab-logs">会話ログ</button></div><div id="memory-view-profile" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;"><p style="font-size:0.8rem; color:#666; flex-shrink: 0; text-align:center;">ネル先生が覚えているキミのことだにゃ。</p><div id="profile-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div></div><div id="memory-view-logs" class="hidden" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;"><p style="font-size:0.8rem; color:#666; flex-shrink: 0; text-align:center;">直近の会話ログだにゃ。</p><div id="memory-list-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div></div><button onclick="closeMemoryManager()" class="main-btn gray-btn" style="margin-top:10px; flex-shrink: 0;">閉じる</button></div></div>
     <div id="collection-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;"><h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
     <button onclick="closeCollection(); showMap();" class="main-btn" style="margin-bottom:10px; background:#29b6f6; box-shadow: 0 4px 0 #0288d1; padding:10px; font-size:0.9rem;">🗺️ 足あとマップを見る</button>
-    <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:10px; flex: 1; overflow-y:auto; padding:5px;"></div><div style="text-align:center; margin-top:15px; flex-shrink: 0;"><button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div></div></div>
+    <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:12px; flex: 1; overflow-y:auto; padding:5px;"></div><div style="text-align:center; margin-top:15px; flex-shrink: 0;"><button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div></div></div>
     <div id="timer-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content" style="height: auto; max-height: auto;"><h3 style="text-align:center; margin:0 0 10px 0; color:#ff7043;">⏱️ ネル先生タイマー</h3><div class="timer-box" style="margin: 0; box-shadow: none; border: none;"><div id="modal-timer-display" class="timer-display" style="font-size: 3rem;">00:00</div>
     <div class="timer-controls" style="margin-top: 15px;">
         <button onclick="setTimer(0.5)" class="timer-btn">+30秒</button>
