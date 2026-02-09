@@ -110,7 +110,13 @@ function fixPronunciation(text) {
 app.post('/generate-quiz', async (req, res) => {
     try {
         const { grade, genre, level } = req.body; 
-        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+        
+        // ★修正: クイズ生成にもGoogle検索ツールを有効化して事実確認させる
+        const model = genAI.getGenerativeModel({ 
+            model: MODEL_FAST, 
+            tools: [{ google_search: {} }], // 検索ツール追加
+            generationConfig: { responseMimeType: "application/json" } 
+        });
         
         let targetGenre = genre;
         if (!targetGenre || targetGenre === "全ジャンル") {
@@ -135,10 +141,11 @@ app.post('/generate-quiz', async (req, res) => {
         【難易度設定: レベル${currentLevel}】
         - ${difficultyDesc}
         
-        【最重要：正確性への指示】
-        - **必ず原作（漫画・アニメ・公式情報）に実在する正確な設定・キャラクター・名称に基づいて出題してください。**
-        - **うろ覚えの知識で適当な選択肢を作ったり、架空の技名やキャラ名を捏造することは絶対に禁止です。**
-        - 特に作品名が指定されている場合（魔法陣グルグル、ジョジョなど）は、ファンの子供が違和感を持たないよう、正しい知識で作成してください。
+        【最重要：Google検索による事実確認】
+        - **必ずGoogle検索ツールを使用して、問題文、正解、不正解の選択肢に含まれる用語（キャラクター名、技名、地名、エピソード）が実在するか確認してください。**
+        - 検索結果に存在しない、または曖昧な情報は絶対に使用しないでください。
+        - 特に「魔法陣グルグル」や「ジョジョ」などの作品モノの場合、原作（漫画・アニメ）に存在しない架空の設定、架空の技名、架空のキャラ名を捏造することは厳禁です。
+        - **「〇〇というキャラは存在するか？」「〇〇という技は正しいか？」を検索してからJSONを作成してください。**
 
         【重要：禁止事項】
         - **挨拶不要。すぐに問題文から始めてください。**
