@@ -111,8 +111,7 @@ app.post('/generate-quiz', async (req, res) => {
     try {
         const { grade, genre, level } = req.body; 
         
-        // ★修正: JSONモード(responseMimeType)を削除。Google検索ツールのみ有効化する。
-        // ※Gemini APIではToolsとJSONモードの併用がサポートされていないため
+        // Google検索ツールを有効化（JSONモードはOFF）
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST, 
             tools: [{ google_search: {} }] 
@@ -165,16 +164,25 @@ app.post('/generate-quiz', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        // JSONモードを使っていないため、テキストからJSONを抽出してパースする
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        let text = result.response.text();
         
+        // ★修正: JSON抽出ロジックの強化
+        // マークダウン記法を削除
+        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        // 最初と最後の波括弧を探して、その範囲を抽出する (余計な会話文を除去)
+        const firstBrace = text.indexOf('{');
+        const lastBrace = text.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) {
+            text = text.substring(firstBrace, lastBrace + 1);
+        }
+
         // 念のためJSONパース可能かチェック
         let jsonResponse;
         try {
             jsonResponse = JSON.parse(text);
         } catch (e) {
-            // パース失敗時はエラーではなく再試行を促すエラーJSONを返す
-            console.error("JSON Parse Error (Quiz):", text);
+            console.error("JSON Parse Error (Quiz): Raw Text:", result.response.text());
             throw new Error("AIが有効なJSONを返しませんでした。");
         }
         
