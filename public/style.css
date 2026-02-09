@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v401.0: 神経衰弱画像位置微調整版) --- */
+/* --- style.css (完全版 v402.0: 神経衰弱画像位置再調整版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1234,8 +1234,8 @@ button { font-family: inherit; }
     width: 100%;
     height: 100%;
     object-fit: cover;
-    /* 画像を下に移動させるために object-position を 15% に調整 */
-    object-position: center 15%; 
+    /* 画像を下に移動させるために object-position を 10% に微調整 */
+    object-position: center 10%; 
     transform: scale(1.6);
     transform-origin: center center;
 }
