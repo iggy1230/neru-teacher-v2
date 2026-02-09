@@ -111,11 +111,11 @@ app.post('/generate-quiz', async (req, res) => {
     try {
         const { grade, genre, level } = req.body; 
         
-        // ★修正: クイズ生成にもGoogle検索ツールを有効化して事実確認させる
+        // ★修正: JSONモード(responseMimeType)を削除。Google検索ツールのみ有効化する。
+        // ※Gemini APIではToolsとJSONモードの併用がサポートされていないため
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST, 
-            tools: [{ google_search: {} }], // 検索ツール追加
-            generationConfig: { responseMimeType: "application/json" } 
+            tools: [{ google_search: {} }] 
         });
         
         let targetGenre = genre;
@@ -151,7 +151,10 @@ app.post('/generate-quiz', async (req, res) => {
         - **挨拶不要。すぐに問題文から始めてください。**
         - **なぞなぞは禁止です。**
 
-        【出力JSONフォーマット】
+        【出力形式】
+        **必ず以下のJSON形式の文字列のみを出力してください。** 
+        Markdownのコードブロック(\`\`\`json 等)は含めても含めなくても構いませんが、余計な会話文は一切含めないでください。
+
         {
             "question": "問題文（「問題！〇〇はどれ？」のように、読み上げに適した文章）",
             "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
@@ -162,8 +165,20 @@ app.post('/generate-quiz', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
+        // JSONモードを使っていないため、テキストからJSONを抽出してパースする
         const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        res.json(JSON.parse(text));
+        
+        // 念のためJSONパース可能かチェック
+        let jsonResponse;
+        try {
+            jsonResponse = JSON.parse(text);
+        } catch (e) {
+            // パース失敗時はエラーではなく再試行を促すエラーJSONを返す
+            console.error("JSON Parse Error (Quiz):", text);
+            throw new Error("AIが有効なJSONを返しませんでした。");
+        }
+        
+        res.json(jsonResponse);
     } catch (e) {
         console.error("Quiz Gen Error:", e);
         res.status(500).json({ error: "クイズが作れなかったにゃ…" });
