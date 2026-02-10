@@ -96,7 +96,7 @@ function fixPronunciation(text) {
     t = t.replace(/＝/g, "わ");
     t = t.replace(/×/g, "かける");
     t = t.replace(/÷/g, "わる");
-    // ★追加: 固有名詞の読み修正
+    // 固有名詞の読み修正
     t = t.replace(/はね丸/g, "ハネマル");
     t = t.replace(/はね丸くん/g, "ハネマルクン");
     return t;
@@ -205,41 +205,48 @@ app.post('/generate-quiz', async (req, res) => {
             }
 
             const currentLevel = level || 1;
-            // 難易度記述を「正確さ重視」に変更
             let difficultyDesc = "";
             switch(parseInt(currentLevel)) {
-                case 1: difficultyDesc = `非常に有名で、誰でも知っている基礎的な事実`; break;
-                case 2: difficultyDesc = `ファンなら確実に知っている標準的な事実`; break;
-                case 3: difficultyDesc = `少し詳しい人が知っている事実`; break;
-                case 4: difficultyDesc = `かなり詳しい人向けの事実`; break;
-                case 5: difficultyDesc = `マニアックだが、Wiki等で検索すれば確実に裏付けが取れる事実`; break; // 「超難問」という言葉を削除して幻覚を抑制
-                default: difficultyDesc = `標準的な事実`;
+                case 1: difficultyDesc = `小学${grade}年生でも簡単にわかる、基礎的な問題`; break;
+                case 2: difficultyDesc = `小学${grade}年生が少し考えればわかる問題`; break;
+                case 3: difficultyDesc = `高学年～中学生レベルの知識が必要な問題`; break;
+                case 4: difficultyDesc = `大人でも間違えるかもしれない難しい問題`; break;
+                case 5: difficultyDesc = `非常にマニアック、または高度な知識が必要な超難問（クイズ王レベル）`; break;
+                default: difficultyDesc = `標準的な問題`;
             }
 
             let referenceInstructions = "";
             if (GENRE_REFERENCES[targetGenre]) {
                 const urls = GENRE_REFERENCES[targetGenre].join("\n- ");
                 referenceInstructions = `
-                【重要：情報のソース】
-                クイズの作成にあたっては、**必ず**以下の信頼できる情報源（URL）を検索し、そこに**明記されている文章**をベースにしてください。
+                【重要：参考資料 (出典)】
+                このクイズを作成する際は、以下のURLの内容をGoogle検索ツールで優先的に確認し、**公式設定や事実に完全に基づいた**問題を作成してください。
                 - ${urls}
+
+                【情報抽出の指示】
+                - 指定されたURL内にある「登場人物」「用語」「エピソード」「名シーン」の項目を重点的に読み取ってください。
+                - 事実確認（Grounding）を行う際、複数のソースで共通して記述されている内容を「正解」として採用してください。
                 `;
             }
 
             const prompt = `
-            あなたは「正確性」を最優先するクイズ作家です。
-            「${targetGenre}」に関する4択クイズを1問作成してください。
+            あなたは「${targetGenre}」に詳しいクイズ作家です。
+            以下の手順で、ファンが楽しめる4択クイズを1問作成してください。
 
             ### 手順（思考プロセス）
-            1. **[検索]**: ${referenceInstructions || "Google検索で信頼できる情報源を探してください。"}
-            2. **[事実の抽出]**: 検索結果の中から、**「確実に正しいと断言できる一文」**を見つけてください。
+            1. **[検索実行]**: まずGoogle検索を使い、作品の用語、キャラ、エピソードの正確な情報を確認してください。
+               ${referenceInstructions}
+            2. **[事実の抽出]**: 検索結果に基づき、正確な情報を抽出してください。
+               - **【重要: 禁止事項】**: 出版年、連載開始日、掲載誌、巻数、作者の経歴などの「作品外データ（メタ情報）」は**出題禁止**です。
+               - **【推奨事項】**: 作中のストーリー、キャラクターのセリフ、技の効果、モンスターの特徴、名シーンなど、物語の中身に関する事実を選んでください。
                - 曖昧な記憶や、「〜だった気がする」という情報は絶対に使わないでください。
                - 架空のキャラクター、架空の技名、存在しないエピソードの捏造は厳禁です。
-            3. **[問題作成]**: その「事実」を元に、問題文と正解を作成してください。
+            3. **[問題作成]**: 抽出した事実を元に、問題文と正解を作成してください。
 
             ### 難易度: レベル${currentLevel}
             - ${difficultyDesc}
-            
+            - **挨拶不要。すぐにJSONデータから始めてください。**
+
             ### 出力フォーマット
             必ず以下のJSON形式の文字列のみを出力してください。
             **"fact_basis" フィールドには、問題の元になった検索結果の文章（根拠）をそのままコピペしてください。**
@@ -257,6 +264,7 @@ app.post('/generate-quiz', async (req, res) => {
             const result = await model.generateContent(prompt);
             let text = result.response.text();
             
+            // JSON抽出ロジック
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const firstBrace = text.indexOf('{');
             const lastBrace = text.lastIndexOf('}');
@@ -808,7 +816,7 @@ app.post('/identify-item', async (req, res) => {
         - **2 (★★)**: ちょっとだけ珍しいもの。**建物・建造物（学校、駅、公民館、橋など）は最低でも「2」以上にする。**
         - **3 (★★★)**: その場所に行かないと見られないもの。**動物（犬、猫、鳥、虫など）は最低でも「3」以上にする。** **入手困難な人気商品（最新ゲーム機など）は「3」以上にする。**
         - **4 (★★★★)**: かなり珍しいもの。**特別な種類の動物や、歴史的建造物、有名なテーマパークは「4」以上にする。**
-        - **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
+        - **5 (★★★★★)**:奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。
@@ -919,9 +927,9 @@ app.post('/game-reaction', async (req, res) => {
         let mood = "excited";
 
         if (type === 'start') {
-            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。必ず「${name}さん」と呼ぶこと。呼び捨て禁止。語尾は「にゃ」。`;
+            prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して。語尾は「にゃ」。`;
         } else if (type === 'end') {
-            prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。必ず「${name}さん」と呼ぶこと。呼び捨て禁止。語尾は「にゃ」。`;
+            prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。語尾は「にゃ」。`;
         } else {
             return res.json({ reply: "ナイスにゃ！", mood: "excited" });
         }
