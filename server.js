@@ -106,17 +106,17 @@ function fixPronunciation(text) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (強化版) ---
+// --- クイズ生成 API (自動リトライ強化版) ---
 app.post('/generate-quiz', async (req, res) => {
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = 3; // 最大3回まで挑戦
     let attempt = 0;
 
+    // リトライループ
     while (attempt < MAX_RETRIES) {
         attempt++;
         try {
             const { grade, genre, level } = req.body; 
             
-            // Google検索ツールを有効化
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST, 
                 tools: [{ google_search: {} }] 
@@ -158,6 +158,7 @@ app.post('/generate-quiz', async (req, res) => {
             必ず以下のJSON形式の文字列のみを出力してください。
             {
               "search_query_used": "実行した検索ワード（確認用）",
+              "verified_source": "検索で確認したサイトのURLや出典元（ハルシネーション防止用）",
               "question": "問題文（「問題！〇〇はどれ？」のように、読み上げに適した文章）",
               "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
               "answer": "正解（optionsのいずれかと完全一致）",
@@ -205,9 +206,9 @@ app.post('/generate-quiz', async (req, res) => {
                 throw new Error("Invalid format: duplicate options");
             }
             
-            // 検証OKならレスポンスを返す
+            // 検証OKならクライアントに返して終了
             res.json(jsonResponse);
-            return; // 処理終了
+            return; 
 
         } catch (e) {
             console.error(`Quiz Gen Error (Attempt ${attempt}):`, e.message);
