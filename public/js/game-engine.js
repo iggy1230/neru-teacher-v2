@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v408.0: クイズエラー時リトライUI追加版) ---
+// --- js/game-engine.js (v409.0: クイズ正誤判定厳格化版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -803,12 +803,13 @@ window.nextQuiz = async function() {
     }
 };
 
+// ★修正: checkQuizAnswer の正誤判定をボタン/音声で厳密に分ける
 window.checkQuizAnswer = function(userAnswer, isButton = false) {
     if (!window.currentQuiz || window.currentMode !== 'quiz') return false; 
     if (!document.getElementById('quiz-answer-display').classList.contains('hidden')) return false;
 
     const correct = window.currentQuiz.answer;
-    const accepted = window.currentQuiz.accepted_answers || [];
+    // const accepted = window.currentQuiz.accepted_answers || []; // クイズAPIには通常含まれない
     
     const buttons = document.querySelectorAll('.quiz-option-btn');
     if (isButton) {
@@ -816,11 +817,22 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
     }
 
     const cleanUserAnswer = userAnswer.trim();
+    const cleanCorrect = correct.trim();
+
     let isCorrect = false;
-    if (cleanUserAnswer.includes(correct) || accepted.some(a => cleanUserAnswer.includes(a))) {
-        isCorrect = true;
-    } else if (fuzzyContains(cleanUserAnswer, correct)) {
-        isCorrect = true;
+
+    if (isButton) {
+        // ★修正: ボタン選択時は完全一致のみ（サーバー側バリデーション済みのため安全）
+        if (cleanUserAnswer === cleanCorrect) {
+            isCorrect = true;
+        }
+    } else {
+        // 音声入力時はあいまい検索を許容
+        if (cleanUserAnswer.includes(cleanCorrect)) {
+            isCorrect = true;
+        } else if (fuzzyContains(cleanUserAnswer, cleanCorrect)) {
+            isCorrect = true;
+        }
     }
     
     const status = document.getElementById('quiz-mic-status');
@@ -831,15 +843,10 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
         window.updateNellMessage(`ピンポン！正解だにゃ！答えは「${correct}」！`, "excited", false, true);
         quizState.score += 20; 
         
-        if (isButton) {
-            buttons.forEach(b => {
-                if (b.innerText === cleanUserAnswer) b.classList.add('quiz-correct');
-            });
-        } else {
-            buttons.forEach(b => {
-                if (b.innerText === correct) b.classList.add('quiz-correct');
-            });
-        }
+        // 正解ボタンをハイライト
+        buttons.forEach(b => {
+            if (b.innerText === correct) b.classList.add('quiz-correct');
+        });
 
         window.showQuizResult(true);
         return true; 
@@ -847,6 +854,8 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
         if (isButton) {
             if(window.safePlay) window.safePlay(window.sfxBatu);
             window.updateNellMessage(`残念！正解は「${correct}」だったにゃ。`, "gentle", false, true);
+            
+            // 間違いボタンと正解ボタンをハイライト
             buttons.forEach(b => {
                 if (b.innerText === cleanUserAnswer) b.classList.add('quiz-wrong');
                 if (b.innerText === correct) b.classList.add('quiz-correct');
