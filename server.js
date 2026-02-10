@@ -96,7 +96,7 @@ function fixPronunciation(text) {
     t = t.replace(/＝/g, "わ");
     t = t.replace(/×/g, "かける");
     t = t.replace(/÷/g, "わる");
-    // 固有名詞の読み修正
+    // ★追加: 固有名詞の読み修正
     t = t.replace(/はね丸/g, "ハネマル");
     t = t.replace(/はね丸くん/g, "ハネマルクン");
     return t;
@@ -136,7 +136,7 @@ const GENRE_REFERENCES = {
     ]
 };
 
-// ★追加: クイズ検証関数 (Grounding)
+// クイズ検証関数 (Grounding)
 async function verifyQuiz(quizData, genre) {
     try {
         const model = genAI.getGenerativeModel({ 
@@ -174,7 +174,6 @@ async function verifyQuiz(quizData, genre) {
         
     } catch (e) {
         console.warn("Verification API Error:", e.message);
-        // エラー時は安全のためリトライ扱いにする
         return false;
     }
 }
@@ -264,7 +263,6 @@ app.post('/generate-quiz', async (req, res) => {
             const result = await model.generateContent(prompt);
             let text = result.response.text();
             
-            // JSON抽出ロジック
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const firstBrace = text.indexOf('{');
             const lastBrace = text.lastIndexOf('}');
@@ -280,7 +278,6 @@ app.post('/generate-quiz', async (req, res) => {
                 throw new Error("JSON Parse Failed");
             }
 
-            // --- 1. 形式バリデーション ---
             const { options, answer, question, fact_basis } = jsonResponse;
             if (!question || !options || !answer) throw new Error("Invalid format: missing fields");
             if (!options.includes(answer)) {
@@ -292,16 +289,14 @@ app.post('/generate-quiz', async (req, res) => {
                 throw new Error("Invalid format: duplicate options");
             }
 
-            // --- 2. 事実確認バリデーション (verifyQuiz) ---
             console.log(`[Attempt ${attempt}] Verifying quiz... Fact Basis: ${fact_basis}`);
             const isVerified = await verifyQuiz(jsonResponse, targetGenre);
             
             if (isVerified) {
                 res.json(jsonResponse);
-                return; // 成功！
+                return;
             } else {
                 console.warn(`[Attempt ${attempt}] Verification Failed. Retrying...`);
-                // ループ継続してリトライ
             }
 
         } catch (e) {
@@ -312,6 +307,74 @@ app.post('/generate-quiz', async (req, res) => {
                 return;
             }
         }
+    }
+});
+
+// --- 間違い修正 & 再生成 API ---
+app.post('/correct-quiz', async (req, res) => {
+    try {
+        const { oldQuiz, reason, genre } = req.body;
+        // 修正時は念入りに調べるため Google Search を必須にする
+        const model = genAI.getGenerativeModel({ 
+            model: MODEL_FAST, 
+            tools: [{ google_search: {} }] 
+        });
+
+        // 信頼できるソースがあればプロンプトに含める
+        let referenceInstructions = "";
+        if (GENRE_REFERENCES[genre]) {
+            referenceInstructions = `
+            【参照すべき信頼できるソース】
+            - ${GENRE_REFERENCES[genre].join("\n- ")}
+            `;
+        }
+
+        const prompt = `
+        あなたはクイズ作家ですが、先ほど作成した以下の問題に「間違いがある」とユーザーから報告を受けました。
+
+        【元の問題】: ${oldQuiz.question}
+        【元の正解】: ${oldQuiz.answer}
+        【ユーザーの指摘】: ${reason}
+
+        ### 指示
+        1. Google検索を使用し、ユーザーの指摘が正しいか、元の問題に誤りがないか徹底的に調査してください。
+           ${referenceInstructions}
+        2. もし元の問題が間違っていた場合、正しい事実に即した**新しいクイズ**を1問作成してください。
+        3. 解説文（explanation）の冒頭には、「教えてくれてありがとうにゃ！修正したにゃ！」と感謝の言葉を入れてください。
+
+        ### 出力形式 (JSON)
+        **JSON以外の文字列は一切含めないでください。**
+        {
+          "fact_basis": "修正の根拠となった検索結果",
+          "question": "修正後の問題文",
+          "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
+          "answer": "正解",
+          "explanation": "感謝の言葉 + 解説",
+          "actual_genre": "${genre}"
+        }
+        `;
+
+        const result = await model.generateContent(prompt);
+        let text = result.response.text();
+        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        const firstBrace = text.indexOf('{');
+        const lastBrace = text.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) {
+            text = text.substring(firstBrace, lastBrace + 1);
+        }
+
+        const jsonResponse = JSON.parse(text);
+        
+        // 簡易バリデーション
+        if (!jsonResponse.options.includes(jsonResponse.answer)) {
+            throw new Error("修正版の生成に失敗しました（正解が選択肢にない）");
+        }
+
+        res.json(jsonResponse);
+
+    } catch (e) {
+        console.error("Correct Quiz Error:", e);
+        res.status(500).json({ error: "修正できなかったにゃ…ごめんにゃ。" });
     }
 });
 
@@ -797,9 +860,6 @@ app.post('/identify-item', async (req, res) => {
         
         ${locationInfo}
 
-        【★最重要ルール: 呼び方】
-        **相手を呼ぶときは必ず「${name}さん」と呼んでください。絶対に呼び捨てにしてはいけません。**
-
         【★最重要ルール: 場所の整合性 (厳守)】
         - **画像検索の結果、見た目が有名な観光地（例: 奈良の公園、東京のタワー）に似ていても、提供された「住所」や「現在地」がそれらの場所と異なる場合は、絶対にその観光地名を採用しないでください。**
         - 必ず「提供された住所（${address || '現在地'}）」の中に存在する施設（公園、店、建物）として特定してください。
@@ -816,7 +876,7 @@ app.post('/identify-item', async (req, res) => {
         - **2 (★★)**: ちょっとだけ珍しいもの。**建物・建造物（学校、駅、公民館、橋など）は最低でも「2」以上にする。**
         - **3 (★★★)**: その場所に行かないと見られないもの。**動物（犬、猫、鳥、虫など）は最低でも「3」以上にする。** **入手困難な人気商品（最新ゲーム機など）は「3」以上にする。**
         - **4 (★★★★)**: かなり珍しいもの。**特別な種類の動物や、歴史的建造物、有名なテーマパークは「4」以上にする。**
-        - **5 (★★★★★)**:奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
+        - **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
 
         【解説のルール】
         1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。
