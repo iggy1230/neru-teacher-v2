@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v409.1: 夏目友人帳クイズ追加版) ---
+// --- js/game-engine.js (v410.0: クイズジャンル混入バグ修正版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -749,10 +749,18 @@ window.nextQuiz = async function() {
     
     // 4. それでもダメなら、エラー表示 & リトライUIを表示 (★修正: ストックをフォールバック利用)
     if (!quizData) {
-        // ★追加: エラー時のストック利用 (ランダム)
+        // ★追加: エラー時のストック利用 (ランダム) - ジャンルフィルタリング有り
+        let candidates = [];
         if (currentUser && currentUser.savedQuizzes && currentUser.savedQuizzes.length > 0) {
+             candidates = currentUser.savedQuizzes.filter(q => {
+                if (quizState.genre === "全ジャンル") return true;
+                return q.genre === quizState.genre || q.actual_genre === quizState.genre;
+            });
+        }
+
+        if (candidates.length > 0) {
             console.log("Generating failed. Using stock quiz (fallback).");
-            const stockQuiz = currentUser.savedQuizzes[Math.floor(Math.random() * currentUser.savedQuizzes.length)];
+            const stockQuiz = candidates[Math.floor(Math.random() * candidates.length)];
             quizData = { ...stockQuiz, isFallback: true };
             window.updateNellMessage("電波が悪いから、思い出の中から出すにゃ！", "excited");
         } else {
