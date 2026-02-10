@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v403.0: クイズ自動リトライ強化版) ---
+// --- js/game-engine.js (v404.0: 完全版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -614,8 +614,9 @@ window.nextQuiz = async function() {
     const micStatus = document.getElementById('quiz-mic-status');
     const optionsContainer = document.getElementById('quiz-options-container');
 
-    qText.innerText = "問題を作ってるにゃ…";
-    window.updateNellMessage("問題を作ってるにゃ…", "thinking");
+    // ★変更: 待機メッセージの変更
+    qText.innerText = "問題を一生懸命作って、チェックしてるにゃ…";
+    window.updateNellMessage("問題を一生懸命作って、チェックしてるにゃ…", "thinking");
     micStatus.innerText = "";
     ansDisplay.classList.add('hidden');
     controls.style.display = 'none';
