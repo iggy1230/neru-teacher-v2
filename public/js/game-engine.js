@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v407.0: 完全版・クイズ先行生成対応) ---
+// --- js/game-engine.js (v408.0: クイズエラー時リトライUI追加版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -696,6 +696,7 @@ window.nextQuiz = async function() {
     const micStatus = document.getElementById('quiz-mic-status');
     const optionsContainer = document.getElementById('quiz-options-container');
 
+    // UI初期化
     qText.innerText = "問題を一生懸命作って、チェックしてるにゃ…";
     window.updateNellMessage("問題を一生懸命作って、チェックしてるにゃ…", "thinking");
     micStatus.innerText = "";
@@ -704,32 +705,69 @@ window.nextQuiz = async function() {
     nextBtn.classList.add('hidden');
     optionsContainer.innerHTML = ""; 
     
-    // ★変更: キューからデータを取り出す。空なら待つ。
     let quizData = null;
-    let waitCount = 0;
-    const MAX_WAIT = 30; // 30秒待機
-
-    while (waitCount < MAX_WAIT) {
-        if (quizState.sessionId !== currentSessionId) return; // セッション切れ
-
-        if (quizState.questionQueue.length > 0) {
-            quizData = quizState.questionQueue.shift();
-            break;
+    
+    // 1. まずキューを確認
+    if (quizState.questionQueue.length > 0) {
+        quizData = quizState.questionQueue.shift();
+    } else {
+        // 2. キューが空なら、少し待ってみる (最大10秒)
+        let waitCount = 0;
+        const MAX_WAIT = 10; 
+        
+        while (waitCount < MAX_WAIT) {
+            if (quizState.sessionId !== currentSessionId) return; 
+            if (quizState.questionQueue.length > 0) {
+                quizData = quizState.questionQueue.shift();
+                break;
+            }
+            await new Promise(r => setTimeout(r, 1000));
+            waitCount++;
+            
+            // 待機中メッセージ更新
+            if (waitCount === 5) {
+                 window.updateNellMessage("うーん、まだ確認中だにゃ…もうちょっと待ってにゃ！", "thinking");
+            }
         }
-
-        await new Promise(r => setTimeout(r, 1000));
-        waitCount++;
     }
 
-    // データが取れなかった場合
+    // 3. それでもダメなら、その場で直接サーバーにリクエスト (緊急生成)
     if (!quizData) {
-        qText.innerText = "エラーだにゃ…もう一回試してにゃ";
-        setTimeout(() => {
-             if (quizState.sessionId === currentSessionId) window.showQuizGame();
-        }, 2000);
+        console.log("Queue empty. Fetching directly...");
+        window.updateNellMessage("お待たせ！今すぐ持ってくるにゃ！", "excited");
+        quizData = await generateValidQuiz(quizState.genre, quizState.level, currentSessionId);
+    }
+    
+    // 4. それでもダメなら、エラー表示 (★修正: 画面遷移せずリトライボタンを表示)
+    if (!quizData) {
+        qText.innerText = "ごめんにゃ、問題が作れなかったにゃ…。";
+        window.updateNellMessage("ごめんにゃ、問題が作れなかったにゃ…。", "sad");
+        
+        // リトライボタンを手動で作成して配置
+        optionsContainer.innerHTML = "";
+        const retryBtn = document.createElement('button');
+        retryBtn.className = "main-btn orange-btn";
+        retryBtn.innerText = "もう一度トライ！";
+        retryBtn.onclick = () => {
+            // インデックスを戻して再度 nextQuiz を呼ぶ（実質リトライ）
+            quizState.currentQuestionIndex--; 
+            window.nextQuiz();
+        };
+        optionsContainer.appendChild(retryBtn);
+        
+        // 諦めて戻るボタン
+        const backBtn = document.createElement('button');
+        backBtn.className = "main-btn gray-btn";
+        backBtn.innerText = "あきらめて戻る";
+        backBtn.onclick = window.showQuizGame;
+        optionsContainer.appendChild(backBtn);
+        
         return;
     }
+    
+    if (quizState.sessionId !== currentSessionId) return;
 
+    // --- 出題処理 ---
     if (quizData && quizData.question) {
         quizState.history.push(quizData.answer);
         if (quizState.history.length > 10) quizState.history.shift(); // 履歴保持数を少し増やす
