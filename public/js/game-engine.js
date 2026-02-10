@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v409.0: クイズ正誤判定厳格化版) ---
+// --- js/game-engine.js (v408.0: クイズエラー時リトライUI追加版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -500,56 +500,38 @@ let quizState = {
 
 // 単一のクイズ生成と整合性チェック（リトライロジックを内包）
 async function generateValidQuiz(genre, level, sessionId) {
-    const MAX_RETRIES = 5; 
-    let retryCount = 0;
-    let fallbackData = null;
-
-    while (retryCount < MAX_RETRIES) {
-        // セッションが変わっていたら中断
-        if (quizState.sessionId !== sessionId) return null;
-
-        let quizData = null;
-        try {
-            const res = await fetch('/generate-quiz', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    grade: currentUser ? currentUser.grade : "1",
-                    genre: genre,
-                    level: level 
-                })
-            });
-            if (res.ok) {
-                quizData = await res.json();
-            }
-        } catch (e) {
-            console.error("Fetch Error:", e);
+    // リトライはサーバー側でやってくれるので、ここでは fetch を呼ぶだけ
+    let quizData = null;
+    try {
+        const res = await fetch('/generate-quiz', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                grade: currentUser ? currentUser.grade : "1",
+                genre: genre,
+                level: level 
+            })
+        });
+        if (res.ok) {
+            quizData = await res.json();
         }
-
-        if (quizData && quizData.question && quizData.answer) {
-             if (!fallbackData) fallbackData = quizData;
-
-             // 重複チェック
-             const isDuplicate = quizState.history.some(h => h === quizData.answer);
-             if (!isDuplicate) {
-                 return quizData; // 成功！
-             } else {
-                 console.log("Duplicate quiz detected in bg. Retrying...", quizData.answer);
-             }
-        } else {
-             console.log("Invalid quiz data in bg. Retrying...");
-        }
-        
-        retryCount++;
-        await new Promise(r => setTimeout(r, 1000));
+    } catch (e) {
+        console.error("Fetch Error:", e);
     }
     
-    // リトライ上限に達した場合、フォールバックを使用
-    if (fallbackData) {
-        console.log("Max retries reached in bg. Using fallback.");
-        return fallbackData;
-    }
+    // セッションが変わっていたら破棄
+    if (quizState.sessionId !== sessionId) return null;
 
+    if (quizData && quizData.question && quizData.answer) {
+         // クライアント側でも一応重複チェック
+         const isDuplicate = quizState.history.some(h => h === quizData.answer);
+         if (!isDuplicate) {
+             return quizData; // 成功！
+         } else {
+             console.log("Duplicate quiz detected in client bg. Dropping...", quizData.answer);
+             return null;
+         }
+    } 
     return null;
 }
 
@@ -578,7 +560,7 @@ async function backgroundQuizFetcher(genre, level, sessionId) {
             console.log("[Quiz] Pre-fetched 1 question.");
             quizState.questionQueue.push(newQuiz);
         } else {
-            console.warn("[Quiz] Failed to generate in background. Waiting...");
+            console.warn("[Quiz] Failed to generate in background. Retrying...");
             await new Promise(r => setTimeout(r, 2000));
         }
     }
@@ -696,7 +678,6 @@ window.nextQuiz = async function() {
     const micStatus = document.getElementById('quiz-mic-status');
     const optionsContainer = document.getElementById('quiz-options-container');
 
-    // UI初期化
     qText.innerText = "問題を一生懸命作って、チェックしてるにゃ…";
     window.updateNellMessage("問題を一生懸命作って、チェックしてるにゃ…", "thinking");
     micStatus.innerText = "";
@@ -738,13 +719,13 @@ window.nextQuiz = async function() {
         quizData = await generateValidQuiz(quizState.genre, quizState.level, currentSessionId);
     }
     
-    // 4. それでもダメなら、エラー表示 (★修正: 画面遷移せずリトライボタンを表示)
+    // 4. それでもダメなら、エラー表示 & リトライUIを表示 (★修正)
     if (!quizData) {
         qText.innerText = "ごめんにゃ、問題が作れなかったにゃ…。";
         window.updateNellMessage("ごめんにゃ、問題が作れなかったにゃ…。", "sad");
         
-        // リトライボタンを手動で作成して配置
         optionsContainer.innerHTML = "";
+        
         const retryBtn = document.createElement('button');
         retryBtn.className = "main-btn orange-btn";
         retryBtn.innerText = "もう一度トライ！";
@@ -755,7 +736,6 @@ window.nextQuiz = async function() {
         };
         optionsContainer.appendChild(retryBtn);
         
-        // 諦めて戻るボタン
         const backBtn = document.createElement('button');
         backBtn.className = "main-btn gray-btn";
         backBtn.innerText = "あきらめて戻る";
@@ -803,13 +783,12 @@ window.nextQuiz = async function() {
     }
 };
 
-// ★修正: checkQuizAnswer の正誤判定をボタン/音声で厳密に分ける
 window.checkQuizAnswer = function(userAnswer, isButton = false) {
     if (!window.currentQuiz || window.currentMode !== 'quiz') return false; 
     if (!document.getElementById('quiz-answer-display').classList.contains('hidden')) return false;
 
     const correct = window.currentQuiz.answer;
-    // const accepted = window.currentQuiz.accepted_answers || []; // クイズAPIには通常含まれない
+    const accepted = window.currentQuiz.accepted_answers || [];
     
     const buttons = document.querySelectorAll('.quiz-option-btn');
     if (isButton) {
