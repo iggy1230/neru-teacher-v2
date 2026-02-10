@@ -139,6 +139,10 @@ const GENRE_REFERENCES = {
         "https://dic.pixiv.net/a/%E3%81%99%E3%81%A8%E3%81%B7%E3%82%8A",
         "https://dic.pixiv.net/a/KnightA",
         "https://dic.pixiv.net/a/AMPTAKxCOLORS"
+    ],
+    "夏目友人帳": [
+        "https://dic.pixiv.net/a/%E5%A4%8F%E7%9B%AE%E5%8F%8B%E4%BA%BA%E5%B8%B3",
+        "https://ja.wikipedia.org/wiki/%E5%A4%8F%E7%9B%AE%E5%8F%8B%E4%BA%BA%E5%B8%B3"
     ]
 };
 
