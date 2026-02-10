@@ -96,7 +96,7 @@ function fixPronunciation(text) {
     t = t.replace(/＝/g, "わ");
     t = t.replace(/×/g, "かける");
     t = t.replace(/÷/g, "わる");
-    // ★追加: 固有名詞の読み修正
+    // 固有名詞の読み修正
     t = t.replace(/はね丸/g, "ハネマル");
     t = t.replace(/はね丸くん/g, "ハネマルクン");
     return t;
@@ -105,18 +105,34 @@ function fixPronunciation(text) {
 // ★追加: ジャンルごとの信頼できる参照URLリスト
 const GENRE_REFERENCES = {
     "魔法陣グルグル": [
-        "https://dic.pixiv.net/a/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB", // Pixiv百科事典
-        "https://ja.wikipedia.org/wiki/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB" // Wikipedia
+        "https://dic.pixiv.net/a/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB",
+        "https://ja.wikipedia.org/wiki/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB"
     ],
     "ジョジョの奇妙な冒険": [
-        "https://dic.pixiv.net/a/%E3%82%B8%E3%83%A7%E3%82%B8%E3%83%A7%E3%81%AE%E5%A5%87%E5%A6%99%E3%81%AA%E5%86%92%E9%99%BA"
+        "https://dic.pixiv.net/a/%E3%82%B8%E3%83%A7%E3%82%B8%E3%83%A7%E3%81%AE%E5%A5%87%E5%A6%99%E3%81%AA%E5%86%92%E9%99%BA",
+        "https://w.atwiki.jp/jojo-dic/"
     ],
     "ポケモン": [
-        "https://wiki.xn--rckteqa2e.com/wiki/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8", // ポケモンWiki
-        "https://zukan.pokemon.co.jp/" // ポケモンずかん
+        "https://dic.pixiv.net/a/%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3",
+        "https://wiki.xn--rckteqa2e.com/wiki/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8"
     ],
     "マインクラフト": [
         "https://minecraft.fandom.com/ja/wiki/Minecraft_Wiki"
+    ],
+    "ロブロックス": [
+        "https://roblox.fandom.com/ja/wiki/Roblox_Wiki"
+    ],
+    "ドラえもん": [
+        "https://dic.pixiv.net/a/%E3%83%89%E3%83%A9%E3%81%88%E3%82%82%E3%83%B3",
+        "https://hanaballoon.com/dorawiki/index.php/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8"
+    ],
+    "歴史・戦国武将": [
+        "https://ja.wikipedia.org/wiki/%E6%88%A6%E5%9B%BD%E6%AD%A6%E5%B0%86",
+        "https://japanknowledge.com/introduction/keyword.html?i=932"
+    ],
+    "一般知識": [
+        "https://ja.wikipedia.org/wiki/%E9%9B%91%E5%AD%A6",
+        "https://r25.jp/article/553641712437603302"
     ]
 };
 
@@ -165,6 +181,10 @@ app.post('/generate-quiz', async (req, res) => {
                 【重要：参考資料 (出典)】
                 このクイズを作成する際は、以下のURLの内容をGoogle検索ツールで優先的に確認し、**公式設定や事実に完全に基づいた**問題を作成してください。
                 - ${urls}
+
+                【情報抽出の指示】
+                - 指定されたURL内にある「登場人物」「用語」「エピソード」の項目を重点的に読み取ってください。
+                - 事実確認（Grounding）を行う際、複数のソースで共通して記述されている内容を「正解」として採用してください。
                 `;
             }
 
@@ -186,7 +206,7 @@ app.post('/generate-quiz', async (req, res) => {
 
             ### 出力フォーマット
             必ず以下のJSON形式の文字列のみを出力してください。
-            **解説（explanation）の末尾に、参照した情報のソース（どのキャラクターの項目を見たか、どのサイトを見たか等）をカッコ書きで付記してくださいにゃ。**
+            **解説（explanation）の末尾に、必ず「（出典：ピクシブ百科事典）」のように、どの情報を参考にしたか一言添えてくださいにゃ。**
 
             {
               "search_query_used": "実行した検索ワード（確認用）",
