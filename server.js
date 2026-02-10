@@ -102,11 +102,29 @@ function fixPronunciation(text) {
     return t;
 }
 
+// ★追加: ジャンルごとの信頼できる参照URLリスト
+const GENRE_REFERENCES = {
+    "魔法陣グルグル": [
+        "https://dic.pixiv.net/a/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB", // Pixiv百科事典
+        "https://ja.wikipedia.org/wiki/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB" // Wikipedia
+    ],
+    "ジョジョの奇妙な冒険": [
+        "https://dic.pixiv.net/a/%E3%82%B8%E3%83%A7%E3%82%B8%E3%83%A7%E3%81%AE%E5%A5%87%E5%A6%99%E3%81%AA%E5%86%92%E9%99%BA"
+    ],
+    "ポケモン": [
+        "https://wiki.xn--rckteqa2e.com/wiki/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8", // ポケモンWiki
+        "https://zukan.pokemon.co.jp/" // ポケモンずかん
+    ],
+    "マインクラフト": [
+        "https://minecraft.fandom.com/ja/wiki/Minecraft_Wiki"
+    ]
+};
+
 // ==========================================
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (自動リトライ強化版) ---
+// --- クイズ生成 API (自動リトライ・出典確認強化版) ---
 app.post('/generate-quiz', async (req, res) => {
     const MAX_RETRIES = 3; // 最大3回まで挑戦
     let attempt = 0;
@@ -139,11 +157,23 @@ app.post('/generate-quiz', async (req, res) => {
                 default: difficultyDesc = `標準的な問題`;
             }
 
+            // ★追加: 参照URL情報の構築
+            let referenceInstructions = "";
+            if (GENRE_REFERENCES[targetGenre]) {
+                const urls = GENRE_REFERENCES[targetGenre].join("\n- ");
+                referenceInstructions = `
+                【重要：参考資料 (出典)】
+                このクイズを作成する際は、以下のURLの内容をGoogle検索ツールで優先的に確認し、**公式設定や事実に完全に基づいた**問題を作成してください。
+                - ${urls}
+                `;
+            }
+
             const prompt = `
             あなたはクイズ作家です。以下の手順で「${targetGenre}」に関する4択クイズを1問作成してください。
 
             ### 手順
-            1. **[検索実行]**: まずGoogle検索を使い、作品の公式情報、Wiki、または信頼できる攻略サイトで以下の項目を調べてください。
+            1. **[検索実行]**: まずGoogle検索を使い、作品の公式情報、Pixiv百科事典、Wiki、または信頼できる攻略サイトで以下の項目を調べてください。
+               ${referenceInstructions}
                - ${targetGenre}に関する「あまり知られていないが面白い事実」を1つ特定する。
                - その事実に関連するキャラクター、技、用語の正確な表記を確認する。
                - **検索結果から、作品の単行本や公式サイトに記載がある事実のみを採用してください。ネットの噂や二次創作（SS）の情報は除外してください。**
@@ -156,13 +186,15 @@ app.post('/generate-quiz', async (req, res) => {
 
             ### 出力フォーマット
             必ず以下のJSON形式の文字列のみを出力してください。
+            **解説（explanation）の末尾に、参照した情報のソース（どのキャラクターの項目を見たか、どのサイトを見たか等）をカッコ書きで付記してくださいにゃ。**
+
             {
               "search_query_used": "実行した検索ワード（確認用）",
               "verified_source": "検索で確認したサイトのURLや出典元（ハルシネーション防止用）",
               "question": "問題文（「問題！〇〇はどれ？」のように、読み上げに適した文章）",
               "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
               "answer": "正解（optionsのいずれかと完全一致）",
-              "explanation": "解説（子供向けに優しく、語尾は『にゃ』）",
+              "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』。出典元も書くこと）",
               "actual_genre": "${targetGenre}"
             }
             `;
@@ -206,9 +238,9 @@ app.post('/generate-quiz', async (req, res) => {
                 throw new Error("Invalid format: duplicate options");
             }
             
-            // 検証OKならクライアントに返して終了
+            // 検証OKならレスポンスを返す
             res.json(jsonResponse);
-            return; 
+            return; // 処理終了
 
         } catch (e) {
             console.error(`Quiz Gen Error (Attempt ${attempt}):`, e.message);
