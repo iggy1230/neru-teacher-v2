@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v409.0: ストッククイズ活用版) ---
+// --- js/game-engine.js (v409.1: 夏目友人帳クイズ追加版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -585,7 +585,9 @@ window.showQuizGame = function() {
         "ロブロックス": "btn-quiz-roblox",
         "ポケモン": "btn-quiz-pokemon",
         "魔法陣グルグル": "btn-quiz-guruguru",
-        "ジョジョの奇妙な冒険": "btn-quiz-jojo"
+        "ジョジョの奇妙な冒険": "btn-quiz-jojo",
+        "STPR": "btn-quiz-stpr",
+        "夏目友人帳": "btn-quiz-natsume"
     };
 
     genres.forEach(g => {
@@ -595,6 +597,13 @@ window.showQuizGame = function() {
             btn.innerText = `${g} (Lv.${lv})`;
         }
     });
+
+    // 夏目友人帳のボタンも更新
+    const btnNatsume = document.getElementById('btn-quiz-natsume');
+    if (btnNatsume) {
+        const lv = levels["夏目友人帳"] || 1;
+        btnNatsume.innerText = `夏目友人帳 (Lv.${lv})`;
+    }
 
     document.getElementById('quiz-genre-select').classList.remove('hidden');
     document.getElementById('quiz-level-select').classList.add('hidden'); 
