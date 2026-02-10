@@ -96,7 +96,7 @@ function fixPronunciation(text) {
     t = t.replace(/＝/g, "わ");
     t = t.replace(/×/g, "かける");
     t = t.replace(/÷/g, "わる");
-    // 固有名詞の読み修正
+    // ★追加: 固有名詞の読み修正
     t = t.replace(/はね丸/g, "ハネマル");
     t = t.replace(/はね丸くん/g, "ハネマルクン");
     return t;
@@ -139,28 +139,31 @@ const GENRE_REFERENCES = {
 // ★追加: クイズ検証関数 (Grounding)
 async function verifyQuiz(quizData, genre) {
     try {
-        // 別コンテキストでモデルを作成し、検索ツールを持たせる
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST, 
             tools: [{ google_search: {} }] 
         });
         
         const verifyPrompt = `
-        あなたは厳しいクイズ校閲者です。以下のクイズが、公式な事実に基づいているか検証してください。
-        **必ずGoogle検索を使って**、正解が本当に正しいか、架空の技やキャラが含まれていないかを確認してください。
-
+        あなたは厳しいクイズ校閲者です。
+        生成AIが作成した以下のクイズが、事実に即しているか判定してください。
+        
         【ジャンル】: ${genre}
         【問題】: ${quizData.question}
         【選択肢】: ${quizData.options.join(", ")}
         【想定正解】: ${quizData.answer}
-        【解説】: ${quizData.explanation}
+        【生成AIが主張する根拠】: ${quizData.fact_basis || "なし"}
 
-        ### 検証ルール
-        1. Google検索で事実を確認してください。
-        2. 検索した結果、想定正解が「一字一句違わず正しい」かつ「選択肢の中で唯一の正解」である場合は "PASS" と出力してください。
-        3. もし間違いがある、架空の名称である、または検索しても不明な場合は "FAIL" と出力してください。
-        
-        出力例: PASS
+        ### 検証手順
+        1. Google検索を使用し、問題文と正解の関係が正しいか確認してください。
+        2. 特に「${genre}」のようなフィクション作品の場合、公式設定やWikiにその記述があるか確認してください。
+        3. **「生成AIが主張する根拠」が、検索結果と一致するか確認してください。**
+
+        ### 判定基準
+        - **PASS**: 検索結果から裏付けが取れた。正解は間違いない。
+        - **FAIL**: 検索しても裏付けが取れない、または間違いである。
+
+        出力は "PASS" または "FAIL" のみとしてください。理由がある場合はFAILの後に続けてください。
         `;
 
         const result = await model.generateContent(verifyPrompt);
@@ -171,8 +174,7 @@ async function verifyQuiz(quizData, genre) {
         
     } catch (e) {
         console.warn("Verification API Error:", e.message);
-        // 検証エラーの場合は、生成自体は成功しているのでスルー(true)するか、安全側に倒して(false)にするか。
-        // ここでは安全側に倒してリトライさせる
+        // エラー時は安全のためリトライ扱いにする
         return false;
     }
 }
@@ -181,7 +183,7 @@ async function verifyQuiz(quizData, genre) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (自動リトライ・二段階検証版) ---
+// --- クイズ生成 API (自動リトライ・出典確認強化版) ---
 app.post('/generate-quiz', async (req, res) => {
     const MAX_RETRIES = 3; 
     let attempt = 0;
@@ -203,57 +205,51 @@ app.post('/generate-quiz', async (req, res) => {
             }
 
             const currentLevel = level || 1;
+            // 難易度記述を「正確さ重視」に変更
             let difficultyDesc = "";
             switch(parseInt(currentLevel)) {
-                case 1: difficultyDesc = `小学${grade}年生でも簡単にわかる、基礎的な問題`; break;
-                case 2: difficultyDesc = `小学${grade}年生が少し考えればわかる問題`; break;
-                case 3: difficultyDesc = `高学年～中学生レベルの知識が必要な問題`; break;
-                case 4: difficultyDesc = `大人でも間違えるかもしれない難しい問題`; break;
-                case 5: difficultyDesc = `非常にマニアック、または高度な知識が必要な超難問（クイズ王レベル）`; break;
-                default: difficultyDesc = `標準的な問題`;
+                case 1: difficultyDesc = `非常に有名で、誰でも知っている基礎的な事実`; break;
+                case 2: difficultyDesc = `ファンなら確実に知っている標準的な事実`; break;
+                case 3: difficultyDesc = `少し詳しい人が知っている事実`; break;
+                case 4: difficultyDesc = `かなり詳しい人向けの事実`; break;
+                case 5: difficultyDesc = `マニアックだが、Wiki等で検索すれば確実に裏付けが取れる事実`; break; // 「超難問」という言葉を削除して幻覚を抑制
+                default: difficultyDesc = `標準的な事実`;
             }
 
             let referenceInstructions = "";
             if (GENRE_REFERENCES[targetGenre]) {
                 const urls = GENRE_REFERENCES[targetGenre].join("\n- ");
                 referenceInstructions = `
-                【重要：参考資料 (出典)】
-                このクイズを作成する際は、以下のURLの内容をGoogle検索ツールで優先的に確認し、**公式設定や事実に完全に基づいた**問題を作成してください。
+                【重要：情報のソース】
+                クイズの作成にあたっては、**必ず**以下の信頼できる情報源（URL）を検索し、そこに**明記されている文章**をベースにしてください。
                 - ${urls}
-
-                【情報抽出の指示】
-                - 指定されたURL内にある「登場人物」「用語」「エピソード」の項目を重点的に読み取ってください。
-                - 事実確認（Grounding）を行う際、複数のソースで共通して記述されている内容を「正解」として採用してください。
                 `;
             }
 
             const prompt = `
-            あなたはクイズ作家です。以下の手順で「${targetGenre}」に関する4択クイズを1問作成してください。
+            あなたは「正確性」を最優先するクイズ作家です。
+            「${targetGenre}」に関する4択クイズを1問作成してください。
 
-            ### 手順
-            1. **[検索実行]**: まずGoogle検索を使い、作品の公式情報、Pixiv百科事典、Wiki、または信頼できる攻略サイトで以下の項目を調べてください。
-               ${referenceInstructions}
-               - ${targetGenre}に関する「あまり知られていないが面白い事実」を1つ特定する。
-               - その事実に関連するキャラクター、技、用語の正確な表記を確認する。
-               - **検索結果から、作品の単行本や公式サイトに記載がある事実のみを採用してください。ネットの噂や二次創作（SS）の情報は除外してください。**
-            2. **[検証]**: 特定した事実に基づき、正解が1つ、紛らわしい不正解が3つであることを確認してください。
-            3. **[JSON出力]**: 最後に、以下のフォーマットで出力してください。
+            ### 手順（思考プロセス）
+            1. **[検索]**: ${referenceInstructions || "Google検索で信頼できる情報源を探してください。"}
+            2. **[事実の抽出]**: 検索結果の中から、**「確実に正しいと断言できる一文」**を見つけてください。
+               - 曖昧な記憶や、「〜だった気がする」という情報は絶対に使わないでください。
+               - 架空のキャラクター、架空の技名、存在しないエピソードの捏造は厳禁です。
+            3. **[問題作成]**: その「事実」を元に、問題文と正解を作成してください。
 
-            ### 難易度設定: レベル${currentLevel}
+            ### 難易度: レベル${currentLevel}
             - ${difficultyDesc}
-            - **挨拶不要。すぐにJSONデータから始めてください。**
-
+            
             ### 出力フォーマット
             必ず以下のJSON形式の文字列のみを出力してください。
-            **解説（explanation）の末尾に、必ず「（出典：ピクシブ百科事典）」のように、どの情報を参考にしたか一言添えてくださいにゃ。**
+            **"fact_basis" フィールドには、問題の元になった検索結果の文章（根拠）をそのままコピペしてください。**
 
             {
-              "search_query_used": "実行した検索ワード（確認用）",
-              "verified_source": "検索で確認したサイトのURLや出典元（ハルシネーション防止用）",
-              "question": "問題文（「問題！〇〇はどれ？」のように、読み上げに適した文章）",
+              "fact_basis": "検索結果で見つけた、クイズの根拠となる正確な一文",
+              "question": "問題文",
               "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
               "answer": "正解（optionsのいずれかと完全一致）",
-              "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』。出典元も書くこと）",
+              "explanation": "解説（出典元を明記すること。例：『ピクシブ百科事典によると～』）",
               "actual_genre": "${targetGenre}"
             }
             `;
@@ -277,7 +273,7 @@ app.post('/generate-quiz', async (req, res) => {
             }
 
             // --- 1. 形式バリデーション ---
-            const { options, answer, question } = jsonResponse;
+            const { options, answer, question, fact_basis } = jsonResponse;
             if (!question || !options || !answer) throw new Error("Invalid format: missing fields");
             if (!options.includes(answer)) {
                 console.warn(`[Quiz Retry ${attempt}] Invalid answer: not in options.`);
@@ -289,9 +285,7 @@ app.post('/generate-quiz', async (req, res) => {
             }
 
             // --- 2. 事実確認バリデーション (verifyQuiz) ---
-            // ※特定のジャンル（ハルシネーションが起きやすいもの）の場合のみ実行するとコスト削減になるが、
-            //   今回は精度優先ですべてのクイズで実行する。
-            console.log(`[Attempt ${attempt}] Verifying quiz...`);
+            console.log(`[Attempt ${attempt}] Verifying quiz... Fact Basis: ${fact_basis}`);
             const isVerified = await verifyQuiz(jsonResponse, targetGenre);
             
             if (isVerified) {
@@ -304,6 +298,7 @@ app.post('/generate-quiz', async (req, res) => {
 
         } catch (e) {
             console.error(`Quiz Gen Error (Attempt ${attempt}):`, e.message);
+            
             if (attempt >= MAX_RETRIES) {
                 res.status(500).json({ error: "クイズが作れなかったにゃ…（生成エラー）" });
                 return;
