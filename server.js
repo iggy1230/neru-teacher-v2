@@ -102,7 +102,7 @@ function fixPronunciation(text) {
     return t;
 }
 
-// ★追加: ジャンルごとの信頼できる参照URLリスト
+// ジャンルごとの信頼できる参照URLリスト
 const GENRE_REFERENCES = {
     "魔法陣グルグル": [
         "https://dic.pixiv.net/a/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB",
@@ -136,16 +136,56 @@ const GENRE_REFERENCES = {
     ]
 };
 
+// ★追加: クイズ検証関数 (Grounding)
+async function verifyQuiz(quizData, genre) {
+    try {
+        // 別コンテキストでモデルを作成し、検索ツールを持たせる
+        const model = genAI.getGenerativeModel({ 
+            model: MODEL_FAST, 
+            tools: [{ google_search: {} }] 
+        });
+        
+        const verifyPrompt = `
+        あなたは厳しいクイズ校閲者です。以下のクイズが、公式な事実に基づいているか検証してください。
+        **必ずGoogle検索を使って**、正解が本当に正しいか、架空の技やキャラが含まれていないかを確認してください。
+
+        【ジャンル】: ${genre}
+        【問題】: ${quizData.question}
+        【選択肢】: ${quizData.options.join(", ")}
+        【想定正解】: ${quizData.answer}
+        【解説】: ${quizData.explanation}
+
+        ### 検証ルール
+        1. Google検索で事実を確認してください。
+        2. 検索した結果、想定正解が「一字一句違わず正しい」かつ「選択肢の中で唯一の正解」である場合は "PASS" と出力してください。
+        3. もし間違いがある、架空の名称である、または検索しても不明な場合は "FAIL" と出力してください。
+        
+        出力例: PASS
+        `;
+
+        const result = await model.generateContent(verifyPrompt);
+        const responseText = result.response.text().trim();
+        
+        console.log(`[Quiz Verification] ${genre}: ${responseText}`);
+        return responseText.includes("PASS");
+        
+    } catch (e) {
+        console.warn("Verification API Error:", e.message);
+        // 検証エラーの場合は、生成自体は成功しているのでスルー(true)するか、安全側に倒して(false)にするか。
+        // ここでは安全側に倒してリトライさせる
+        return false;
+    }
+}
+
 // ==========================================
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (自動リトライ・出典確認強化版) ---
+// --- クイズ生成 API (自動リトライ・二段階検証版) ---
 app.post('/generate-quiz', async (req, res) => {
-    const MAX_RETRIES = 3; // 最大3回まで挑戦
+    const MAX_RETRIES = 3; 
     let attempt = 0;
 
-    // リトライループ
     while (attempt < MAX_RETRIES) {
         attempt++;
         try {
@@ -173,7 +213,6 @@ app.post('/generate-quiz', async (req, res) => {
                 default: difficultyDesc = `標準的な問題`;
             }
 
-            // ★追加: 参照URL情報の構築
             let referenceInstructions = "";
             if (GENRE_REFERENCES[targetGenre]) {
                 const urls = GENRE_REFERENCES[targetGenre].join("\n- ");
@@ -222,7 +261,6 @@ app.post('/generate-quiz', async (req, res) => {
             const result = await model.generateContent(prompt);
             let text = result.response.text();
             
-            // JSON抽出ロジック
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const firstBrace = text.indexOf('{');
             const lastBrace = text.lastIndexOf('}');
@@ -238,39 +276,38 @@ app.post('/generate-quiz', async (req, res) => {
                 throw new Error("JSON Parse Failed");
             }
 
-            // --- 整合性バリデーション ---
+            // --- 1. 形式バリデーション ---
             const { options, answer, question } = jsonResponse;
-
-            // 1. 必須項目の存在チェック
-            if (!question || !options || !answer) {
-                throw new Error("Invalid format: missing fields");
-            }
-
-            // 2. 正解が選択肢に含まれているか？
+            if (!question || !options || !answer) throw new Error("Invalid format: missing fields");
             if (!options.includes(answer)) {
-                console.warn(`[Quiz Retry ${attempt}] Invalid answer: not in options. Answer: ${answer}, Options: ${options}`);
+                console.warn(`[Quiz Retry ${attempt}] Invalid answer: not in options.`);
                 throw new Error("Invalid format: answer not in options");
             }
-
-            // 3. 選択肢に重複がないか？
             if (new Set(options).size !== options.length) {
                 console.warn(`[Quiz Retry ${attempt}] Duplicate options detected.`);
                 throw new Error("Invalid format: duplicate options");
             }
+
+            // --- 2. 事実確認バリデーション (verifyQuiz) ---
+            // ※特定のジャンル（ハルシネーションが起きやすいもの）の場合のみ実行するとコスト削減になるが、
+            //   今回は精度優先ですべてのクイズで実行する。
+            console.log(`[Attempt ${attempt}] Verifying quiz...`);
+            const isVerified = await verifyQuiz(jsonResponse, targetGenre);
             
-            // 検証OKならレスポンスを返す
-            res.json(jsonResponse);
-            return; // 処理終了
+            if (isVerified) {
+                res.json(jsonResponse);
+                return; // 成功！
+            } else {
+                console.warn(`[Attempt ${attempt}] Verification Failed. Retrying...`);
+                // ループ継続してリトライ
+            }
 
         } catch (e) {
             console.error(`Quiz Gen Error (Attempt ${attempt}):`, e.message);
-            
-            // リトライ上限に達した場合のみエラーを返す
             if (attempt >= MAX_RETRIES) {
                 res.status(500).json({ error: "クイズが作れなかったにゃ…（生成エラー）" });
                 return;
             }
-            // それ以外はループしてリトライ
         }
     }
 });
