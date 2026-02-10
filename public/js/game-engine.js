@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v408.0: クイズエラー時リトライUI追加版) ---
+// --- js/game-engine.js (v408.1: 保存クイズ機能追加版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -491,6 +491,7 @@ let quizState = {
     currentQuizData: null,
     // nextQuizData: null, // ★削除: キュー管理に移行
     questionQueue: [], // ★追加: 問題の先行生成キュー
+    sessionQuizzes: [], // ★追加: 今回のセッションで出題されたクイズのリスト（保存用）
     genre: "全ジャンル",
     level: 1, 
     isFinished: false,
@@ -643,6 +644,7 @@ window.startQuizSet = async function(genre, level) {
     quizState.isFinished = false;
     quizState.currentQuizData = null;
     quizState.questionQueue = []; // キューをリセット
+    quizState.sessionQuizzes = []; // セッションクイズ履歴をリセット
     quizState.history = []; 
     quizState.sessionId = Date.now(); 
 
@@ -750,7 +752,10 @@ window.nextQuiz = async function() {
     // --- 出題処理 ---
     if (quizData && quizData.question) {
         quizState.history.push(quizData.answer);
-        if (quizState.history.length > 10) quizState.history.shift(); // 履歴保持数を少し増やす
+        if (quizState.history.length > 10) quizState.history.shift(); 
+        
+        // ★保存用リストに追加（デフォルトは保存ON）
+        quizState.sessionQuizzes.push({ ...quizData, shouldSave: true });
 
         window.currentQuiz = quizData; 
         quizState.currentQuizData = quizData;
@@ -873,12 +878,78 @@ window.showQuizResult = function(isWin) {
     if (window.currentQuiz) {
         ansText.innerText = window.currentQuiz.answer;
         ansDisplay.classList.remove('hidden');
+
+        // ★保存トグルボタンの追加
+        // 既存の保存ボタンがあれば削除
+        const oldSaveBtn = document.getElementById('quiz-save-toggle-btn');
+        if(oldSaveBtn) oldSaveBtn.remove();
+
+        // 今回のクイズデータを検索
+        const currentSessionQuiz = quizState.sessionQuizzes.find(q => q.question === window.currentQuiz.question);
+        
+        if (currentSessionQuiz) {
+            const saveBtn = document.createElement('button');
+            saveBtn.id = 'quiz-save-toggle-btn';
+            
+            const updateBtnStyle = () => {
+                saveBtn.className = currentSessionQuiz.shouldSave ? "main-btn blue-btn" : "main-btn gray-btn";
+                saveBtn.innerText = currentSessionQuiz.shouldSave ? "💾 この問題を保存する" : "🗑️ 保存しない";
+                saveBtn.style.opacity = currentSessionQuiz.shouldSave ? "1" : "0.7";
+            };
+            
+            updateBtnStyle();
+            saveBtn.style.marginTop = "10px";
+            saveBtn.style.width = "100%"; // 横幅いっぱい
+            
+            saveBtn.onclick = () => {
+                currentSessionQuiz.shouldSave = !currentSessionQuiz.shouldSave;
+                updateBtnStyle();
+            };
+            
+            // クイズ結果エリア（quiz-game-area）の最後に挿入
+            const gameArea = document.getElementById('quiz-game-area');
+            gameArea.appendChild(saveBtn);
+        }
     }
 };
 
 window.finishQuizSet = function() {
     quizState.isFinished = true;
     window.currentQuiz = null;
+    
+    // ★クイズ保存処理
+    if (currentUser && quizState.sessionQuizzes.length > 0) {
+        if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
+        
+        // 保存フラグが立っているものだけ抽出
+        const quizzesToSave = quizState.sessionQuizzes.filter(q => q.shouldSave).map(q => {
+            // 保存用に必要なデータだけ抽出（軽量化）
+            return {
+                question: q.question,
+                options: q.options,
+                answer: q.answer,
+                explanation: q.explanation,
+                genre: q.actual_genre || quizState.genre,
+                level: quizState.level,
+                date: new Date().toISOString()
+            };
+        });
+        
+        if (quizzesToSave.length > 0) {
+            // 重複チェックして追加
+            quizzesToSave.forEach(newQ => {
+                const isDup = currentUser.savedQuizzes.some(oldQ => oldQ.question === newQ.question);
+                if (!isDup) {
+                    currentUser.savedQuizzes.push(newQ);
+                }
+            });
+            // 最大保存数制限（例: 100問）
+            if (currentUser.savedQuizzes.length > 100) {
+                currentUser.savedQuizzes = currentUser.savedQuizzes.slice(currentUser.savedQuizzes.length - 100);
+            }
+            if(typeof window.saveAndSync === 'function') window.saveAndSync();
+        }
+    }
 
     let msg = "";
     let mood = "normal";
@@ -919,6 +990,10 @@ window.finishQuizSet = function() {
     window.updateNellMessage(msg, mood, false, true);
     alert(msg);
     
+    // 保存ボタンを削除しておく（次の画面遷移のため）
+    const oldSaveBtn = document.getElementById('quiz-save-toggle-btn');
+    if(oldSaveBtn) oldSaveBtn.remove();
+
     window.showQuizGame();
 };
 
@@ -954,6 +1029,13 @@ window.reportQuizError = async function() {
             window.currentQuiz = newQuiz;
             quizState.currentQuizData = newQuiz;
 
+            // ★保存用リストも更新
+            const sessionQ = quizState.sessionQuizzes.find(q => q.question === window.currentQuiz.question); // 古い問題で検索はできないかも？
+            // sessionQuizzesの末尾（最新）を差し替えるのが安全
+            if (quizState.sessionQuizzes.length > 0) {
+                quizState.sessionQuizzes[quizState.sessionQuizzes.length - 1] = { ...newQuiz, shouldSave: true };
+            }
+
             // 画面更新
             document.getElementById('quiz-question-text').innerText = newQuiz.question;
             window.updateNellMessage(newQuiz.explanation || "作り直したにゃ！これでどうかにゃ？", "excited", false, true);
@@ -980,6 +1062,12 @@ window.reportQuizError = async function() {
             btns.forEach(b => b.classList.remove('hidden'));
             nextBtn.classList.add('hidden');
             controls.style.display = 'flex';
+            
+            // 保存ボタンも再描画
+            window.showQuizResult(false); // ボタン再生成のため（本来は回答後だが、便宜上呼ぶ）
+            // ただし正解表示などは隠したいので手動で隠す
+             document.getElementById('quiz-answer-display').classList.add('hidden');
+
 
         } else {
             throw new Error("無効なデータ");
@@ -1140,7 +1228,7 @@ window.checkRiddleAnswer = function(userSpeech) {
 window.giveUpRiddle = function() {
     if (!riddleState.currentRiddle) return;
     if(window.safePlay) window.safePlay(window.sfxBatu);
-    window.updateNellMessage(`答えは「${riddleState.currentRiddle.answer}」だったにゃ！`, "gentle", false, true);
+    window.updateNellMessage(`残念だにゃ～。正解は「${riddleState.currentRiddle.answer}」だったにゃ！`, "gentle", false, true);
     window.showRiddleResult(false);
 };
 
@@ -1482,7 +1570,7 @@ window.startMemoryGame = async function(difficulty) {
     // プレイヤー名の表示更新 (HTML側IDへ反映)
     const playerName = currentUser.name || "ユーザー";
     const nameEl = document.getElementById('memory-name-player');
-    if(nameEl) nameEl.innerText = playerName;
+    if(nameEl) nameEl.innerText = `${playerName}さん`; // ★さん付け
 
     memoryGameState.difficulty = difficulty;
     memoryGameState.scores = { player: 0, nell: 0 };
@@ -1496,7 +1584,7 @@ window.startMemoryGame = async function(difficulty) {
     
     document.getElementById('memory-score-player').innerText = '0';
     document.getElementById('memory-score-nell').innerText = '0';
-    document.getElementById('memory-turn-indicator').innerText = `${playerName}さんの番だにゃ！`;
+    document.getElementById('memory-turn-indicator').innerText = `${playerName}さんの番だにゃ！`; // ★さん付け
     
     window.updateNellMessage("カードを配るにゃ！", "normal");
     
