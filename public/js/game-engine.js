@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v405.0: クイズ競合対策版) ---
+// --- js/game-engine.js (v406.0: クイズ修正機能追加版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -858,6 +858,76 @@ window.finishQuizSet = function() {
     alert(msg);
     
     window.showQuizGame();
+};
+
+// --- クイズ間違い報告機能 ---
+window.reportQuizError = async function() {
+    if (!window.currentQuiz || window.currentMode !== 'quiz') return;
+
+    // ユーザーに理由を聞く
+    const reason = prompt("どこが間違っているか教えてほしいにゃ！（例：正解はBじゃなくてC、キャラの名前が違う、など）");
+    if (!reason) return; // キャンセルされたら何もしない
+
+    window.updateNellMessage("ごめんにゃ！今すぐ調べて作り直すにゃ！！", "sad", false, true);
+    
+    // 読み込み中表示
+    document.getElementById('quiz-question-text').innerText = "修正中...";
+    document.getElementById('quiz-options-container').innerHTML = "";
+
+    try {
+        const res = await fetch('/correct-quiz', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                oldQuiz: window.currentQuiz,
+                reason: reason,
+                genre: quizState.genre // quizStateから現在のジャンルを取得
+            })
+        });
+
+        const newQuiz = await res.json();
+        
+        if (newQuiz && newQuiz.question) {
+            // 現在の問題データを差し替えて再表示
+            window.currentQuiz = newQuiz;
+            quizState.currentQuizData = newQuiz;
+
+            // 画面更新
+            document.getElementById('quiz-question-text').innerText = newQuiz.question;
+            window.updateNellMessage(newQuiz.explanation || "作り直したにゃ！これでどうかにゃ？", "excited", false, true);
+
+            const optionsContainer = document.getElementById('quiz-options-container');
+            optionsContainer.innerHTML = "";
+            
+            const shuffledOptions = [...newQuiz.options].sort(() => Math.random() - 0.5);
+            shuffledOptions.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = "quiz-option-btn";
+                btn.innerText = opt;
+                btn.onclick = () => window.checkQuizAnswer(opt, true);
+                optionsContainer.appendChild(btn);
+            });
+            
+            // 正解表示エリアを隠す
+            document.getElementById('quiz-answer-display').classList.add('hidden');
+            
+            // ボタンの表示状態をリセット
+            const controls = document.getElementById('quiz-controls');
+            const nextBtn = document.getElementById('next-quiz-btn');
+            const btns = controls.querySelectorAll('button:not(#next-quiz-btn)');
+            btns.forEach(b => b.classList.remove('hidden'));
+            nextBtn.classList.add('hidden');
+            controls.style.display = 'flex';
+
+        } else {
+            throw new Error("無効なデータ");
+        }
+
+    } catch (e) {
+        console.error(e);
+        window.updateNellMessage("修正に失敗したにゃ…次の問題に行くにゃ。", "sad");
+        setTimeout(window.nextQuiz, 2000);
+    }
 };
 
 // ==========================================
