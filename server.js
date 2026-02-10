@@ -106,87 +106,119 @@ function fixPronunciation(text) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API ---
+// --- クイズ生成 API (強化版) ---
 app.post('/generate-quiz', async (req, res) => {
-    try {
-        const { grade, genre, level } = req.body; 
-        
-        // Google検索ツールを有効化（JSONモードはOFF）
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_FAST, 
-            tools: [{ google_search: {} }] 
-        });
-        
-        let targetGenre = genre;
-        if (!targetGenre || targetGenre === "全ジャンル") {
-            const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
-            targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
-        }
+    const MAX_RETRIES = 3;
+    let attempt = 0;
 
-        const currentLevel = level || 1;
-        let difficultyDesc = "";
-        switch(parseInt(currentLevel)) {
-            case 1: difficultyDesc = `小学${grade}年生でも簡単にわかる、基礎的な問題`; break;
-            case 2: difficultyDesc = `小学${grade}年生が少し考えればわかる問題`; break;
-            case 3: difficultyDesc = `高学年～中学生レベルの知識が必要な問題`; break;
-            case 4: difficultyDesc = `大人でも間違えるかもしれない難しい問題`; break;
-            case 5: difficultyDesc = `非常にマニアック、または高度な知識が必要な超難問（クイズ王レベル）`; break;
-            default: difficultyDesc = `標準的な問題`;
-        }
-
-        const prompt = `
-        「${targetGenre}」に関する4択クイズを1問作成してください。
-        
-        【難易度設定: レベル${currentLevel}】
-        - ${difficultyDesc}
-        
-        【最重要：Google検索による事実確認】
-        - **必ずGoogle検索ツールを使用して、問題文、正解、不正解の選択肢に含まれる用語（キャラクター名、技名、地名、エピソード）が実在するか確認してください。**
-        - 検索結果に存在しない、または曖昧な情報は絶対に使用しないでください。
-        - 特に「魔法陣グルグル」や「ジョジョ」などの作品モノの場合、原作（漫画・アニメ）に存在しない架空の設定、架空の技名、架空のキャラ名を捏造することは厳禁です。
-        - **「〇〇というキャラは存在するか？」「〇〇という技は正しいか？」を検索してからJSONを作成してください。**
-
-        【重要：禁止事項】
-        - **挨拶不要。すぐに問題文から始めてください。**
-        - **なぞなぞは禁止です。**
-        - **毎回異なるキャラクター、異なるエピソードから出題してください。有名な主人公だけでなく、サブキャラクターや特定の名シーンについての問題も歓迎します。**
-
-        【出力形式】
-        **必ず以下のJSON形式の文字列のみを出力してください。** 
-        Markdownのコードブロック(\`\`\`json 等)は含めても含めなくても構いませんが、余計な会話文は一切含めないでください。
-
-        {
-            "question": "問題文（「問題！〇〇はどれ？」のように、読み上げに適した文章）",
-            "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
-            "answer": "正解の選択肢の文字列（optionsに含まれるものと完全一致させること）",
-            "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）",
-            "actual_genre": "${targetGenre}" 
-        }
-        `;
-
-        const result = await model.generateContent(prompt);
-        let text = result.response.text();
-        
-        // JSON抽出ロジック
-        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        const firstBrace = text.indexOf('{');
-        const lastBrace = text.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1) {
-            text = text.substring(firstBrace, lastBrace + 1);
-        }
-
-        let jsonResponse;
+    while (attempt < MAX_RETRIES) {
+        attempt++;
         try {
-            jsonResponse = JSON.parse(text);
+            const { grade, genre, level } = req.body; 
+            
+            // Google検索ツールを有効化
+            const model = genAI.getGenerativeModel({ 
+                model: MODEL_FAST, 
+                tools: [{ google_search: {} }] 
+            });
+            
+            let targetGenre = genre;
+            if (!targetGenre || targetGenre === "全ジャンル") {
+                const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
+                targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
+            }
+
+            const currentLevel = level || 1;
+            let difficultyDesc = "";
+            switch(parseInt(currentLevel)) {
+                case 1: difficultyDesc = `小学${grade}年生でも簡単にわかる、基礎的な問題`; break;
+                case 2: difficultyDesc = `小学${grade}年生が少し考えればわかる問題`; break;
+                case 3: difficultyDesc = `高学年～中学生レベルの知識が必要な問題`; break;
+                case 4: difficultyDesc = `大人でも間違えるかもしれない難しい問題`; break;
+                case 5: difficultyDesc = `非常にマニアック、または高度な知識が必要な超難問（クイズ王レベル）`; break;
+                default: difficultyDesc = `標準的な問題`;
+            }
+
+            const prompt = `
+            あなたはクイズ作家です。以下の手順で「${targetGenre}」に関する4択クイズを1問作成してください。
+
+            ### 手順
+            1. **[検索実行]**: まずGoogle検索を使い、作品の公式情報、Wiki、または信頼できる攻略サイトで以下の項目を調べてください。
+               - ${targetGenre}に関する「あまり知られていないが面白い事実」を1つ特定する。
+               - その事実に関連するキャラクター、技、用語の正確な表記を確認する。
+               - **検索結果から、作品の単行本や公式サイトに記載がある事実のみを採用してください。ネットの噂や二次創作（SS）の情報は除外してください。**
+            2. **[検証]**: 特定した事実に基づき、正解が1つ、紛らわしい不正解が3つであることを確認してください。
+            3. **[JSON出力]**: 最後に、以下のフォーマットで出力してください。
+
+            ### 難易度設定: レベル${currentLevel}
+            - ${difficultyDesc}
+            - **挨拶不要。すぐにJSONデータから始めてください。**
+
+            ### 出力フォーマット
+            必ず以下のJSON形式の文字列のみを出力してください。
+            {
+              "search_query_used": "実行した検索ワード（確認用）",
+              "question": "問題文（「問題！〇〇はどれ？」のように、読み上げに適した文章）",
+              "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
+              "answer": "正解（optionsのいずれかと完全一致）",
+              "explanation": "解説（子供向けに優しく、語尾は『にゃ』）",
+              "actual_genre": "${targetGenre}"
+            }
+            `;
+
+            const result = await model.generateContent(prompt);
+            let text = result.response.text();
+            
+            // JSON抽出ロジック
+            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            const firstBrace = text.indexOf('{');
+            const lastBrace = text.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                text = text.substring(firstBrace, lastBrace + 1);
+            }
+
+            let jsonResponse;
+            try {
+                jsonResponse = JSON.parse(text);
+            } catch (e) {
+                console.error(`JSON Parse Error (Attempt ${attempt}):`, text);
+                throw new Error("JSON Parse Failed");
+            }
+
+            // --- 整合性バリデーション ---
+            const { options, answer, question } = jsonResponse;
+
+            // 1. 必須項目の存在チェック
+            if (!question || !options || !answer) {
+                throw new Error("Invalid format: missing fields");
+            }
+
+            // 2. 正解が選択肢に含まれているか？
+            if (!options.includes(answer)) {
+                console.warn(`[Quiz Retry ${attempt}] Invalid answer: not in options. Answer: ${answer}, Options: ${options}`);
+                throw new Error("Invalid format: answer not in options");
+            }
+
+            // 3. 選択肢に重複がないか？
+            if (new Set(options).size !== options.length) {
+                console.warn(`[Quiz Retry ${attempt}] Duplicate options detected.`);
+                throw new Error("Invalid format: duplicate options");
+            }
+            
+            // 検証OKならレスポンスを返す
+            res.json(jsonResponse);
+            return; // 処理終了
+
         } catch (e) {
-            console.error("JSON Parse Error (Quiz): Raw Text:", result.response.text());
-            throw new Error("AIが有効なJSONを返しませんでした。");
+            console.error(`Quiz Gen Error (Attempt ${attempt}):`, e.message);
+            
+            // リトライ上限に達した場合のみエラーを返す
+            if (attempt >= MAX_RETRIES) {
+                res.status(500).json({ error: "クイズが作れなかったにゃ…（生成エラー）" });
+                return;
+            }
+            // それ以外はループしてリトライ
         }
-        
-        res.json(jsonResponse);
-    } catch (e) {
-        console.error("Quiz Gen Error:", e);
-        res.status(500).json({ error: "クイズが作れなかったにゃ…" });
     }
 });
 
@@ -232,7 +264,7 @@ app.post('/generate-riddle', async (req, res) => {
         1. **子供が絶対に知っている単語**を答えにしてください。
         2. 問題文は、リズムよく、子供が聞いてワクワクするような言い回しにしてください。
         3. 答えは「名詞（モノの名前）」で終わるものに限定してください。
-        4.難しすぎる知識や、マニアックな単語は禁止です。
+        4. 難しすぎる知識や、マニアックな単語は禁止です。
         5. 挨拶不要。すぐに問題文のみを出力してください。
 
         【出力JSONフォーマット】
