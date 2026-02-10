@@ -96,7 +96,7 @@ function fixPronunciation(text) {
     t = t.replace(/＝/g, "わ");
     t = t.replace(/×/g, "かける");
     t = t.replace(/÷/g, "わる");
-    // ★追加: 固有名詞の読み修正
+    // 固有名詞の読み修正
     t = t.replace(/はね丸/g, "ハネマル");
     t = t.replace(/はね丸くん/g, "ハネマルクン");
     return t;
@@ -192,9 +192,11 @@ app.post('/generate-quiz', async (req, res) => {
         try {
             const { grade, genre, level } = req.body; 
             
+            // ★修正: temperatureを低くして幻覚を抑制
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST, 
-                tools: [{ google_search: {} }] 
+                tools: [{ google_search: {} }],
+                generationConfig: { temperature: 0.2 } 
             });
             
             let targetGenre = genre;
@@ -206,12 +208,12 @@ app.post('/generate-quiz', async (req, res) => {
             const currentLevel = level || 1;
             let difficultyDesc = "";
             switch(parseInt(currentLevel)) {
-                case 1: difficultyDesc = `小学${grade}年生でも簡単にわかる、基礎的な問題`; break;
-                case 2: difficultyDesc = `小学${grade}年生が少し考えればわかる問題`; break;
-                case 3: difficultyDesc = `高学年～中学生レベルの知識が必要な問題`; break;
-                case 4: difficultyDesc = `大人でも間違えるかもしれない難しい問題`; break;
-                case 5: difficultyDesc = `非常にマニアック、または高度な知識が必要な超難問（クイズ王レベル）`; break;
-                default: difficultyDesc = `標準的な問題`;
+                case 1: difficultyDesc = `小学${grade}年生でも簡単にわかる、基礎的な事実`; break;
+                case 2: difficultyDesc = `ファンなら確実に知っている標準的な事実`; break;
+                case 3: difficultyDesc = `少し詳しい人が知っている事実`; break;
+                case 4: difficultyDesc = `かなり詳しい人向けの事実`; break;
+                case 5: difficultyDesc = `Wiki等で検索すれば確実に裏付けが取れる事実`; break;
+                default: difficultyDesc = `標準的な事実`;
             }
 
             let referenceInstructions = "";
@@ -235,11 +237,13 @@ app.post('/generate-quiz', async (req, res) => {
             ### 手順（思考プロセス）
             1. **[検索実行]**: まずGoogle検索を使い、作品の用語、キャラ、エピソードの正確な情報を確認してください。
                ${referenceInstructions}
-            2. **[事実の抽出]**: 検索結果に基づき、正確な情報を抽出してください。
-               - **【重要: 禁止事項】**: 出版年、連載開始日、掲載誌、巻数、作者の経歴などの「作品外データ（メタ情報）」は**出題禁止**です。
-               - **【推奨事項】**: 作中のストーリー、キャラクターのセリフ、技の効果、モンスターの特徴、名シーンなど、物語の中身に関する事実を選んでください。
-               - 曖昧な記憶や、「〜だった気がする」という情報は絶対に使わないでください。
-               - 架空のキャラクター、架空の技名、存在しないエピソードの捏造は厳禁です。
+            2. **[事実の抽出]**: 検索結果の中から、**「確実に正しいと断言できる一文」**を引用して、それをクイズの核にしてください。
+               - **【重要: 禁止事項】**:
+                 - 出版年、連載開始日、掲載誌、巻数、作者の経歴などの「作品外データ（メタ情報）」は**出題禁止**です。
+                 - あなたの記憶にある「〜だった気がする」という情報は絶対に使わないでください。**検索結果にない情報は存在しないものとして扱ってください。**
+                 - 架空のキャラクター、架空の技名、存在しないエピソードの捏造は厳禁です。
+               - **【推奨事項】**:
+                 - 作中のストーリー、キャラクターのセリフ、技の効果、モンスターの特徴、名シーンなど、物語の中身に関する事実を選んでください。
             3. **[問題作成]**: 抽出した事実を元に、問題文と正解を作成してください。
 
             ### 難易度: レベル${currentLevel}
@@ -251,7 +255,7 @@ app.post('/generate-quiz', async (req, res) => {
             **"fact_basis" フィールドには、問題の元になった検索結果の文章（根拠）をそのままコピペしてください。**
 
             {
-              "fact_basis": "検索結果で見つけた、クイズの根拠となる正確な一文",
+              "fact_basis": "検索結果で見つけた、クイズの根拠となる正確な一文（コピペ）",
               "question": "問題文",
               "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
               "answer": "正解（optionsのいずれかと完全一致）",
@@ -263,6 +267,7 @@ app.post('/generate-quiz', async (req, res) => {
             const result = await model.generateContent(prompt);
             let text = result.response.text();
             
+            // JSON抽出ロジック
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const firstBrace = text.indexOf('{');
             const lastBrace = text.lastIndexOf('}');
@@ -278,6 +283,7 @@ app.post('/generate-quiz', async (req, res) => {
                 throw new Error("JSON Parse Failed");
             }
 
+            // --- 1. 形式バリデーション ---
             const { options, answer, question, fact_basis } = jsonResponse;
             if (!question || !options || !answer) throw new Error("Invalid format: missing fields");
             if (!options.includes(answer)) {
@@ -289,14 +295,16 @@ app.post('/generate-quiz', async (req, res) => {
                 throw new Error("Invalid format: duplicate options");
             }
 
+            // --- 2. 事実確認バリデーション (verifyQuiz) ---
             console.log(`[Attempt ${attempt}] Verifying quiz... Fact Basis: ${fact_basis}`);
             const isVerified = await verifyQuiz(jsonResponse, targetGenre);
             
             if (isVerified) {
                 res.json(jsonResponse);
-                return;
+                return; // 成功！
             } else {
                 console.warn(`[Attempt ${attempt}] Verification Failed. Retrying...`);
+                // ループ継続してリトライ
             }
 
         } catch (e) {
