@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v381.0: メモリ最適化版) ---
+// --- js/state/memory.js (v420.0: お宝共有機能追加版) ---
 
 (function(global) {
     const Memory = {};
@@ -61,7 +61,6 @@
     Memory.saveUserProfile = async function(userId, profile) {
         if (Array.isArray(profile)) profile = profile[0] || Memory.createEmptyProfile();
         
-        // ★最適化: プロフィール保存後に変数を解放
         const profileStr = JSON.stringify(profile);
         localStorage.setItem(`nell_profile_${userId}`, profileStr);
         
@@ -76,7 +75,6 @@
         if (!chatLog || chatLog.length < 10) return;
         const currentProfile = await Memory.getUserProfile(userId);
         
-        // ★最適化: コレクションデータは重いので更新チェックから除外して送信サイズを減らす
         const { collection, ...profileForAnalysis } = currentProfile;
         
         try {
@@ -93,7 +91,7 @@
                 
                 const updatedProfile = {
                     ...newProfile,
-                    collection: collection || [] // 元のコレクションを戻す
+                    collection: collection || [] 
                 };
                 
                 await Memory.saveUserProfile(userId, updatedProfile);
@@ -122,7 +120,6 @@
         return context;
     };
 
-    // ★修正: rarity 引数を追加
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null, rarity = 1) {
         console.log(`[Memory] addToCollection: ${itemName}, Rarity: ${rarity}`);
         try {
@@ -151,7 +148,8 @@
                 description: description,
                 realDescription: realDescription,
                 location: location,
-                rarity: rarity
+                rarity: rarity,
+                isShared: false // ★初期状態は共有していない
             };
 
             profile.collection.unshift(newItem); 
@@ -167,7 +165,6 @@
             }
             await Memory.saveUserProfile(userId, profile);
             
-            // ★最適化: 処理が終わったら変数を解放
             imageUrl = null;
             imageBase64 = null;
             
@@ -188,6 +185,66 @@
                 await Memory.saveUserProfile(userId, profile);
             }
         } catch(e) { console.error("[Memory] Delete Error:", e); }
+    };
+
+    // ★追加: 公開コレクションへ保存する
+    Memory.shareToPublicCollection = async function(userId, itemIndex, discovererName) {
+        if (!db) throw new Error("Database not connected");
+        
+        const profile = await Memory.getUserProfile(userId);
+        if (!profile.collection || !profile.collection[itemIndex]) throw new Error("Item not found");
+        
+        const item = profile.collection[itemIndex];
+        
+        // 既に共有済みならスキップ
+        if (item.isShared) return "ALREADY_SHARED";
+
+        // Firestoreに追加
+        await db.collection("public_collection").add({
+            name: item.name,
+            image: item.image,
+            description: item.description,
+            realDescription: item.realDescription,
+            location: item.location,
+            rarity: item.rarity,
+            discovererName: discovererName, // 発見者
+            discovererId: userId,
+            sharedAt: new Date().toISOString()
+        });
+
+        // ローカルのフラグを更新
+        item.isShared = true;
+        await Memory.saveUserProfile(userId, profile);
+
+        return "SUCCESS";
+    };
+
+    // ★追加: 公開コレクションを取得（最新50件）
+    Memory.getPublicCollection = async function() {
+        if (!db) return [];
+        try {
+            const snapshot = await db.collection("public_collection")
+                .orderBy("sharedAt", "desc")
+                .limit(50)
+                .get();
+            
+            if (snapshot.empty) return [];
+
+            return snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+        } catch (e) {
+            console.error("Fetch Public Collection Error:", e);
+            // インデックスエラー回避のため、orderなしで試行するフォールバック
+            if (e.code === 'failed-precondition') {
+                 try {
+                     const snap2 = await db.collection("public_collection").limit(50).get();
+                     return snap2.docs.map(d => ({id:d.id, ...d.data()}));
+                 } catch(e2) { return []; }
+            }
+            return [];
+        }
     };
     
     Memory.deleteRawChatLogs = async function(userId, indicesToDelete) {
