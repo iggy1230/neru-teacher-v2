@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v417.0: 作者表示＆いいね機能実装版) ---
+// --- js/game-engine.js (v425.0: 完全版 - 作者表示削除＆神経衰弱読み上げ修正) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -185,8 +185,9 @@ window.drawGame = function() {
 };
 
 // ==========================================
-// 2. VS ロボット掃除機
+// 2. VS ロボット掃除機 (画像対応・ライフ制版)
 // ==========================================
+// ★修正: ルート相対パスに変更
 const DANMAKU_ASSETS_PATH = '/assets/images/game/souji/';
 
 const danmakuImages = {
@@ -213,13 +214,16 @@ let areDanmakuImagesLoaded = false;
 function loadDanmakuImages() {
     if (areDanmakuImagesLoaded) return;
     
+    // ★キャッシュ対策のタイムスタンプを追加
     const ts = new Date().getTime();
+    
     danmakuImages.player.crossOrigin = "Anonymous";
     danmakuImages.player.src = DANMAKU_ASSETS_PATH + 'neru_dot.png?v=' + ts;
     
     danmakuImages.boss.crossOrigin = "Anonymous";
     danmakuImages.boss.src = DANMAKU_ASSETS_PATH + 'runba_dot.png?v=' + ts;
     
+    // Goodアイテム読み込み
     danmakuImages.goods = goodItemsDef.map(def => {
         const img = new Image();
         img.crossOrigin = "Anonymous";
@@ -227,6 +231,7 @@ function loadDanmakuImages() {
         return { img: img, score: def.score, weight: def.weight };
     });
 
+    // Badアイテム読み込み
     danmakuImages.bads = badItemsDef.map(file => {
         const img = new Image();
         img.crossOrigin = "Anonymous";
@@ -804,6 +809,23 @@ window.startQuizSet = async function(genre, level) {
     quizState.history = []; 
     quizState.sessionId = Date.now(); 
 
+    // ★追加: 1問目にストックを利用 (ローカル)
+    if (currentUser && currentUser.savedQuizzes && currentUser.savedQuizzes.length > 0) {
+        // 現在のジャンルに合うものを探す
+        const candidates = currentUser.savedQuizzes.filter(q => {
+            if (genre === "全ジャンル") return true;
+            return q.genre === genre || q.actual_genre === genre;
+        });
+        
+        if (candidates.length > 0) {
+            // ランダムに1つ選ぶ
+            const stockQuiz = candidates[Math.floor(Math.random() * candidates.length)];
+            // キューに追加 (API生成より先に消費される)
+            quizState.questionQueue.push({ ...stockQuiz, isStock: true });
+            console.log("[Quiz] Added 1 local stock quiz to queue:", stockQuiz.question);
+        }
+    }
+
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-level-select').classList.add('hidden');
     document.getElementById('quiz-game-area').classList.remove('hidden');
@@ -938,13 +960,15 @@ window.nextQuiz = async function() {
         
         qText.innerText = quizData.question;
         
-        // 作者表示
+        // ★修正: 作者表示（✏️ 作：〜）のロジックをコメントアウト
+        /*
         const authorDiv = document.createElement('div');
         authorDiv.className = "quiz-author-badge";
         if (quizData.isStock && quizData.creator_name) {
              authorDiv.innerHTML = `<span>✏️ 作：${window.cleanDisplayString(quizData.creator_name)}さん</span>`;
              optionsContainer.appendChild(authorDiv);
         }
+        */
 
         window.updateNellMessage(quizData.question, "normal", false, true);
         
@@ -1832,7 +1856,19 @@ window.createCardDeck = async function() {
         description: p.description
     }));
     
-    let allCandidates = [...collection, ...normalizedPublic];
+    // ★修正ポイント: 重複排除
+    let rawCandidates = [...collection, ...normalizedPublic];
+    
+    // 画像URLをキーにして重複を排除
+    const uniqueMap = new Map();
+    rawCandidates.forEach(item => {
+        if (!item.image) return;
+        if (!uniqueMap.has(item.image)) {
+            uniqueMap.set(item.image, item);
+        }
+    });
+    
+    let allCandidates = Array.from(uniqueMap.values());
     
     // シャッフルして候補を混ぜる
     allCandidates.sort(() => Math.random() - 0.5);
@@ -1967,7 +2003,7 @@ window.checkMatch = async function() {
             window.updateNellMessage(`ネル先生が「${card1.name}」をゲットしたにゃ！`, "excited");
         }
         
-        // ★解説演出
+        // ★解説演出 (読み上げ完了を待機)
         await window.showMatchModal(card1);
         
         memoryGameState.flippedCards = [];
@@ -2007,7 +2043,7 @@ window.checkMatch = async function() {
             if (memoryGameState.turn === 'nell') {
                 indicator.innerText = "ネル先生の番だにゃ...";
                 window.updateNellMessage("次はネル先生の番だにゃ。", "normal");
-                memoryGameState.isProcessing = false; // 一旦解除しないとnellTurnが動かないかも？いやnellTurn内でフラグ管理はしていない
+                memoryGameState.isProcessing = false; 
                 setTimeout(window.nellTurn, 1000);
             } else {
                 indicator.innerText = `${playerName}さんの番だにゃ！`;
@@ -2093,6 +2129,7 @@ window.nellTurn = function() {
     }, 1000);
 };
 
+// ★修正: 読み上げが終わるまで待機するモーダル表示関数
 window.showMatchModal = function(card) {
     return new Promise((resolve) => {
         const modal = document.getElementById('memory-match-modal');
@@ -2114,13 +2151,21 @@ window.showMatchModal = function(card) {
             window.skipMemoryExplanation = null; // cleanup
         };
         
+        // 読み上げ開始を待つ
         window.updateNellMessage(textToSpeak, "happy", false, true).then(() => {
-            // 読み上げ終わったら少し待って閉じる
-            if (!modal.classList.contains('hidden')) {
-                setTimeout(() => {
-                    if (window.skipMemoryExplanation) window.skipMemoryExplanation();
-                }, 1000);
-            }
+            // isNellSpeaking フラグを監視して、読み上げ終了を検知する
+            const checkEnd = setInterval(() => {
+                if (!window.isNellSpeaking) {
+                    clearInterval(checkEnd);
+                    // 読み上げ終了後、少し待ってから自動で閉じる
+                    setTimeout(() => {
+                        if (!modal.classList.contains('hidden')) {
+                            modal.classList.add('hidden');
+                            resolve();
+                        }
+                    }, 500);
+                }
+            }, 200);
         });
     });
 };
