@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v420.0: お宝共有機能追加版) ---
+// --- js/state/memory.js (v421.0: ID型エラー修正版) ---
 
 (function(global) {
     const Memory = {};
@@ -39,13 +39,18 @@
 
     Memory.getUserProfile = async function(userId) {
         let profile = null;
+        // ★修正: userIdを必ずStringにする (数値IDによるエラー回避)
+        const safeId = String(userId);
+
         if (typeof db !== 'undefined' && db !== null) {
             try {
-                const doc = await db.collection("users").doc(userId).get();
+                const doc = await db.collection("users").doc(safeId).get();
                 if (doc.exists && doc.data().profile) {
                     profile = doc.data().profile;
                 }
-            } catch(e) { console.error("Firestore Profile Load Error:", e); }
+            } catch(e) { 
+                console.error("Firestore Profile Load Error:", e); 
+            }
         }
         if (!profile) {
             const key = `nell_profile_${userId}`;
@@ -60,13 +65,15 @@
 
     Memory.saveUserProfile = async function(userId, profile) {
         if (Array.isArray(profile)) profile = profile[0] || Memory.createEmptyProfile();
+        // ★修正: userIdを必ずStringにする
+        const safeId = String(userId);
         
         const profileStr = JSON.stringify(profile);
         localStorage.setItem(`nell_profile_${userId}`, profileStr);
         
         if (typeof db !== 'undefined' && db !== null) {
             try {
-                await db.collection("users").doc(userId).set({ profile: profile }, { merge: true });
+                await db.collection("users").doc(safeId).set({ profile: profile }, { merge: true });
             } catch(e) { console.error("Firestore Profile Save Error:", e); }
         }
     };
@@ -121,7 +128,6 @@
     };
 
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null, rarity = 1) {
-        console.log(`[Memory] addToCollection: ${itemName}, Rarity: ${rarity}`);
         try {
             const profile = await Memory.getUserProfile(userId);
             if (!Array.isArray(profile.collection)) profile.collection = [];
@@ -135,9 +141,8 @@
                     const storageRef = window.fireStorage.ref().child(storagePath);
                     const snapshot = await storageRef.put(blob);
                     imageUrl = await snapshot.ref.getDownloadURL(); 
-                    console.log("Image uploaded to Storage:", imageUrl);
                 } catch (uploadError) {
-                    console.warn("Storage upload failed, falling back to Base64", uploadError);
+                    console.warn("Storage upload failed", uploadError);
                 }
             }
 
@@ -149,7 +154,7 @@
                 realDescription: realDescription,
                 location: location,
                 rarity: rarity,
-                isShared: false // ★初期状態は共有していない
+                isShared: false
             };
 
             profile.collection.unshift(newItem); 
@@ -164,10 +169,6 @@
                 }
             }
             await Memory.saveUserProfile(userId, profile);
-            
-            imageUrl = null;
-            imageBase64 = null;
-            
         } catch (e) {
             console.error("[Memory] Add Collection Error:", e);
         }
@@ -187,7 +188,6 @@
         } catch(e) { console.error("[Memory] Delete Error:", e); }
     };
 
-    // ★追加: 公開コレクションへ保存する
     Memory.shareToPublicCollection = async function(userId, itemIndex, discovererName) {
         if (!db) throw new Error("Database not connected");
         
@@ -195,11 +195,8 @@
         if (!profile.collection || !profile.collection[itemIndex]) throw new Error("Item not found");
         
         const item = profile.collection[itemIndex];
-        
-        // 既に共有済みならスキップ
         if (item.isShared) return "ALREADY_SHARED";
 
-        // Firestoreに追加
         await db.collection("public_collection").add({
             name: item.name,
             image: item.image,
@@ -207,19 +204,17 @@
             realDescription: item.realDescription,
             location: item.location,
             rarity: item.rarity,
-            discovererName: discovererName, // 発見者
-            discovererId: userId,
+            discovererName: discovererName,
+            discovererId: String(userId), // String化
             sharedAt: new Date().toISOString()
         });
 
-        // ローカルのフラグを更新
         item.isShared = true;
         await Memory.saveUserProfile(userId, profile);
 
         return "SUCCESS";
     };
 
-    // ★追加: 公開コレクションを取得（最新50件）
     Memory.getPublicCollection = async function() {
         if (!db) return [];
         try {
@@ -236,7 +231,6 @@
             }));
         } catch (e) {
             console.error("Fetch Public Collection Error:", e);
-            // インデックスエラー回避のため、orderなしで試行するフォールバック
             if (e.code === 'failed-precondition') {
                  try {
                      const snap2 = await db.collection("public_collection").limit(50).get();
