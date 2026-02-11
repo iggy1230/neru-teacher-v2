@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v411.0: グローバル保存実装版) ---
+// --- js/game-engine.js (v414.0: ハイブリッド出題・ストック優先版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -48,14 +48,13 @@ function fuzzyContains(userText, targetText, maxDistance = 1) {
 }
 
 // 文字列からハッシュっぽいIDを生成（重複排除用）
-// ※厳密なハッシュではありませんが、問題文の重複チェックには十分です
 function generateDocIdFromText(text) {
     let hash = 0, i, chr;
     if (text.length === 0) return "empty_quiz";
     for (i = 0; i < text.length; i++) {
         chr = text.charCodeAt(i);
         hash = ((hash << 5) - hash) + chr;
-        hash |= 0; // Convert to 32bit integer
+        hash |= 0; 
     }
     return "qz_" + Math.abs(hash).toString(16) + text.length;
 }
@@ -186,9 +185,8 @@ window.drawGame = function() {
 };
 
 // ==========================================
-// 2. VS ロボット掃除機 (画像対応・ライフ制版)
+// 2. VS ロボット掃除機
 // ==========================================
-// ★修正: ルート相対パスに変更
 const DANMAKU_ASSETS_PATH = '/assets/images/game/souji/';
 
 const danmakuImages = {
@@ -215,16 +213,13 @@ let areDanmakuImagesLoaded = false;
 function loadDanmakuImages() {
     if (areDanmakuImagesLoaded) return;
     
-    // ★キャッシュ対策のタイムスタンプを追加
     const ts = new Date().getTime();
-    
     danmakuImages.player.crossOrigin = "Anonymous";
     danmakuImages.player.src = DANMAKU_ASSETS_PATH + 'neru_dot.png?v=' + ts;
     
     danmakuImages.boss.crossOrigin = "Anonymous";
     danmakuImages.boss.src = DANMAKU_ASSETS_PATH + 'runba_dot.png?v=' + ts;
     
-    // Goodアイテム読み込み
     danmakuImages.goods = goodItemsDef.map(def => {
         const img = new Image();
         img.crossOrigin = "Anonymous";
@@ -232,7 +227,6 @@ function loadDanmakuImages() {
         return { img: img, score: def.score, weight: def.weight };
     });
 
-    // Badアイテム読み込み
     danmakuImages.bads = badItemsDef.map(file => {
         const img = new Image();
         img.crossOrigin = "Anonymous";
@@ -502,9 +496,8 @@ let quizState = {
     maxQuestions: 5,
     score: 0,
     currentQuizData: null,
-    // nextQuizData: null, // ★削除: キュー管理に移行
-    questionQueue: [], // ★追加: 問題の先行生成キュー
-    sessionQuizzes: [], // ★追加: 今回のセッションで出題されたクイズのリスト（保存用）
+    questionQueue: [], 
+    sessionQuizzes: [], 
     genre: "全ジャンル",
     level: 1, 
     isFinished: false,
@@ -549,12 +542,69 @@ async function generateValidQuiz(genre, level, sessionId) {
     return null;
 }
 
-// バックグラウンドで問題を補充し続ける関数
+// グローバルストックからクイズを取得する関数
+async function fetchQuizFromGlobalStock(genre, level) {
+    if (!db) return null;
+
+    const randomId = Math.floor(Math.random() * 100000000);
+    let quiz = null;
+
+    try {
+        // ジャンル指定がある場合
+        let queryRef = db.collection('public_quizzes');
+        
+        // 「全ジャンル」以外ならジャンルでフィルタ
+        if (genre !== "全ジャンル") {
+            queryRef = queryRef.where('genre', '==', genre);
+        }
+        
+        // レベルもフィルタ
+        queryRef = queryRef.where('level', '==', level);
+
+        // 1. random_id >= R の1件を取得
+        let snapshot = await queryRef.where('random_id', '>=', randomId).limit(1).get();
+
+        if (snapshot.empty) {
+            // 2. なければ random_id < R の1件を取得 (Wrap around)
+             if (genre !== "全ジャンル") {
+                // 再構築が必要
+                queryRef = db.collection('public_quizzes').where('genre', '==', genre).where('level', '==', level);
+             } else {
+                queryRef = db.collection('public_quizzes').where('level', '==', level);
+             }
+             
+             snapshot = await queryRef.where('random_id', '<', randomId).limit(1).get();
+        }
+
+        if (!snapshot.empty) {
+            const doc = snapshot.docs[0];
+            const data = doc.data();
+            // 一応クライアント側で履歴重複チェック
+            const isDuplicate = quizState.history.some(h => h === data.answer);
+            const isDuplicateInQueue = quizState.questionQueue.some(q => q.question === data.question);
+            
+            if (!isDuplicate && !isDuplicateInQueue) {
+                quiz = { ...data, isStock: true };
+                console.log("[Quiz] Fetched from Global Stock:", quiz.question);
+            }
+        }
+    } catch(e) {
+        console.warn("[Quiz] Global Fetch Failed (Index missing?):", e);
+    }
+    return quiz;
+}
+
+// ★修正: ハイブリッド方式のバックグラウンド生成ロジック
+// 最初の3問はストックから優先、残りはAPI生成
 async function backgroundQuizFetcher(genre, level, sessionId) {
-    console.log(`[Quiz] Start background fetcher for session ${sessionId}`);
-    
-    // 全5問（maxQuestions）になるまで補充し続ける
-    while (quizState.history.length + quizState.questionQueue.length < quizState.maxQuestions) {
+    console.log(`[Quiz] Start hybrid fetcher: Aiming for 3 Stock + 2 API`);
+
+    const TOTAL_REQ = 5;
+    const STOCK_REQ = 3;
+    let fetchedStockCount = 0;
+
+    // 全5問になるまで補充し続ける
+    while (quizState.history.length + quizState.questionQueue.length < TOTAL_REQ) {
         if (quizState.sessionId !== sessionId || quizState.isFinished) {
             console.log("[Quiz] Background fetcher stopped (session changed or finished).");
             return;
@@ -566,22 +616,43 @@ async function backgroundQuizFetcher(genre, level, sessionId) {
             continue;
         }
 
-        const newQuiz = await generateValidQuiz(genre, level, sessionId);
+        let newQuiz = null;
+        let source = "API";
+
+        // Phase 1: ストックから取得（最初の3問分）
+        if (fetchedStockCount < STOCK_REQ) {
+            newQuiz = await fetchQuizFromGlobalStock(genre, level);
+            if (newQuiz) {
+                fetchedStockCount++;
+                source = "Stock";
+            } else {
+                console.log("[Quiz] Stock dry or unavailable. Switching to API for this slot.");
+                // ストックがない場合は、今回はAPI生成に回す（カウントは増やさない＝次回もストックを試みる、または諦める？）
+                // ここでは「ストックがなければAPIで作る」というフォールバックとして扱う
+            }
+        }
+
+        // Phase 2: ストックが取れなかった、または後半戦ならAPI生成
+        if (!newQuiz) {
+             console.log("[Quiz] Generating via API...");
+             newQuiz = await generateValidQuiz(genre, level, sessionId);
+             source = "API";
+        }
         
         if (quizState.sessionId !== sessionId) return;
 
         if (newQuiz) {
-            console.log("[Quiz] Pre-fetched 1 question.");
+            console.log(`[Quiz] Pre-fetched 1 question (Source: ${source})`);
             quizState.questionQueue.push(newQuiz);
         } else {
-            console.warn("[Quiz] Failed to generate in background. Retrying...");
+            console.warn("[Quiz] Failed to generate/fetch. Retrying...");
             await new Promise(r => setTimeout(r, 2000));
         }
     }
     console.log("[Quiz] Background fetcher completed.");
 }
 
-// ★追加: グローバルストックへ保存する関数
+// グローバルストックへ保存する関数
 async function saveQuizToGlobalStock(quiz) {
     if (!db || !currentUser) return;
     
@@ -600,7 +671,7 @@ async function saveQuizToGlobalStock(quiz) {
             random_id: randomId,
             created_at: new Date().toISOString(),
             creator_grade: currentUser.grade,
-            creator_uid: currentUser.id // 誰が作ったか（荒らし対策用）
+            creator_uid: currentUser.id 
         }, { merge: true }); // 重複時は上書き（実質スキップ）
         console.log("Saved quiz to global stock:", docId);
     } catch(e) {
@@ -638,7 +709,6 @@ window.showQuizGame = function() {
         }
     });
 
-    // 夏目友人帳のボタンも更新
     const btnNatsume = document.getElementById('btn-quiz-natsume');
     if (btnNatsume) {
         const lv = levels["夏目友人帳"] || 1;
@@ -697,23 +767,8 @@ window.startQuizSet = async function(genre, level) {
     quizState.history = []; 
     quizState.sessionId = Date.now(); 
 
-    // ★追加: 1問目にストックを利用
-    if (currentUser && currentUser.savedQuizzes && currentUser.savedQuizzes.length > 0) {
-        // 現在のジャンルに合うものを探す
-        const candidates = currentUser.savedQuizzes.filter(q => {
-            if (genre === "全ジャンル") return true;
-            // 選択されたジャンルと一致するかチェック
-            return q.genre === genre || q.actual_genre === genre;
-        });
-        
-        if (candidates.length > 0) {
-            // ランダムに1つ選ぶ
-            const stockQuiz = candidates[Math.floor(Math.random() * candidates.length)];
-            // キューに追加 (API生成より先に消費される)
-            quizState.questionQueue.push({ ...stockQuiz, isStock: true });
-            console.log("[Quiz] Added 1 stock quiz to queue:", stockQuiz.question);
-        }
-    }
+    // ★修正: ここでの手動プッシュは削除し、backgroundQuizFetcherに任せる
+    // これにより、ストックがない場合でも自動的にAPI生成に切り替わる
 
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-level-select').classList.add('hidden');
@@ -795,7 +850,6 @@ window.nextQuiz = async function() {
         if (currentUser && currentUser.savedQuizzes && currentUser.savedQuizzes.length > 0) {
              candidates = currentUser.savedQuizzes.filter(q => {
                 if (quizState.genre === "全ジャンル") return true;
-                // 現在のジャンルと一致するものだけを候補にする
                 return q.genre === quizState.genre || q.actual_genre === quizState.genre;
             });
         }
@@ -840,7 +894,7 @@ window.nextQuiz = async function() {
         if (quizState.history.length > 10) quizState.history.shift(); 
         
         // ★保存用リストに追加（デフォルトは保存ON）
-        // ただし、既にストック由来（isStock）の場合は重複追加しないようにする
+        // ただし、既にストック由来（isStock/isFallback）の場合は重複追加しないようにする
         if (!quizData.isStock && !quizData.isFallback) {
             quizState.sessionQuizzes.push({ ...quizData, shouldSave: true });
         }
