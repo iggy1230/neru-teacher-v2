@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v410.0: クイズジャンル混入バグ修正版) ---
+// --- js/game-engine.js (v411.0: グローバル保存実装版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -45,6 +45,19 @@ function fuzzyContains(userText, targetText, maxDistance = 1) {
         }
     }
     return false;
+}
+
+// 文字列からハッシュっぽいIDを生成（重複排除用）
+// ※厳密なハッシュではありませんが、問題文の重複チェックには十分です
+function generateDocIdFromText(text) {
+    let hash = 0, i, chr;
+    if (text.length === 0) return "empty_quiz";
+    for (i = 0; i < text.length; i++) {
+        chr = text.charCodeAt(i);
+        hash = ((hash << 5) - hash) + chr;
+        hash |= 0; // Convert to 32bit integer
+    }
+    return "qz_" + Math.abs(hash).toString(16) + text.length;
 }
 
 // ==========================================
@@ -568,6 +581,33 @@ async function backgroundQuizFetcher(genre, level, sessionId) {
     console.log("[Quiz] Background fetcher completed.");
 }
 
+// ★追加: グローバルストックへ保存する関数
+async function saveQuizToGlobalStock(quiz) {
+    if (!db || !currentUser) return;
+    
+    const docId = generateDocIdFromText(quiz.question); // ユニークID生成
+    const randomId = Math.floor(Math.random() * 100000000); // 検索用ランダム値
+    
+    try {
+        await db.collection("public_quizzes").doc(docId).set({
+            question: quiz.question,
+            options: quiz.options,
+            answer: quiz.answer,
+            explanation: quiz.explanation || "",
+            genre: quiz.actual_genre || quizState.genre,
+            level: quizState.level,
+            fact_basis: quiz.fact_basis || "",
+            random_id: randomId,
+            created_at: new Date().toISOString(),
+            creator_grade: currentUser.grade,
+            creator_uid: currentUser.id // 誰が作ったか（荒らし対策用）
+        }, { merge: true }); // 重複時は上書き（実質スキップ）
+        console.log("Saved quiz to global stock:", docId);
+    } catch(e) {
+        console.error("Failed to save quiz to global:", e);
+    }
+}
+
 window.showQuizGame = function() {
     window.switchScreen('screen-quiz');
     window.currentMode = 'quiz';
@@ -662,6 +702,7 @@ window.startQuizSet = async function(genre, level) {
         // 現在のジャンルに合うものを探す
         const candidates = currentUser.savedQuizzes.filter(q => {
             if (genre === "全ジャンル") return true;
+            // 選択されたジャンルと一致するかチェック
             return q.genre === genre || q.actual_genre === genre;
         });
         
@@ -754,6 +795,7 @@ window.nextQuiz = async function() {
         if (currentUser && currentUser.savedQuizzes && currentUser.savedQuizzes.length > 0) {
              candidates = currentUser.savedQuizzes.filter(q => {
                 if (quizState.genre === "全ジャンル") return true;
+                // 現在のジャンルと一致するものだけを候補にする
                 return q.genre === quizState.genre || q.actual_genre === quizState.genre;
             });
         }
@@ -963,7 +1005,7 @@ window.finishQuizSet = function() {
     quizState.isFinished = true;
     window.currentQuiz = null;
     
-    // ★クイズ保存処理
+    // ★クイズ保存処理 (Global Stock & Local Stock)
     if (currentUser && quizState.sessionQuizzes.length > 0) {
         if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
         
@@ -982,14 +1024,21 @@ window.finishQuizSet = function() {
         });
         
         if (quizzesToSave.length > 0) {
-            // 重複チェックして追加
             quizzesToSave.forEach(newQ => {
+                // 1. ローカルストックへの追加 (重複チェック)
                 const isDup = currentUser.savedQuizzes.some(oldQ => oldQ.question === newQ.question);
                 if (!isDup) {
                     currentUser.savedQuizzes.push(newQ);
                 }
+                
+                // 2. ★グローバルストックへの追加 (新機能)
+                // Firestoreが有効な場合のみ実行
+                if (typeof saveQuizToGlobalStock === 'function') {
+                    saveQuizToGlobalStock(newQ);
+                }
             });
-            // 最大保存数制限（例: 100問）
+            
+            // ローカル最大保存数制限（例: 100問）
             if (currentUser.savedQuizzes.length > 100) {
                 currentUser.savedQuizzes = currentUser.savedQuizzes.slice(currentUser.savedQuizzes.length - 100);
             }
