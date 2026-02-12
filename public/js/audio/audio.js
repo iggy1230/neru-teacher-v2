@@ -1,15 +1,13 @@
-// --- js/audio/audio.js (v420.0: 全体的な読み上げ速度向上版) ---
+// --- js/audio/audio.js (v426.0: 無料版・安定化TTS) ---
 
 window.audioCtx = null;
-window.masterGainNode = null; // 全体の音量制御用
-// 【重要】ガベージコレクション対策のため、グローバル変数として保持する
-window.currentUtterance = null;
+window.masterGainNode = null; 
+window.currentUtterance = null; // GC対策
 
 window.isNellSpeaking = false;
 
 window.initAudioContext = async function() {
     try {
-        // コンテキストの初期化（効果音再生用に必要）
         if (!window.audioCtx) {
             window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             window.masterGainNode = window.audioCtx.createGain();
@@ -42,10 +40,9 @@ async function speakNell(text, mood = "normal") {
     if (!text || text === "") return;
     if (!('speechSynthesis' in window)) return;
 
-    // 前の音声をキャンセル
     window.cancelNellSpeech();
 
-    // ★修正: 読み上げエラーの原因になる記号や絵文字を削除する
+    // 読み上げエラー回避のため記号を削除
     let cleanText = text;
     cleanText = cleanText.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, ''); 
     cleanText = cleanText.replace(/[★☆✨♪！!？?]/g, ''); 
@@ -53,13 +50,10 @@ async function speakNell(text, mood = "normal") {
 
     if (cleanText.trim() === "") return;
 
-    // 読み上げオブジェクト作成
     const utterance = new SpeechSynthesisUtterance(cleanText);
-    
-    // 音量設定
     utterance.volume = window.isMuted ? 0 : (window.appVolume || 0.5);
     
-    // 声の設定 (日本語を探す)
+    // 日本語音声の選択
     const voices = window.speechSynthesis.getVoices();
     let jpVoice = voices.find(v => v.lang === 'ja-JP' && v.name.includes('Google'));
     if (!jpVoice) {
@@ -69,24 +63,24 @@ async function speakNell(text, mood = "normal") {
         utterance.voice = jpVoice;
     }
     
-    // ★修正: 全体的に読み上げ速度を速くする
-    let rate = 1.2; // 標準速度を 1.0 -> 1.2 にアップ
+    // 感情パラメータ（ブラウザTTS用にマイルドに調整）
+    let rate = 1.1; 
     let pitch = 1.0; 
 
     if (mood === "thinking") { 
-        rate = 1.0; pitch = 0.9;
+        rate = 0.95; pitch = 0.9;
     } else if (mood === "gentle") { 
-        rate = 1.1; pitch = 1.05;
+        rate = 1.0; pitch = 1.05;
     } else if (mood === "excited") { 
-        rate = 1.3; pitch = 1.15;
+        rate = 1.2; pitch = 1.1;
     } else if (mood === "sad") {
-        rate = 1.0; pitch = 0.85;
+        rate = 0.9; pitch = 0.85;
     }
 
     utterance.rate = rate;
     utterance.pitch = pitch;
 
-    // Promiseを返すように修正（読み上げ完了待ち用）
+    // 非同期制御用Promise
     return new Promise((resolve) => {
         utterance.onstart = () => {
             window.isNellSpeaking = true;
@@ -99,25 +93,25 @@ async function speakNell(text, mood = "normal") {
         };
         
         utterance.onerror = (e) => {
+            // 中断はエラーではないので無視
             if (e.error === 'interrupted' || e.error === 'canceled') {
                 return;
             }
             console.error("TTS Error:", e);
             window.isNellSpeaking = false;
             window.currentUtterance = null;
-            resolve(); // エラーでも完了扱いにして次に進める
+            resolve();
         };
 
         window.currentUtterance = utterance;
         
-        // 少し遅延させて実行
         setTimeout(() => {
             window.speechSynthesis.speak(utterance);
         }, 10);
     });
 }
 
-// 音声リストの読み込み完了を待つ
+// 音声リスト読み込み待機
 if ('speechSynthesis' in window) {
     window.speechSynthesis.onvoiceschanged = () => {
         console.log("Voices loaded");
