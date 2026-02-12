@@ -21,7 +21,7 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-// コスト削減のため、Gemini 2.0 Flash をメインに使用
+// 指定されたモデル名
 const MODEL_HOMEWORK = "gemini-2.5-flash";
 const MODEL_FAST = "gemini-2.5-flash"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
@@ -174,6 +174,7 @@ app.post('/generate-quiz', async (req, res) => {
         try {
             const { grade, genre, level } = req.body; 
             
+            // Google検索ツールを使用
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST, 
                 tools: [{ google_search: {} }] 
@@ -634,8 +635,8 @@ app.post('/chat-dialogue', async (req, res) => {
     }
 });
 
-// --- TTS ---
-// (Client-side Speech API is used, server-side TTS endpoint removed to save cost)
+// --- TTS (廃止) ---
+// クライアント側のWeb Speech APIを使用するため、サーバー処理は削除。
 
 // --- Memory Update ---
 app.post('/update-memory', async (req, res) => {
@@ -1065,7 +1066,7 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // MODEL_REALTIME (gemini-2.5-flash-native-audio-preview-09-2025) を使用
+                        // MODEL_REALTIME (gemini-3-flash-preview) を使用
                         model: `models/${MODEL_REALTIME}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
