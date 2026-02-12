@@ -21,9 +21,9 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-// 指定されたモデル名
-const MODEL_HOMEWORK = "gemini-2.5-flash";
-const MODEL_FAST = "gemini-2.5-flash"; 
+// コスト削減のため、Gemini 2.0 Flash をメインに使用
+const MODEL_HOMEWORK = "gemini-2.5-pro";
+const MODEL_FAST = "gemini-2.0-flash-001"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
 // --- Server Log ---
@@ -174,7 +174,6 @@ app.post('/generate-quiz', async (req, res) => {
         try {
             const { grade, genre, level } = req.body; 
             
-            // Google検索ツールを使用
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST, 
                 tools: [{ google_search: {} }] 
@@ -295,8 +294,7 @@ app.post('/generate-quiz', async (req, res) => {
                 res.status(500).json({ error: "クイズが作れなかったにゃ…（生成エラー）" });
                 return;
             } else {
-                // ★重要: エラー（特に429）が出たら、次の試行まで待機時間を設ける
-                // 1回目失敗: 5秒待機, 2回目失敗: 10秒待機
+                // ★429エラー対策: 待機時間を入れてリトライ
                 const waitTime = 5000 * attempt;
                 console.log(`Waiting ${waitTime}ms before retry...`);
                 await new Promise(resolve => setTimeout(resolve, waitTime));
@@ -1066,7 +1064,7 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // MODEL_REALTIME (gemini-3-flash-preview) を使用
+                        // MODEL_REALTIME (gemini-2.5-flash-native-audio-preview-09-2025) を使用
                         model: `models/${MODEL_REALTIME}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
