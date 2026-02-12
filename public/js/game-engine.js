@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v425.0: 完全版 - 作者表示削除＆神経衰弱読み上げ修正) ---
+// --- js/game-engine.js (v424.0: 神経衰弱重複排除版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -960,15 +960,13 @@ window.nextQuiz = async function() {
         
         qText.innerText = quizData.question;
         
-        // ★修正: 作者表示（✏️ 作：〜）のロジックをコメントアウト
-        /*
+        // 作者表示
         const authorDiv = document.createElement('div');
         authorDiv.className = "quiz-author-badge";
         if (quizData.isStock && quizData.creator_name) {
              authorDiv.innerHTML = `<span>✏️ 作：${window.cleanDisplayString(quizData.creator_name)}さん</span>`;
              optionsContainer.appendChild(authorDiv);
         }
-        */
 
         window.updateNellMessage(quizData.question, "normal", false, true);
         
@@ -2003,7 +2001,7 @@ window.checkMatch = async function() {
             window.updateNellMessage(`ネル先生が「${card1.name}」をゲットしたにゃ！`, "excited");
         }
         
-        // ★解説演出 (読み上げ完了を待機)
+        // ★解説演出
         await window.showMatchModal(card1);
         
         memoryGameState.flippedCards = [];
@@ -2043,7 +2041,7 @@ window.checkMatch = async function() {
             if (memoryGameState.turn === 'nell') {
                 indicator.innerText = "ネル先生の番だにゃ...";
                 window.updateNellMessage("次はネル先生の番だにゃ。", "normal");
-                memoryGameState.isProcessing = false; 
+                memoryGameState.isProcessing = false; // 一旦解除しないとnellTurnが動かないかも？いやnellTurn内でフラグ管理はしていない
                 setTimeout(window.nellTurn, 1000);
             } else {
                 indicator.innerText = `${playerName}さんの番だにゃ！`;
@@ -2129,7 +2127,6 @@ window.nellTurn = function() {
     }, 1000);
 };
 
-// ★修正: 読み上げが終わるまで待機するモーダル表示関数
 window.showMatchModal = function(card) {
     return new Promise((resolve) => {
         const modal = document.getElementById('memory-match-modal');
@@ -2151,21 +2148,13 @@ window.showMatchModal = function(card) {
             window.skipMemoryExplanation = null; // cleanup
         };
         
-        // 読み上げ開始を待つ
         window.updateNellMessage(textToSpeak, "happy", false, true).then(() => {
-            // isNellSpeaking フラグを監視して、読み上げ終了を検知する
-            const checkEnd = setInterval(() => {
-                if (!window.isNellSpeaking) {
-                    clearInterval(checkEnd);
-                    // 読み上げ終了後、少し待ってから自動で閉じる
-                    setTimeout(() => {
-                        if (!modal.classList.contains('hidden')) {
-                            modal.classList.add('hidden');
-                            resolve();
-                        }
-                    }, 500);
-                }
-            }, 200);
+            // 読み上げ終わったら少し待って閉じる
+            if (!modal.classList.contains('hidden')) {
+                setTimeout(() => {
+                    if (window.skipMemoryExplanation) window.skipMemoryExplanation();
+                }, 1000);
+            }
         });
     });
 };
