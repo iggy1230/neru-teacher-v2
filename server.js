@@ -4,7 +4,6 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import WebSocket, { WebSocketServer } from 'ws';
-import { parse } from 'url';
 import dotenv from 'dotenv';
 import fs from 'fs/promises';
 
@@ -37,7 +36,7 @@ async function appendToServerLog(name, text) {
 }
 
 // ==========================================
-// ★ AI Initialization (シンプル・安定版)
+// ★ AI Initialization (404エラー対策・決定版)
 // ==========================================
 let model;
 
@@ -45,14 +44,14 @@ try {
     if (!process.env.GEMINI_API_KEY) {
         console.error("⚠️ GEMINI_API_KEY が設定されていません。");
     } else {
-        // 1. 初期化
+        // 1. APIキーで初期化
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-        // 2. モデルの取得
-        // 重要: apiVersion: 'v1' を指定して安定版エンドポイントを使用
+        // 2. モデル取得 (ここが 404 エラーを治す魔法の書き方です)
+        // getGenerativeModel の第2引数に apiVersion を入れることで 'v1beta' 回避を強制します
         model = genAI.getGenerativeModel(
-            { model: "gemini-1.5-flash" },
-            { apiVersion: "v1" } 
+            { model: "gemini-1.5-flash" }, 
+            { apiVersion: "v1" } // ← これを絶対に入れてください
         );
         
         console.log("✅ AI Model Initialized: gemini-1.5-flash (v1)");
@@ -69,7 +68,6 @@ app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
         
-        // プロンプトの作成
         const prompt = `
         あなたは小学${grade}年生の${name}さんの${subject}担当の先生「ネル先生」です。
         送られてきた画像を解析し、以下のJSON形式のみで出力してください。
@@ -89,7 +87,7 @@ app.post('/analyze', async (req, res) => {
         ]
         `;
 
-        // 画像データを整形して送信
+        // すでに上で model を定義しているので、ここでは model.generateContent を呼ぶだけ
         const result = await model.generateContent([
             prompt,
             { inlineData: { data: image, mimeType: "image/jpeg" } }
@@ -109,8 +107,8 @@ app.post('/analyze', async (req, res) => {
         res.json(jsonResponse);
 
     } catch (error) {
-        console.error("解析エラー:", error);
-        res.status(500).json({ error: "解析に失敗したにゃ。もう一度試してにゃ。" });
+        console.error("Gemini Error (Analyze):", error.message);
+        res.status(500).json({ error: "解析エラーだにゃ。通信を確認してにゃ。" });
     }
 });
 
@@ -120,21 +118,16 @@ app.post('/chat-dialogue', async (req, res) => {
         const { text, name, image, history } = req.body;
         
         let promptParts = [];
-        
-        // システム設定
         const systemPrompt = `あなたは猫の「ネル先生」です。相手は「${name}」さん。語尾は「〜にゃ」で、優しく話してください。`;
         promptParts.push(systemPrompt);
 
-        // 履歴の追加
         if (history && history.length > 0) {
             const context = "【これまでの会話】\n" + history.map(h => `${h.role}: ${h.text}`).join("\n");
             promptParts.push(context);
         }
 
-        // ユーザー入力
         promptParts.push(`ユーザー: ${text}`);
 
-        // 画像がある場合
         if (image) {
             promptParts.push({ inlineData: { data: image, mimeType: "image/jpeg" } });
         }
@@ -145,7 +138,7 @@ app.post('/chat-dialogue', async (req, res) => {
         res.json({ speech: responseText });
 
     } catch (error) {
-        console.error("Chat Error:", error);
+        console.error("Gemini Error (Chat):", error.message);
         res.status(200).json({ speech: "ごめんにゃ、ちょっと聞こえなかったにゃ。" });
     }
 });
@@ -178,7 +171,7 @@ app.post('/generate-quiz', async (req, res) => {
         res.json(JSON.parse(text));
 
     } catch (e) {
-        console.error("Quiz Error:", e);
+        console.error("Gemini Error (Quiz):", e.message);
         res.status(500).json({ error: "クイズが作れなかったにゃ…" });
     }
 });
@@ -193,7 +186,7 @@ async function generateSimpleJson(prompt, res) {
         if (firstBrace !== -1 && lastBrace !== -1) text = text.substring(firstBrace, lastBrace + 1);
         res.json(JSON.parse(text));
     } catch (e) {
-        console.error("Gen Error:", e);
+        console.error("Gemini Error (Gen):", e.message);
         res.status(500).json({ error: "生成エラーだにゃ" });
     }
 }
@@ -235,7 +228,7 @@ app.post('/identify-item', async (req, res) => {
         if (firstBrace !== -1 && lastBrace !== -1) text = text.substring(firstBrace, lastBrace + 1);
         res.json(JSON.parse(text));
     } catch(e) {
-        console.error("Identify Error:", e);
+        console.error("Identify Error:", e.message);
         res.status(500).json({ error: "解析失敗" });
     }
 });
