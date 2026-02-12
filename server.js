@@ -22,8 +22,8 @@ app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
 // コスト削減のため、Gemini 2.0 Flash をメインに使用
-const MODEL_HOMEWORK = "gemini-2.5-flash";
-const MODEL_FAST = "gemini-2.5-flash"; 
+const MODEL_HOMEWORK = "gemini-flash-latest";
+const MODEL_FAST = "gemini-2.5-flash-lite"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
 // --- Server Log ---
