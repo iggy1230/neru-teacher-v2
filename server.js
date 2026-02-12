@@ -21,10 +21,10 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-// メインで使用する最新モデル（性能は良いが制限が厳しい）
+// メイン: 最新のFlashモデル
 const MODEL_MAIN = "gemini-2.5-flash"; 
-// バックアップ用の安定モデル（制限が緩い）
-const MODEL_BACKUP = "gemini-1.5-flash";
+// バックアップ: 1.5は消滅した可能性が高いため、2.0に変更（なければ2.5を再利用）
+const MODEL_BACKUP = "gemini-2.0-flash";
 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
@@ -61,14 +61,14 @@ try {
 } catch (e) { console.error("Init Error:", e.message); }
 
 // ==========================================
-// ★重要: 自動バックアップ生成関数
+// ★重要: 自動バックアップ生成関数 (Wait & Retry)
 // ==========================================
 async function generateWithFallback(promptParts, useTools = false, isJson = false) {
     // 1. まずメインモデル(2.5)で試す
     try {
         const toolsConfig = useTools ? [{ google_search: {} }] : undefined;
-        // JSONモードかつ検索ツールの場合は、モデルによっては競合するためツールをオフにする調整
-        const activeTools = isJson ? undefined : toolsConfig; 
+        // JSONモードや画像認識の時は、エラー回避のため検索ツールをあえてOFFにする
+        const activeTools = isJson ? undefined : toolsConfig;
         
         const model = genAI.getGenerativeModel({ 
             model: MODEL_MAIN,
@@ -79,19 +79,33 @@ async function generateWithFallback(promptParts, useTools = false, isJson = fals
         return result;
         
     } catch (error) {
-        // エラー（特に429 Too Many Requests）が出たらここに来る
-        console.warn(`⚠️ Main Model (${MODEL_MAIN}) Failed: ${error.message}`);
+        console.warn(`⚠️ Main Model (${MODEL_MAIN}) Error: ${error.message}`);
+        console.log(`⏳ Waiting 5 seconds for rate limit cooldown...`);
+
+        // ★重要: 429エラー(制限)対策として、5秒待機する
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
         console.log(`🔄 Switching to Backup Model (${MODEL_BACKUP})...`);
 
-        // 2. 失敗したらバックアップモデル(1.5)で即座に再試行
+        // 2. バックアップモデルで再試行
         try {
-            // バックアップは検索ツールなしで確実に回答を取りに行く（安定性優先）
+            // バックアップは検索ツールなし、安全な設定で実行
             const backupModel = genAI.getGenerativeModel({ model: MODEL_BACKUP });
             const result = await backupModel.generateContent(promptParts);
             return result;
         } catch (backupError) {
-            console.error(`❌ Backup Model also Failed: ${backupError.message}`);
-            throw backupError; // 両方ダメなら諦めてエラーを返す
+            console.error(`❌ Backup Model Failed: ${backupError.message}`);
+            
+            // 3. バックアップもダメなら（モデルが存在しない等）、もう一度だけメインで試す
+            if (backupError.message.includes("404") || backupError.message.includes("Not Found")) {
+                 console.log(`🔄 Backup model missing. Retrying Main Model (${MODEL_MAIN}) one last time...`);
+                 await new Promise(resolve => setTimeout(resolve, 5000)); // さらに5秒待つ
+                 
+                 const finalModel = genAI.getGenerativeModel({ model: MODEL_MAIN });
+                 return await finalModel.generateContent(promptParts);
+            }
+            
+            throw backupError; // それでもダメなら諦める
         }
     }
 }
@@ -110,20 +124,7 @@ function getSubjectInstructions(subject) {
     }
 }
 
-// ジャンルごとの信頼できる参照URLリスト
-const GENRE_REFERENCES = {
-    "魔法陣グルグル": ["https://dic.pixiv.net/a/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB", "https://ja.wikipedia.org/wiki/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB"],
-    "ジョジョの奇妙な冒険": ["https://dic.pixiv.net/a/%E3%82%B8%E3%83%A7%E3%82%B8%E3%83%A7%E3%81%AE%E5%A5%87%E5%A6%99%E3%81%AA%E5%86%92%E9%99%BA", "https://w.atwiki.jp/jojo-dic/"],
-    "ポケモン": ["https://dic.pixiv.net/a/%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3", "https://wiki.xn--rckteqa2e.com/wiki/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8"],
-    "マインクラフト": ["https://minecraft.fandom.com/ja/wiki/Minecraft_Wiki"],
-    "ロブロックス": ["https://roblox.fandom.com/ja/wiki/Roblox_Wiki"],
-    "ドラえもん": ["https://dic.pixiv.net/a/%E3%83%89%E3%83%A9%E3%81%88%E3%82%82%E3%83%B3"],
-    "歴史・戦国武将": ["https://ja.wikipedia.org/wiki/%E6%88%A6%E5%9B%BD%E6%AD%A6%E5%B0%86"],
-    "STPR": ["https://stpr.com/"],
-    "夏目友人帳": ["https://dic.pixiv.net/a/%E5%A4%8F%E7%9B%AE%E5%8F%8B%E4%BA%BA%E5%B8%B3"]
-};
-
-// クイズ検証関数
+// クイズ検証関数 (Grounding)
 async function verifyQuiz(quizData, genre) {
     try {
         const verifyPrompt = `生成AIが作成した以下のクイズが、事実に即しているか判定してください。\n【ジャンル】: ${genre}\n【問題】: ${quizData.question}\n【選択肢】: ${quizData.options.join(", ")}\n【想定正解】: ${quizData.answer}\n出力は "PASS" または "FAIL" のみとしてください。`;
@@ -139,43 +140,32 @@ async function verifyQuiz(quizData, genre) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (フォールバック & 待機リトライ) ---
+// --- クイズ生成 API ---
 app.post('/generate-quiz', async (req, res) => {
-    const MAX_RETRIES = 2; // リトライ回数は少なめに（フォールバックがあるため）
-    let attempt = 0;
-    while (attempt < MAX_RETRIES) {
-        attempt++;
-        try {
-            const { grade, genre, level } = req.body; 
-            let targetGenre = genre || "一般知識";
-            const prompt = `あなたは「${targetGenre}」のクイズ作家です。小学${grade}年生向けレベル${level}の4択クイズを1問、JSON形式のみで作成してください。{"question":"","options":["","","",""],"answer":"","explanation":"","actual_genre":""}`;
-            
-            // フォールバック付きで生成 (JSONモード)
-            const result = await generateWithFallback([prompt], false, true);
-            
-            let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-            const start = text.indexOf('{');
-            const end = text.lastIndexOf('}');
-            const jsonResponse = JSON.parse(text.substring(start, end + 1));
+    // リトライ回数は1回（フォールバック内で既にリトライしているため）
+    try {
+        const { grade, genre, level } = req.body; 
+        let targetGenre = genre || "一般知識";
+        const prompt = `あなたは「${targetGenre}」のクイズ作家です。小学${grade}年生向けレベル${level}の4択クイズを1問、JSON形式のみで作成してください。{"question":"","options":["","","",""],"answer":"","explanation":"","actual_genre":""}`;
+        
+        // フォールバック付きで生成 (JSONモード=true)
+        const result = await generateWithFallback([prompt], false, true);
+        
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        const jsonResponse = JSON.parse(text.substring(start, end + 1));
 
-            // 検証（失敗してもエラーにせず、そのまま返す設定に変更して応答率を上げる）
-            if (await verifyQuiz(jsonResponse, targetGenre)) {
-                res.json(jsonResponse);
-                return;
-            } else {
-                 // 検証落ちした場合は、とりあえず返す（ユーザー体験優先）
-                 console.log("Quiz verification weak, but returning result.");
-                 res.json(jsonResponse);
-                 return;
-            }
-        } catch (e) {
-            console.error(`Quiz Gen Error (Attempt ${attempt}):`, e.message);
-            if (attempt >= MAX_RETRIES) {
-                res.status(500).json({ error: "混み合っていて作れなかったにゃ…少し待ってにゃ。" });
-            } else {
-                await new Promise(resolve => setTimeout(resolve, 3000));
-            }
+        // 検証（失敗してもエラーにせず、そのまま返す設定に変更して応答率を上げる）
+        if (await verifyQuiz(jsonResponse, targetGenre)) {
+            res.json(jsonResponse);
+        } else {
+             console.log("Quiz verification weak, but returning result.");
+             res.json(jsonResponse);
         }
+    } catch (e) {
+        console.error(`Quiz Gen Error:`, e.message);
+        res.status(500).json({ error: "混み合っていて作れなかったにゃ…少し待ってにゃ。" });
     }
 });
 
@@ -259,7 +249,8 @@ app.post('/chat-dialogue', async (req, res) => {
         promptParts.push(`ユーザー: ${text}`);
         if (image) promptParts.push({ inlineData: { mime_type: "image/jpeg", data: image } });
 
-        const result = await generateWithFallback(promptParts, true); // チャットは検索OK
+        // チャットは検索OK (第2引数=true)
+        const result = await generateWithFallback(promptParts, true); 
         res.json({ speech: result.response.text().trim() });
     } catch (error) {
         res.status(200).json({ speech: "ごめんにゃ、頭が回らないにゃ…。" });
@@ -301,12 +292,11 @@ app.post('/identify-item', async (req, res) => {
         ユーザーの現在地情報（参考）: ${address || '不明'}
         `;
 
-        // フォールバック機能を使って解析
-        // JSONを返してほしいので第3引数をtrueに
+        // ★JSON必須。検索ツールはエラーの元になるためOFF (false)
         const result = await generateWithFallback([
             prompt,
             { inlineData: { mime_type: "image/jpeg", data: image } }
-        ], false, true); // 検索ツールはオフ(false)にして安定化
+        ], false, true);
 
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
         const start = text.indexOf('{');
