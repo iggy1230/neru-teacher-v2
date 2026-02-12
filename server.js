@@ -53,9 +53,14 @@ try {
     if (!process.env.GEMINI_API_KEY) {
         console.error("⚠️ GEMINI_API_KEY が設定されていません。");
     } else {
-        // APIキーのみで初期化
-        genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        console.log("✅ Google Generative AI Initialized with API Key.");
+        // --- server.js の初期化部分をこのように書き換えてください ---
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// モデル取得時に apiVersion を明示的に指定（404エラー対策）
+const model = genAI.getGenerativeModel({ 
+    model: MODEL_FOR_ANALYSIS, 
+    safetySettings,
+}, { apiVersion: 'v1' }); // ★ここを追加
     }
 } catch (e) { console.error("Init Error:", e.message); }
 
