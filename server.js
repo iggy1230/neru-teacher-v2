@@ -21,7 +21,7 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-// コスト削減のため、Gemini 2.0 Flash をメインに使用
+// 指定されたモデル名を維持
 const MODEL_HOMEWORK = "gemini-flash-latest";
 const MODEL_FAST = "gemini-2.5-flash-lite"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
@@ -788,61 +788,55 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- お宝図鑑用 画像解析 ---
+// --- お宝図鑑用 画像解析 (位置情報精度強化版) ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location, address } = req.body;
         
-        // ★修正: Google検索ツールを有効化して、位置情報からの検索を可能にする
+        // Google検索ツールを有効化
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             tools: tools
         });
 
-        let locationInfo = "";
+        let locationContext = "";
         if (address) {
-            locationInfo = `
-            【最優先情報：現在地】
-            クライアント特定住所: **${address}**
-            `;
+            locationContext = `【最優先情報：現在地の住所】\nユーザーは現在「${address}」にいます。`;
         } else if (location && location.lat && location.lon) {
-            locationInfo = `
-            【位置情報】
-            GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
-            `;
+            locationContext = `【最優先情報：現在地の座標】\n緯度: ${location.lat}, 経度: ${location.lon}`;
         }
 
         const prompt = `
-        あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。
-        送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
-        
-        ${locationInfo}
+        あなたは猫の教育AI「ネル先生」です。相手は小学${req.body.grade || '生'}の「${name || '生徒'}」さん。
+        送られてきた画像を解析し、以下の厳格なルールに従ってJSON形式で応答してください。
 
-        【★最重要ルール: 位置情報の活用】
-        - **Google検索を使用して、提供された位置情報（${address || '現在地'}）に存在する具体的な「店名」「施設名」「観光地名」を特定し、それを \`itemName\` に設定してください。**
-        - 例: 画像がハンバーガーで、場所が「マクドナルド 渋谷店」なら、itemNameは「マクドナルド 渋谷店」としてください。
-        - 特定できない、または一般的な道端の植物などの場合は、見たままの名称（「タンポポ」など）で構いません。
+        ${locationContext}
 
-        【★レアリティ判定基準 (肉球ランク 1〜5)】
-        - **1 (★)**: どこでも買える市販の商品、雑草、日常的な風景。
-        - **2 (★★)**: ちょっとだけ珍しいもの。建物・建造物。
-        - **3 (★★★)**: その場所に行かないと見られないもの。動物。
-        - **4 (★★★★)**: かなり珍しいもの。歴史的建造物、有名なテーマパーク。
-        - **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー）。
+        【最重要ルール: 場所の特定 (厳守)】
+        1. **「位置情報」を絶対的な真実としてください**: 画像の見た目がどんなに有名な観光地（例: 奈良の公園）に似ていたとしても、現在地（例: 東京の公園）と矛盾する場合は、絶対に現在地を優先してください。
+        2. **Google検索を駆使してください**: 
+           - ステップ1: 提供された住所や座標の周辺にある「店」「公園」「施設」を検索してリストアップしてください。
+           - ステップ2: 画像に写っているロゴ、看板、建物の特徴が、ステップ1でリストアップした場所のどれと一致するか特定してください。
+        3. **具体的な店名を挙げてください**: 
+           - 単に「ハンバーガーショップ」ではなく「マクドナルド 〇〇支店」のように、必ずチェーン名と支店名（または施設名）まで特定して \`itemName\` に設定してください。
+           - 特定できない野外の植物などの場合は、一般的な名称（例: 「タンポポ」）で構いません。
 
-        【解説のルール】
-        - **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。
-        - **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
+        【レアリティ判定基準 (肉球ランク 1〜5)】
+        - 1: どこでも買える市販品、雑草。
+        - 2: 建物、特定の施設。
+        - 3: その場所特有の展示物、動物。
+        - 4: 非常に珍しい記念碑、歴史的建造物。
+        - 5: 奇跡レベル（四つ葉のクローバー、世界遺産）。
 
         【出力フォーマット (JSON)】
         \`\`\`json
         {
-            "itemName": "正式名称",
-            "rarity": 1, 
-            "description": "ネル先生の面白い解説",
-            "realDescription": "本当の解説",
-            "speechText": "『これは（itemName）だにゃ！（description）』"
+            "itemName": "特定した店名・施設名・物体名",
+            "rarity": 1〜5の数値,
+            "description": "ネル先生による猫視点の解説（語尾はにゃ）",
+            "realDescription": "図鑑のような正確な豆知識（です・ます調）",
+            "speechText": "ネル先生のセリフ（『これは（itemName）だにゃ！』から始める）"
         }
         \`\`\`
         `;
@@ -853,34 +847,22 @@ app.post('/identify-item', async (req, res) => {
         ]);
 
         const responseText = result.response.text();
-        
         let json;
         try {
             const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                json = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
-            } else {
-                throw new Error("JSON parse failed");
-            }
+            const start = cleanText.indexOf('{');
+            const end = cleanText.lastIndexOf('}');
+            json = JSON.parse(cleanText.substring(start, end + 1));
         } catch (e) {
-            console.warn("JSON Parse Fallback (Item):", responseText);
-            let fallbackText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            json = {
-                itemName: "なぞの物体",
-                rarity: 1, // Fallback
-                description: fallbackText,
-                realDescription: "AIの解析結果を直接表示しています。",
-                speechText: fallbackText
-            };
+            console.error("JSON Parse Error:", responseText);
+            throw new Error("解析結果を読み取れませんでした。");
         }
         
         res.json(json);
 
     } catch (error) {
         console.error("Identify Error:", error);
-        res.status(500).json({ error: "解析失敗", speechText: "よく見えなかったにゃ…もう一回見せてにゃ？", itemName: null });
+        res.status(500).json({ error: "解析失敗", speechText: "ごめんにゃ、よく見えなかったにゃ…もう一回見せてにゃ？", itemName: null });
     }
 });
 
