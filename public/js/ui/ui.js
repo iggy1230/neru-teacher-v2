@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v423.0: 非公開ボタン実装版) ---
+// --- js/ui/ui.js (v426.0: バックグラウンド処理停止強化版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -128,13 +128,19 @@ window.backToGate = function() {
 };
 
 window.backToLobby = function(suppressGreeting = false) {
+    // ★修正: バックグラウンド処理を徹底的に停止
     if (typeof window.stopAudioPlayback === 'function') window.stopAudioPlayback();
-    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+    if (typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech(); // 音声即時停止
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
     if (typeof window.stopLiveChat === 'function') window.stopLiveChat();
     if (typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera();
+    if (typeof window.closeHomeworkCamera === 'function') window.closeHomeworkCamera(); // 宿題カメラも停止
     if (typeof window.stopDanmakuGame === 'function') window.stopDanmakuGame();
+    if (typeof window.cleanupAnalysis === 'function') window.cleanupAnalysis(); // 分析ループ停止
+    
     window.gameRunning = false; 
+    window.isAnalyzing = false; // フラグ強制オフ
+    
     if (typeof window.stopLocationWatch === 'function') window.stopLocationWatch();
 
     if (window.quizState) {
@@ -143,7 +149,6 @@ window.backToLobby = function(suppressGreeting = false) {
         window.quizState.isFinished = true;
     }
 
-    if (window.isAnalyzing !== undefined) window.isAnalyzing = false;
     window.currentMode = null;
 
     switchScreen('screen-lobby');
