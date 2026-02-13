@@ -22,8 +22,8 @@ app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
 // 指定されたモデル名を維持
-const MODEL_HOMEWORK = "gemini-2.0-flash";
-const MODEL_FAST = "gemini-2.5-flash-lite-preview-09-2025"; 
+const MODEL_HOMEWORK = "gemini-2.5-pro";
+const MODEL_FAST = "gemini-2.0-flash"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
 // --- Server Log ---
