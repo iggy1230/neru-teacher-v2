@@ -21,9 +21,9 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-// 指定されたモデル名を維持
+// コスト削減のため、Gemini 2.0 Flash をメインに使用
 const MODEL_HOMEWORK = "gemini-2.5-pro";
-const MODEL_FAST = "gemini-2.0-flash"; 
+const MODEL_FAST = "gemini-2.5-flash"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
 // --- Server Log ---
@@ -788,55 +788,89 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// --- お宝図鑑用 画像解析 (位置情報精度強化版) ---
+// --- お宝図鑑用 画像解析 ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location, address } = req.body;
         
-        // Google検索ツールを有効化
         const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             tools: tools
         });
 
-        let locationContext = "";
+        let locationInfo = "";
         if (address) {
-            locationContext = `【最優先情報：現在地の住所】\nユーザーは現在「${address}」にいます。`;
+            locationInfo = `
+            【最優先情報：現在地】
+            クライアント特定住所: **${address}**
+            
+            指示:
+            1. **広域の確定**: ユーザーは「${address}」にいます。
+            2. **詳細スポットの特定**: この住所（${address}）の中にある、画像に写っているようなものをGoogle検索で特定してください。
+            3. **重要: 場所の呼び方**: 解説の冒頭で場所を言う際は、**住所の細かい部分（大字、字、番地、道路名、バイパス名など）は絶対に省略**し、「都道府県＋市町村名」＋「スポット名」の形式にしてください。
+               - 悪い例: 「ここは福岡県筑後市大字前津室岡八女筑後バイパスのよらん野だにゃ！」
+               - 良い例: 「ここは福岡県筑後市のよらん野だにゃ！」
+            `;
         } else if (location && location.lat && location.lon) {
-            locationContext = `【最優先情報：現在地の座標】\n緯度: ${location.lat}, 経度: ${location.lon}`;
+            locationInfo = `
+            【位置情報】
+            GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
+            
+            指示:
+            1. Google検索で「${location.lat},${location.lon} 住所」を検索し、**正確な市町村名**を確定してください。
+            2. その市町村の中で、画像に写っているものを検索して特定してください。
+            `;
         }
 
         const prompt = `
-        あなたは猫の教育AI「ネル先生」です。相手は小学${req.body.grade || '生'}の「${name || '生徒'}」さん。
-        送られてきた画像を解析し、以下の厳格なルールに従ってJSON形式で応答してください。
+        あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。
+        送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
+        
+        ${locationInfo}
 
-        ${locationContext}
+        【★最重要ルール: 呼び方】
+        **相手を呼ぶときは必ず「${name}さん」と呼んでください。絶対に呼び捨てにしてはいけません。**
 
-        【最重要ルール: 場所の特定 (厳守)】
-        1. **「位置情報」を絶対的な真実としてください**: 画像の見た目がどんなに有名な観光地（例: 奈良の公園）に似ていたとしても、現在地（例: 東京の公園）と矛盾する場合は、絶対に現在地を優先してください。
-        2. **Google検索を駆使してください**: 
-           - ステップ1: 提供された住所や座標の周辺にある「店」「公園」「施設」を検索してリストアップしてください。
-           - ステップ2: 画像に写っているロゴ、看板、建物の特徴が、ステップ1でリストアップした場所のどれと一致するか特定してください。
-        3. **具体的な店名を挙げてください**: 
-           - 単に「ハンバーガーショップ」ではなく「マクドナルド 〇〇支店」のように、必ずチェーン名と支店名（または施設名）まで特定して \`itemName\` に設定してください。
-           - 特定できない野外の植物などの場合は、一般的な名称（例: 「タンポポ」）で構いません。
+        【★最重要ルール: 場所の整合性 (厳守)】
+        - **画像検索の結果、見た目が有名な観光地（例: 奈良の公園、東京のタワー）に似ていても、提供された「住所」や「現在地」がそれらの場所と異なる場合は、絶対にその観光地名を採用しないでください。**
+        - 必ず「提供された住所（${address || '現在地'}）」の中に存在する施設（公園、店、建物）として特定してください。
+        - もし住所の中に該当する公園や施設があれば、その施設名（例: 「市民の森公園」「〇〇小学校」）を正解として扱い、その施設内にあるものとして解説してください。
+        - 結論として、**「画像の特徴（視覚情報）」よりも「現在地（位置情報）」を優先して特定を行ってください。**
 
-        【レアリティ判定基準 (肉球ランク 1〜5)】
-        - 1: どこでも買える市販品、雑草。
-        - 2: 建物、特定の施設。
-        - 3: その場所特有の展示物、動物。
-        - 4: 非常に珍しい記念碑、歴史的建造物。
-        - 5: 奇跡レベル（四つ葉のクローバー、世界遺産）。
+        【特定と命名のルール】
+        1. **店舗・建物の場合 (最優先)**: 画像が「お店の外観」「看板」「建物」で、位置情報が利用可能な場合は、Google検索を駆使して**必ず「チェーン名 + 支店名」まで特定して** \`itemName\` に設定してください（例: 「セブン-イレブン」ではなく「セブン-イレブン 世田谷猫屋敷店」、「マクドナルド」ではなく「マクドナルド 国道1号店」）。
+        2. **商品・小物の場合**: 画像が「商品（お菓子、飲み物）」「植物」「生き物」などの場合は、撮影場所の店名は含めず、その**モノの正式名称**を \`itemName\` にしてください。
+        3. **観光地・公共施設**: その場所の正式名称を特定してください。
+
+        【★レアリティ判定基準 (肉球ランク 1〜5)】
+        - **1 (★)**: どこでも買える市販の商品（お菓子、飲み物、文房具、おもちゃ、スマホ、家電）、どこにでも生えている植物（雑草）、日常的な風景。**※スーパーやコンビニで買えるものは必ず「1」にしてください。**
+        - **2 (★★)**: ちょっとだけ珍しいもの。**建物・建造物（学校、駅、公民館、橋など）は最低でも「2」以上にする。**
+        - **3 (★★★)**: その場所に行かないと見られないもの。**動物（犬、猫、鳥、虫など）は最低でも「3」以上にする。** **入手困難な人気商品（最新ゲーム機など）は「3」以上にする。**
+        - **4 (★★★★)**: かなり珍しいもの。**特別な種類の動物や、歴史的建造物、有名なテーマパークは「4」以上にする。**
+        - **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
+
+        【解説のルール】
+        1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。
+        2. **呼び方ルール**: **解説の最後に、「${name}さんはこれ知ってたにゃ？」のように、名前を呼びかけて質問するフレーズは絶対に含めないでください。** 説明だけで完結させてください。
+        3. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。
+        4. **ふりがな**: **読み間違いやすい**人名、地名、難読漢字、英単語のみ『漢字(ふりがな)』の形式で読み仮名を振ってください。**一般的な簡単な漢字には絶対にふりがなを振らないでください。**
+        5. **場所の言及ルール (重要)**: 
+           - 画像が**「建物」「風景」「観光地」の場合**: 「ここは〇〇（詳細地名）だにゃ！」と場所を紹介してOKです。
+           - 画像が**「商品」「小物」「生き物」など持ち運び可能なものの場合**: **詳細な住所（町名・番地・店名）への言及は禁止です。** 言及する場合でも、「〇〇市で見つけたにゃ！」や「〇〇県にいるんだにゃ！」のように、**市町村または都道府県レベルの広域地名**にとどめてください。「〇〇店で売ってる」のような店名の特定もしないでください（違和感があるため）。
+        6. **禁止事項**: 座標の数値をそのままユーザーへの返答に入れないでください。
+        7. **住所の省略（最重要）**: 解説文の中で場所を言うときは、**「大字」「字」「番地」「道路名」などの細かい住所は絶対に含めないでください。** 「都道府県＋市町村名」までで止めてください。
+           - ×: 福岡県筑後市大字前津室岡八女筑後バイパスの…
+           - ○: 福岡県筑後市の…
 
         【出力フォーマット (JSON)】
         \`\`\`json
         {
-            "itemName": "特定した店名・施設名・物体名",
-            "rarity": 1〜5の数値,
-            "description": "ネル先生による猫視点の解説（語尾はにゃ）",
-            "realDescription": "図鑑のような正確な豆知識（です・ます調）",
-            "speechText": "ネル先生のセリフ（『これは（itemName）だにゃ！』から始める）"
+            "itemName": "正式名称",
+            "rarity": 1, 
+            "description": "ネル先生の面白い解説",
+            "realDescription": "本当の解説",
+            "speechText": "『これは（itemName）だにゃ！（description）』"
         }
         \`\`\`
         `;
@@ -847,22 +881,34 @@ app.post('/identify-item', async (req, res) => {
         ]);
 
         const responseText = result.response.text();
+        
         let json;
         try {
             const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const start = cleanText.indexOf('{');
-            const end = cleanText.lastIndexOf('}');
-            json = JSON.parse(cleanText.substring(start, end + 1));
+            const firstBrace = cleanText.indexOf('{');
+            const lastBrace = cleanText.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace !== -1) {
+                json = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
+            } else {
+                throw new Error("JSON parse failed");
+            }
         } catch (e) {
-            console.error("JSON Parse Error:", responseText);
-            throw new Error("解析結果を読み取れませんでした。");
+            console.warn("JSON Parse Fallback (Item):", responseText);
+            let fallbackText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            json = {
+                itemName: "なぞの物体",
+                rarity: 1, // Fallback
+                description: fallbackText,
+                realDescription: "AIの解析結果を直接表示しています。",
+                speechText: fallbackText
+            };
         }
         
         res.json(json);
 
     } catch (error) {
         console.error("Identify Error:", error);
-        res.status(500).json({ error: "解析失敗", speechText: "ごめんにゃ、よく見えなかったにゃ…もう一回見せてにゃ？", itemName: null });
+        res.status(500).json({ error: "解析失敗", speechText: "よく見えなかったにゃ…もう一回見せてにゃ？", itemName: null });
     }
 });
 
