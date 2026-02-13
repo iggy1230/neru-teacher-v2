@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v410.0: 画像位置優先ロジック・完全版) ---
+// --- js/camera-service.js (v426.0: 分析制限＆セリフ調整版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -249,7 +249,6 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
     if(typeof window.updateNellMessage === 'function') { window.updateNellMessage("ん？何を見つけたのかにゃ…？", "thinking", false, true); }
 
     try {
-        // ★修正: providedLocation（画像EXIF由来）がある場合は、現在地の住所(address)を送らないようにする
         const addressToSend = providedLocation ? null : window.currentAddress;
 
         const res = await fetch('/identify-item', {
@@ -450,15 +449,138 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
 };
 
 window.startAnalysis = async function(b64) {
+    // ★制限追加: 前回の分析から30秒以内なら実行しない
+    const now = Date.now();
+    if (window.lastAnalysisTime && (now - window.lastAnalysisTime < 30000)) {
+         if(typeof window.updateNellMessage === 'function') {
+             window.updateNellMessage("ちょっと待ってにゃ、目が回っちゃうにゃ…少し休ませてにゃ。", "thinking", false, true);
+         }
+         // UIを戻す
+         document.getElementById('cropper-modal').classList.add('hidden'); 
+         document.getElementById('upload-controls').classList.remove('hidden'); 
+         return;
+    }
+    window.lastAnalysisTime = now;
+
     if (window.isAnalyzing) return;
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
-    window.isAnalyzing = true; document.getElementById('cropper-modal').classList.add('hidden'); document.getElementById('thinking-view').classList.remove('hidden'); document.getElementById('upload-controls').classList.add('hidden'); const backBtn = document.getElementById('main-back-btn'); if(backBtn) backBtn.classList.add('hidden'); try { window.sfxBunseki.currentTime = 0; window.sfxBunseki.loop = true; if(window.safePlay) window.safePlay(window.sfxBunseki); } catch(e){}
-    let p = 0; const timer = setInterval(() => { if (!window.isAnalyzing) { clearInterval(timer); return; } if (p < 30) p += 1; else if (p < 80) p += 0.4; else if (p < 95) p += 0.1; if(typeof window.updateProgress === 'function') window.updateProgress(p); }, 300);
-    const performAnalysisNarration = async () => { const msgs = [ { text: "じーっと見て、問題を書き写してるにゃ…", mood: "thinking" }, { text: "肉球がちょっとじゃまだにゃ…", mood: "thinking" }, { text: "ふむふむ…この問題、なかなか手強いにゃ…", mood: "thinking" }, { text: "今、ネル先生の天才的な頭脳で解いてるからにゃね…", mood: "thinking" }, { text: "この問題、どこかで見たことあるにゃ…えーっと…", mood: "thinking" }, { text: "しっぽの先まで集中して考え中だにゃ…", mood: "thinking" }, { text: "この問題は手強いにゃ…。でも大丈夫、ネル先生のピピピッ！と光るヒゲが、正解をバッチリ受信してるにゃ！", mood: "thinking" }, { text: "にゃるほど…だいたい分かってきたにゃ…", mood: "thinking" }, { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "thinking" } ]; for (const item of msgs) { if (!window.isAnalyzing) return; if(typeof window.updateNellMessage === 'function') await window.updateNellMessage(item.text, item.mood, false); if (!window.isAnalyzing) return; await new Promise(r => setTimeout(r, 2000)); } }; performAnalysisNarration();
-    try { const res = await fetch('/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: b64, mode: window.currentMode, grade: currentUser.grade, subject: window.currentSubject, name: currentUser.name }) }); if (!res.ok) throw new Error("Server Error"); const data = await res.json(); if (!data || !Array.isArray(data) || data.length === 0) throw new Error("データが空か、正しい形式ではありませんでした。"); window.transcribedProblems = data.map((prob, index) => { let studentArr = Array.isArray(prob.student_answer) ? prob.student_answer : (prob.student_answer ? [prob.student_answer] : []); let correctArr = Array.isArray(prob.correct_answer) ? prob.correct_answer : (prob.correct_answer ? [prob.correct_answer] : []); return { ...prob, id: index + 1, student_answer: studentArr, correct_answer: correctArr, status: (studentArr.length > 0 && studentArr[0] !== "") ? "answered" : "unanswered", currentHintLevel: 1, maxUnlockedHintLevel: 0 }; }); window.isAnalyzing = false; clearInterval(timer); if(typeof window.updateProgress === 'function') window.updateProgress(100); window.cleanupAnalysis(); if(window.safePlay) window.safePlay(window.sfxHirameku); setTimeout(() => { document.getElementById('thinking-view').classList.add('hidden'); const doneMsg = "読めたにゃ！"; if (window.currentMode === 'grade') { if(typeof window.showGradingView === 'function') window.showGradingView(true); if(typeof window.updateNellMessage === 'function') window.updateNellMessage(doneMsg, "happy", false).then(() => { if(typeof window.updateGradingMessage === 'function') setTimeout(window.updateGradingMessage, 1500); }); } else { if(typeof window.renderProblemSelection === 'function') window.renderProblemSelection(); if(typeof window.updateNellMessage === 'function') window.updateNellMessage(doneMsg, "happy", false); } if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') { if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening(); } }, 1500); } catch (err) { console.error("Analysis Error:", err); window.isAnalyzing = false; window.cleanupAnalysis(); clearInterval(timer); document.getElementById('thinking-view').classList.add('hidden'); document.getElementById('upload-controls').classList.remove('hidden'); if(backBtn) backBtn.classList.remove('hidden'); if(typeof window.updateNellMessage === 'function') window.updateNellMessage("うまく読めなかったにゃ…もう一度お願いにゃ！", "thinking", false); if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') { if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening(); } }
+    
+    window.isAnalyzing = true; 
+    document.getElementById('cropper-modal').classList.add('hidden'); 
+    document.getElementById('thinking-view').classList.remove('hidden'); 
+    document.getElementById('upload-controls').classList.add('hidden'); 
+    const backBtn = document.getElementById('main-back-btn'); 
+    if(backBtn) backBtn.classList.add('hidden'); 
+    
+    try { 
+        window.sfxBunseki.currentTime = 0; 
+        window.sfxBunseki.loop = true; 
+        if(window.safePlay) window.safePlay(window.sfxBunseki); 
+    } catch(e){}
+    
+    let p = 0; 
+    const timer = setInterval(() => { 
+        if (!window.isAnalyzing) { clearInterval(timer); return; } 
+        if (p < 30) p += 1; else if (p < 80) p += 0.4; else if (p < 95) p += 0.1; 
+        if(typeof window.updateProgress === 'function') window.updateProgress(p); 
+    }, 300);
+
+    // ★修正: 実況ループでセリフがかぶらないように待機時間を調整
+    const performAnalysisNarration = async () => { 
+        const msgs = [ 
+            { text: "じーっと見て、問題を書き写してるにゃ…", mood: "thinking" }, 
+            { text: "肉球がちょっとじゃまだにゃ…", mood: "thinking" }, 
+            { text: "ふむふむ…この問題、なかなか手強いにゃ…", mood: "thinking" }, 
+            { text: "今、ネル先生の天才的な頭脳で解いてるからにゃね…", mood: "thinking" }, 
+            { text: "この問題、どこかで見たことあるにゃ…えーっと…", mood: "thinking" }, 
+            { text: "しっぽの先まで集中して考え中だにゃ…", mood: "thinking" }, 
+            { text: "この問題は手強いにゃ…。でも大丈夫、ネル先生のピピピッ！と光るヒゲが、正解をバッチリ受信してるにゃ！", mood: "thinking" }, 
+            { text: "にゃるほど…だいたい分かってきたにゃ…", mood: "thinking" }, 
+            { text: "あとちょっとで、ネル先生の脳みそが『ピコーン！』って鳴るにゃ！", mood: "thinking" } 
+        ]; 
+        
+        for (const item of msgs) { 
+            if (!window.isAnalyzing) return; 
+            if(typeof window.updateNellMessage === 'function') {
+                // 音声再生（speak=true）
+                await window.updateNellMessage(item.text, item.mood, false, true);
+            }
+            if (!window.isAnalyzing) return; 
+            
+            // ★変更: 文字数に基づいて待機時間を計算 (最低3秒)
+            // 読み上げスピードに合わせて重ならないようにする
+            const waitTime = Math.max(3000, item.text.length * 250); 
+            await new Promise(r => setTimeout(r, waitTime)); 
+        } 
+    }; 
+    
+    performAnalysisNarration();
+
+    try { 
+        const res = await fetch('/analyze', { 
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' }, 
+            body: JSON.stringify({ image: b64, mode: window.currentMode, grade: currentUser.grade, subject: window.currentSubject, name: currentUser.name }) 
+        }); 
+        
+        if (!res.ok) throw new Error("Server Error"); 
+        const data = await res.json(); 
+        if (!data || !Array.isArray(data) || data.length === 0) throw new Error("データが空か、正しい形式ではありませんでした。"); 
+        
+        window.transcribedProblems = data.map((prob, index) => { 
+            let studentArr = Array.isArray(prob.student_answer) ? prob.student_answer : (prob.student_answer ? [prob.student_answer] : []); 
+            let correctArr = Array.isArray(prob.correct_answer) ? prob.correct_answer : (prob.correct_answer ? [prob.correct_answer] : []); 
+            return { ...prob, id: index + 1, student_answer: studentArr, correct_answer: correctArr, status: (studentArr.length > 0 && studentArr[0] !== "") ? "answered" : "unanswered", currentHintLevel: 1, maxUnlockedHintLevel: 0 }; 
+        }); 
+        
+        window.isAnalyzing = false; 
+        clearInterval(timer); 
+        if(typeof window.updateProgress === 'function') window.updateProgress(100); 
+        
+        window.cleanupAnalysis(); 
+        
+        if(window.safePlay) window.safePlay(window.sfxHirameku); 
+        
+        setTimeout(() => { 
+            document.getElementById('thinking-view').classList.add('hidden'); 
+            const doneMsg = "読めたにゃ！"; 
+            if (window.currentMode === 'grade') { 
+                if(typeof window.showGradingView === 'function') window.showGradingView(true); 
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage(doneMsg, "happy", false).then(() => { if(typeof window.updateGradingMessage === 'function') setTimeout(window.updateGradingMessage, 1500); }); 
+            } else { 
+                if(typeof window.renderProblemSelection === 'function') window.renderProblemSelection(); 
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage(doneMsg, "happy", false); 
+            } 
+            if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') { 
+                if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening(); 
+            } 
+        }, 1500); 
+    } catch (err) { 
+        console.error("Analysis Error:", err); 
+        window.isAnalyzing = false; 
+        window.cleanupAnalysis(); 
+        clearInterval(timer); 
+        document.getElementById('thinking-view').classList.add('hidden'); 
+        document.getElementById('upload-controls').classList.remove('hidden'); 
+        if(backBtn) backBtn.classList.remove('hidden'); 
+        if(typeof window.updateNellMessage === 'function') window.updateNellMessage("うまく読めなかったにゃ…もう一度お願いにゃ！", "thinking", false); 
+        if (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review') { 
+            if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening(); 
+        } 
+    }
 };
 
-window.cleanupAnalysis = function() { window.isAnalyzing = false; window.sfxBunseki.pause(); if(typeof window.analysisTimers !== 'undefined' && window.analysisTimers) { window.analysisTimers.forEach(t => clearTimeout(t)); window.analysisTimers = []; } };
+window.cleanupAnalysis = function() { 
+    window.isAnalyzing = false; 
+    window.sfxBunseki.pause(); 
+    // ★追加: 読み上げを強制停止
+    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+    
+    if(typeof window.analysisTimers !== 'undefined' && window.analysisTimers) { 
+        window.analysisTimers.forEach(t => clearTimeout(t)); 
+        window.analysisTimers = []; 
+    } 
+};
 
 window.captureAndSendLiveImage = function(context = 'main') {
     if (context === 'main') { if (window.currentMode === 'chat-free') context = 'free'; else if (window.activeChatContext === 'embedded') context = 'embedded'; else if (window.currentMode === 'simple-chat') context = 'simple'; }
