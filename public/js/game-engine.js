@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v429.0: クイズ全問新規・エラー時のみストック版) ---
+// --- js/game-engine.js (v430.0: クイズ完全新規優先版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -537,6 +537,66 @@ async function generateValidQuiz(genre, level, sessionId) {
          }
     } 
     return null;
+}
+
+// グローバルストックからクイズを取得する関数（フォールバック用）
+async function fetchQuizFromGlobalStock(genre, level) {
+    if (!db) return null;
+
+    const randomId = Math.floor(Math.random() * 100000000);
+    let quiz = null;
+
+    try {
+        // ジャンル指定がある場合
+        let queryRef = db.collection('public_quizzes');
+        
+        // 「全ジャンル」以外ならジャンルでフィルタ
+        if (genre !== "全ジャンル") {
+            queryRef = queryRef.where('genre', '==', genre);
+        }
+        
+        // レベルもフィルタ
+        queryRef = queryRef.where('level', '==', level);
+
+        // 1. random_id >= R の1件を取得
+        let snapshot = await queryRef.where('random_id', '>=', randomId).limit(1).get();
+
+        if (snapshot.empty) {
+            // 2. なければ random_id < R の1件を取得 (Wrap around)
+             if (genre !== "全ジャンル") {
+                // 再構築が必要
+                queryRef = db.collection('public_quizzes').where('genre', '==', genre).where('level', '==', level);
+             } else {
+                queryRef = db.collection('public_quizzes').where('level', '==', level);
+             }
+             
+             snapshot = await queryRef.where('random_id', '<', randomId).limit(1).get();
+        }
+
+        if (!snapshot.empty) {
+            const doc = snapshot.docs[0];
+            const data = doc.data();
+            
+            // 報告カウントチェック
+            if (data.bad_report_count >= 3) {
+                 console.log("[Quiz] Skipping bad quiz:", data.question);
+                 return null;
+            }
+
+            // 一応クライアント側で履歴重複チェック
+            const isDuplicate = quizState.history.some(h => h === data.answer);
+            const isDuplicateInQueue = quizState.questionQueue.some(q => q.question === data.question);
+            
+            if (!isDuplicate && !isDuplicateInQueue) {
+                // ★IDも持たせる（報告用）
+                quiz = { ...data, isStock: true, docId: doc.id };
+                console.log("[Quiz] Fetched from Global Stock:", quiz.question);
+            }
+        }
+    } catch(e) {
+        console.warn("[Quiz] Global Fetch Failed (Index missing?):", e);
+    }
+    return quiz;
 }
 
 // バックグラウンド生成ロジック
