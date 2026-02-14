@@ -22,9 +22,9 @@ app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
 // コスト削減のため、Gemini 2.0 Flash をメインに使用
-const MODEL_HOMEWORK = "gemini-2.5-flash";
-const MODEL_FAST = "gemini-2.5-flash"; 
-const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025";
+const MODEL_HOMEWORK = "gemini-2.0-flash";
+const MODEL_FAST = "gemini-2.0-flash"; 
+const MODEL_REALTIME = "gemini-2.0-flash-exp"; // Realtime API用
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -117,6 +117,20 @@ const GENRE_REFERENCES = {
     ]
 };
 
+// クイズのバラエティを増やすための「視点」リスト
+const QUIZ_PERSPECTIVES = [
+    "【視点: 名言・セリフ】キャラクターの決め台詞、口癖、または印象的な会話シーンから出題してください。",
+    "【視点: 数字・データ】身長、体重、年号、個数、威力など、具体的な『数字』に関する事実から出題してください。",
+    "【視点: 意外な事実】ファンなら知っているが一般にはあまり知られていない、意外な裏設定や豆知識から出題してください。",
+    "【視点: 名称の由来】名前の由来、技名の意味、地名の語源など『言葉の意味・由来』から出題してください。",
+    "【視点: 仲間外れ探し】選択肢の中で一つだけ性質やグループが違うものを選ぶ形式（例:『この中でタイプが違うのは？』）にしてください。",
+    "【視点: 時系列・順番】『この中で一番最初に起きた出来事は？』のように、時間の順番や進化の順番に関する事実から出題してください。",
+    "【視点: ビジュアル・特徴】『赤い帽子をかぶっているキャラは？』『右手に傷があるのは？』のように、見た目の特徴から出題してください。",
+    "【視点: 関係性】『〇〇の師匠は誰？』『〇〇のライバルは？』のように、キャラクター同士や国同士の関係性から出題してください。",
+    "【視点: 道具・アイテム】物語に登場する重要なアイテム、道具、武器の効果や名称について出題してください。",
+    "【視点: 場所・地名】物語の舞台となる場所、地名、建物の名前について出題してください。"
+];
+
 // クイズ検証関数 (Grounding)
 async function verifyQuiz(quizData, genre) {
     try {
@@ -185,6 +199,9 @@ app.post('/generate-quiz', async (req, res) => {
                 targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
             }
 
+            // ★視点をランダムに選択
+            const selectedPerspective = QUIZ_PERSPECTIVES[Math.floor(Math.random() * QUIZ_PERSPECTIVES.length)];
+
             const currentLevel = level || 1;
             let difficultyDesc = "";
             switch(parseInt(currentLevel)) {
@@ -214,16 +231,19 @@ app.post('/generate-quiz', async (req, res) => {
             あなたは「${targetGenre}」に詳しいクイズ作家です。
             以下の手順で、ファンが楽しめる4択クイズを1問作成してください。
 
+            **【今回のクイズのテーマ（切り口）】**
+            **${selectedPerspective}**
+
             ### 手順（思考プロセス）
             1. **[検索実行]**: まずGoogle検索を使い、作品の用語、キャラ、エピソードの正確な情報を確認してください。
                ${referenceInstructions}
             2. **[事実の抽出]**: 検索結果の中から、**「確実に正しいと断言できる一文」**を引用して、それをクイズの核にしてください。
                - **【重要: 禁止事項】**:
-                 - 出版年、連載開始日、掲載誌、巻数、作者の経歴などの「作品外データ（メタ情報）」は**出題禁止**です。
+                 - 出版年、連載開始日、掲載誌、巻数、作者の経歴などの「作品外データ（メタ情報）」は**出題禁止**です（「作者に関するクイズ」の指示がない限り）。
                  - あなたの記憶にある「〜だった気がする」という情報は絶対に使わないでください。**検索結果にない情報は存在しないものとして扱ってください。**
                  - 架空のキャラクター、架空の技名、存在しないエピソードの捏造は厳禁です。
                - **【推奨事項】**:
-                 - 作中のストーリー、キャラクターのセリフ、技の効果、モンスターの特徴、名シーンなど、物語の中身に関する事実を選んでください。
+                 - 指定された【今回のクイズのテーマ】に沿った内容を優先してください。
             3. **[問題作成]**: 抽出した事実を元に、問題文と正解を作成してください。
 
             ### 難易度: レベル${currentLevel}
@@ -793,7 +813,7 @@ app.post('/identify-item', async (req, res) => {
 
         let locationInfo = "";
         
-        // ★修正: クライアントから提供された住所（address）を絶対視する
+        // ★修正: 住所情報がある場合、それを絶対視する指示を追加
         if (address) {
             locationInfo = `
             【★最優先：場所の特定情報】
