@@ -1,4 +1,4 @@
-// --- js/camera-service.js (v432.0: クライアント側逆ジオコーディング実装版) ---
+// --- js/camera-service.js (v431.0: 詳細住所取得強化版) ---
 
 // ==========================================
 // プレビューカメラ制御 (共通)
@@ -45,7 +45,6 @@ window.stopPreviewCamera = function() {
     document.body.classList.remove('camera-active');
 
     if (window.previewStream) {
-        // ★最適化: トラックを完全に停止し、参照を切る
         window.previewStream.getTracks().forEach(t => {
             t.stop();
             t.enabled = false;
@@ -57,7 +56,7 @@ window.stopPreviewCamera = function() {
         if(v) {
             v.pause();
             v.srcObject = null;
-            v.load(); // ★重要: メモリ解放のためにload()を呼ぶ
+            v.load();
         }
     });
     ['live-chat-video-container', 'live-chat-video-container-embedded', 'live-chat-video-container-simple', 'live-chat-video-container-free'].forEach(cid => {
@@ -149,9 +148,10 @@ function getGpsFromExif(file) {
     });
 }
 
-// ★新規: 座標から住所文字列を取得する関数 (Nominatim API)
+// ★修正: 座標から詳細な住所文字列を取得する関数 (強化版)
 async function getAddressFromCoords(lat, lon) {
     try {
+        // addressdetails=1 で詳細情報を取得
         const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept_language=ja&zoom=18&addressdetails=1`;
         const res = await fetch(url);
         if (res.ok) {
@@ -159,21 +159,36 @@ async function getAddressFromCoords(lat, lon) {
             const addr = data.address;
             let fullAddress = "";
 
-            // 都道府県
+            // 1. 都道府県
             if (addr.province) fullAddress += addr.province;
             else if (addr.prefecture) fullAddress += addr.prefecture;
             
-            // 市区町村
+            // 2. 市区町村・郡
             if (addr.city) fullAddress += addr.city;
-            else if (addr.county) fullAddress += addr.county;
-            else if (addr.town) fullAddress += addr.town;
-            else if (addr.village) fullAddress += addr.village;
+            if (addr.county) fullAddress += addr.county;
+            if (addr.town) fullAddress += addr.town;
+            if (addr.village) fullAddress += addr.village;
             
-            // 町名など（詳しくは省略、市町村までで十分な場合が多い）
+            // 3. 区・町名・字 (より詳細な地域名)
             if (addr.ward) fullAddress += addr.ward;
+            if (addr.quarter) fullAddress += addr.quarter;
+            if (addr.neighbourhood) fullAddress += addr.neighbourhood;
+            if (addr.hamlet) fullAddress += addr.hamlet;
+            if (addr.suburb) fullAddress += addr.suburb;
+
+            // 4. 道路・番地
+            if (addr.road) fullAddress += ` ${addr.road}`;
+            if (addr.house_number) fullAddress += ` ${addr.house_number}`;
+
+            // 5. ★最重要: 建物名・施設名 (ピンポイント情報)
+            // Nominatimは施設名を amenity, shop, tourism, historic, building など様々なキーで返す
+            const specificLocation = addr.amenity || addr.shop || addr.tourism || addr.historic || addr.leisure || addr.building || addr.office;
             
-            // 例: 福岡県八女市
-            console.log("Resolved Address:", fullAddress);
+            if (specificLocation) {
+                fullAddress += ` (${specificLocation})`;
+            }
+            
+            console.log("Resolved Detailed Address:", fullAddress);
             return fullAddress;
         }
     } catch (e) {
@@ -274,7 +289,6 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
     }
     window.lastAnalysisTime = now;
 
-    // お宝図鑑モードでの常時対話はOFFにするが、他のモードなら停止
     if (typeof window.stopAlwaysOnListening === 'function') { window.stopAlwaysOnListening(); }
     
     if (window.initAudioContext) { window.initAudioContext().catch(e => console.warn("AudioContext init error:", e)); }
@@ -290,7 +304,7 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
     let addressToSend = null;
     let locationData = providedLocation;
     
-    // ★重要: 画像に位置情報があれば、クライアント側で住所文字列（〇〇市）に変換して確定させる
+    // ★重要: 画像に位置情報があれば、クライアント側で詳細な住所文字列（施設名含む）に変換して確定させる
     if (providedLocation && providedLocation.lat && providedLocation.lon) {
          // EXIFあり -> 逆ジオコーディングして住所を確定
          addressToSend = await getAddressFromCoords(providedLocation.lat, providedLocation.lon);
@@ -317,7 +331,7 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
             body: JSON.stringify({ 
                 image: base64Data, 
                 name: currentUser ? currentUser.name : "生徒", 
-                location: locationData, // 座標（補足用）
+                location: locationData, 
                 address: addressToSend  // ★確定した住所文字列（最優先）
             })
         });
