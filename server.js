@@ -793,7 +793,7 @@ app.post('/identify-item', async (req, res) => {
 
         let locationInfo = "";
         
-        // ★修正: 住所情報がある場合、それを絶対視する指示を追加
+        // ★修正: クライアントから提供された住所（address）を絶対視する
         if (address) {
             locationInfo = `
             【★最優先：場所の特定情報】
