@@ -1,4 +1,4 @@
-// --- js/audio/audio.js (v434.0: ネル先生音声API対応版) ---
+// --- js/audio/audio.js (v435.0: 音声速度1.3倍版) ---
 window.audioCtx = null;
 window.masterGainNode = null; // 全体の音量制御用
 // 【重要】現在再生中のAudioオブジェクトを保持する変数
@@ -71,6 +71,9 @@ async function speakNell(text, mood = "normal") {
     // 音量設定
     const vol = (typeof window.isMuted !== 'undefined' && window.isMuted) ? 0 : (window.appVolume || 0.5);
     audio.volume = vol;
+
+    // ★再生速度を1.3倍に設定
+    audio.playbackRate = 1.3;
 
     // イベントリスナー設定（口パク制御用）
     audio.onplay = () => {
