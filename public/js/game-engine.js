@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v430.0: クイズ完全新規優先版) ---
+// --- js/game-engine.js (v433.0: 中断時保存対応版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -867,10 +867,6 @@ window.nextQuiz = async function() {
     // 4. それでもダメならエラー or フォールバック（ここでストックを使用）
     if (!quizData) {
         // エラー時のフォールバックとしてのみストックを使用
-        // ストック取得関数を使用（server.js側でランダム取得ロジックが実装されていると仮定、またはローカルストック）
-        // ここでは前回定義した fetchQuizFromGlobalStock を使用するが、これはJS側にある
-        // fetchQuizFromGlobalStock 関数自体はこのファイルの上部で定義済み
-        
         console.log("API failed. Trying to fetch from global stock as fallback...");
         // サーバー連携関数がなければ空
         if (typeof fetchQuizFromGlobalStock === 'function') {
@@ -1178,14 +1174,12 @@ window.showQuizResult = function(isWin) {
     }
 };
 
-window.finishQuizSet = function() {
-    quizState.isFinished = true;
-    window.currentQuiz = null;
-    
-    // ★クイズ保存処理 (Global Stock & Local Stock)
+// ★新規: クイズデータを保存する関数（中断時も呼び出せるように分離）
+window.persistQuizSession = function() {
     if (currentUser && quizState.sessionQuizzes.length > 0) {
         if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
         
+        // 保存フラグが立っているものだけ抽出
         const quizzesToSave = quizState.sessionQuizzes.filter(q => q.shouldSave).map(q => {
             return {
                 question: q.question,
@@ -1200,22 +1194,37 @@ window.finishQuizSet = function() {
         
         if (quizzesToSave.length > 0) {
             quizzesToSave.forEach(newQ => {
+                // 重複チェック
                 const isDup = currentUser.savedQuizzes.some(oldQ => oldQ.question === newQ.question);
                 if (!isDup) {
                     currentUser.savedQuizzes.push(newQ);
                 }
                 
+                // グローバルストックへの保存（非同期）
                 if (typeof saveQuizToGlobalStock === 'function') {
                     saveQuizToGlobalStock(newQ);
                 }
             });
             
+            // 保存件数上限チェック
             if (currentUser.savedQuizzes.length > 100) {
                 currentUser.savedQuizzes = currentUser.savedQuizzes.slice(currentUser.savedQuizzes.length - 100);
             }
+            // 同期保存
             if(typeof window.saveAndSync === 'function') window.saveAndSync();
         }
+        
+        // 保存済みリストをクリア（重複保存防止）
+        quizState.sessionQuizzes = [];
     }
+};
+
+window.finishQuizSet = function() {
+    quizState.isFinished = true;
+    window.currentQuiz = null;
+    
+    // ★クイズ保存処理 (分離した関数を呼ぶ)
+    window.persistQuizSession();
 
     let msg = "";
     let mood = "normal";
