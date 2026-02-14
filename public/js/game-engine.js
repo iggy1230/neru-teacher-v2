@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v424.0: 神経衰弱重複排除版) ---
+// --- js/game-engine.js (v428.0: クイズ音声ボタン化・比率調整版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -608,12 +608,13 @@ async function fetchQuizFromGlobalStock(genre, level) {
 }
 
 // ハイブリッド方式のバックグラウンド生成ロジック
-// 最初の3問はストックから優先、残りはAPI生成
+// ★修正: ストック2問 + API3問 の比率にする
 async function backgroundQuizFetcher(genre, level, sessionId) {
-    console.log(`[Quiz] Start hybrid fetcher: Aiming for 3 Stock + 2 API`);
-
     const TOTAL_REQ = 5;
-    const STOCK_REQ = 3;
+    const STOCK_REQ = 2; // ★2問に変更
+    
+    console.log(`[Quiz] Start hybrid fetcher: Aiming for ${STOCK_REQ} Stock + ${TOTAL_REQ - STOCK_REQ} API`);
+
     let fetchedStockCount = 0;
 
     // 全5問になるまで補充し続ける
@@ -632,7 +633,7 @@ async function backgroundQuizFetcher(genre, level, sessionId) {
         let newQuiz = null;
         let source = "API";
 
-        // Phase 1: ストックから取得（最初の3問分）
+        // Phase 1: ストックから取得（最初の2問分）
         if (fetchedStockCount < STOCK_REQ) {
             newQuiz = await fetchQuizFromGlobalStock(genre, level);
             if (newQuiz) {
@@ -809,18 +810,15 @@ window.startQuizSet = async function(genre, level) {
     quizState.history = []; 
     quizState.sessionId = Date.now(); 
 
-    // ★追加: 1問目にストックを利用 (ローカル)
+    // ★ストック利用（ローカル）はそのまま活用
     if (currentUser && currentUser.savedQuizzes && currentUser.savedQuizzes.length > 0) {
-        // 現在のジャンルに合うものを探す
         const candidates = currentUser.savedQuizzes.filter(q => {
             if (genre === "全ジャンル") return true;
             return q.genre === genre || q.actual_genre === genre;
         });
         
         if (candidates.length > 0) {
-            // ランダムに1つ選ぶ
             const stockQuiz = candidates[Math.floor(Math.random() * candidates.length)];
-            // キューに追加 (API生成より先に消費される)
             quizState.questionQueue.push({ ...stockQuiz, isStock: true });
             console.log("[Quiz] Added 1 local stock quiz to queue:", stockQuiz.question);
         }
@@ -832,9 +830,10 @@ window.startQuizSet = async function(genre, level) {
     
     document.getElementById('quiz-genre-label').innerText = `${genre} Lv.${level}`;
 
-    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+    // ★削除: 常時聞き取りは廃止
+    // if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
 
-    // ★重要: 先行生成を開始（非同期で放置）
+    // 先行生成を開始（非同期で放置）
     backgroundQuizFetcher(genre, level, quizState.sessionId);
 
     // 1問目を表示へ
@@ -857,7 +856,9 @@ window.nextQuiz = async function() {
     const ansDisplay = document.getElementById('quiz-answer-display');
     const micStatus = document.getElementById('quiz-mic-status');
     const optionsContainer = document.getElementById('quiz-options-container');
+    const micBtn = document.getElementById('quiz-mic-btn');
 
+    // UI初期化
     qText.innerText = "問題を一生懸命作って、チェックしてるにゃ…";
     window.updateNellMessage("問題を一生懸命作って、チェックしてるにゃ…", "thinking");
     micStatus.innerText = "";
@@ -866,13 +867,20 @@ window.nextQuiz = async function() {
     nextBtn.classList.add('hidden');
     optionsContainer.innerHTML = ""; 
     
+    // ★マイクボタンの状態リセット
+    if(micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
+        micBtn.style.background = "#4db6ac";
+    }
+    
     let quizData = null;
     
     // 1. まずキューを確認
     if (quizState.questionQueue.length > 0) {
         quizData = quizState.questionQueue.shift();
     } else {
-        // 2. キューが空なら、少し待ってみる (最大10秒)
+        // 2. キューが空なら待機
         let waitCount = 0;
         const MAX_WAIT = 10; 
         
@@ -885,23 +893,22 @@ window.nextQuiz = async function() {
             await new Promise(r => setTimeout(r, 1000));
             waitCount++;
             
-            // 待機中メッセージ更新
             if (waitCount === 5) {
                  window.updateNellMessage("うーん、まだ確認中だにゃ…もうちょっと待ってにゃ！", "thinking");
             }
         }
     }
 
-    // 3. それでもダメなら、その場で直接サーバーにリクエスト (緊急生成)
+    // 3. 緊急生成 (API)
     if (!quizData) {
         console.log("Queue empty. Fetching directly...");
         window.updateNellMessage("お待たせ！今すぐ持ってくるにゃ！", "excited");
         quizData = await generateValidQuiz(quizState.genre, quizState.level, currentSessionId);
     }
     
-    // 4. それでもダメなら、エラー表示 & リトライUIを表示
+    // 4. それでもダメならエラー or フォールバック
     if (!quizData) {
-        // エラー時のストック利用 (ランダム) - ジャンルフィルタリング有り
+        // フォールバック処理 (省略、既存通り)
         let candidates = [];
         if (currentUser && currentUser.savedQuizzes && currentUser.savedQuizzes.length > 0) {
              candidates = currentUser.savedQuizzes.filter(q => {
@@ -916,17 +923,14 @@ window.nextQuiz = async function() {
             quizData = { ...stockQuiz, isFallback: true };
             window.updateNellMessage("電波が悪いから、思い出の中から出すにゃ！", "excited");
         } else {
-            // ストックも無い場合の完全なエラー
+            // エラー表示
             qText.innerText = "ごめんにゃ、問題が作れなかったにゃ…。";
             window.updateNellMessage("ごめんにゃ、問題が作れなかったにゃ…。", "sad");
-            
-            optionsContainer.innerHTML = "";
             
             const retryBtn = document.createElement('button');
             retryBtn.className = "main-btn orange-btn";
             retryBtn.innerText = "もう一度トライ！";
             retryBtn.onclick = () => {
-                // インデックスを戻して再度 nextQuiz を呼ぶ（実質リトライ）
                 quizState.currentQuestionIndex--; 
                 window.nextQuiz();
             };
@@ -949,8 +953,6 @@ window.nextQuiz = async function() {
         quizState.history.push(quizData.answer);
         if (quizState.history.length > 10) quizState.history.shift(); 
         
-        // ★保存用リストに追加（デフォルトは保存ON）
-        // ただし、既にストック由来（isStock/isFallback）の場合は重複追加しないようにする
         if (!quizData.isStock && !quizData.isFallback) {
             quizState.sessionQuizzes.push({ ...quizData, shouldSave: true });
         }
@@ -960,7 +962,6 @@ window.nextQuiz = async function() {
         
         qText.innerText = quizData.question;
         
-        // 作者表示
         const authorDiv = document.createElement('div');
         authorDiv.className = "quiz-author-badge";
         if (quizData.isStock && quizData.creator_name) {
@@ -995,15 +996,68 @@ window.nextQuiz = async function() {
     }
 };
 
+// ★新規: 音声回答ボタンの処理
+window.startQuizVoiceInput = function() {
+    const micBtn = document.getElementById('quiz-mic-btn');
+    const status = document.getElementById('quiz-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = true;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
+        micBtn.style.background = "#ff5252";
+    }
+    
+    if (status) status.innerText = "お話してにゃ！";
+    
+    // 音声読み上げを停止
+    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+
+    // ワンショット認識を開始
+    if (typeof window.startOneShotRecognition === 'function') {
+        window.startOneShotRecognition(
+            (transcript) => {
+                // 結果が得られたら判定へ
+                const answered = window.checkQuizAnswer(transcript, false);
+                if (!answered) {
+                    // 不正解でも認識は終了しているのでボタンを戻す
+                    window.stopQuizVoiceInput(true);
+                }
+            },
+            () => {
+                // 終了時（タイムアウトやエラー）
+                window.stopQuizVoiceInput();
+            }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopQuizVoiceInput();
+    }
+};
+
+window.stopQuizVoiceInput = function(keepStatus = false) {
+    const micBtn = document.getElementById('quiz-mic-btn');
+    const status = document.getElementById('quiz-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
+        micBtn.style.background = "#4db6ac";
+    }
+    
+    if (status && !keepStatus) {
+        status.innerText = "";
+    }
+};
+
 window.checkQuizAnswer = function(userAnswer, isButton = false) {
     if (!window.currentQuiz || window.currentMode !== 'quiz') return false; 
     if (!document.getElementById('quiz-answer-display').classList.contains('hidden')) return false;
 
     const correct = window.currentQuiz.answer;
-    const accepted = window.currentQuiz.accepted_answers || [];
     
-    const buttons = document.querySelectorAll('.quiz-option-btn');
+    // ボタンの無効化（ボタン回答時のみ）
     if (isButton) {
+        const buttons = document.querySelectorAll('.quiz-option-btn');
         buttons.forEach(b => b.disabled = true);
     }
 
@@ -1033,23 +1087,33 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
         window.updateNellMessage(`ピンポン！正解だにゃ！答えは「${correct}」！`, "excited", false, true);
         quizState.score += 20; 
         
+        const buttons = document.querySelectorAll('.quiz-option-btn');
         buttons.forEach(b => {
             if (b.innerText === correct) b.classList.add('quiz-correct');
         });
 
         window.showQuizResult(true);
+        // 正解したらマイクボタンなどは隠すか無効化しても良いが、showQuizResultで制御
         return true; 
     } else {
+        // ボタン回答で不正解なら即終了
         if (isButton) {
             if(window.safePlay) window.safePlay(window.sfxBatu);
             window.updateNellMessage(`残念！正解は「${correct}」だったにゃ。`, "gentle", false, true);
             
+            const buttons = document.querySelectorAll('.quiz-option-btn');
             buttons.forEach(b => {
                 if (b.innerText === cleanUserAnswer) b.classList.add('quiz-wrong');
                 if (b.innerText === correct) b.classList.add('quiz-correct');
             });
             window.showQuizResult(false);
             return true;
+        } else {
+            // 音声回答で不正解の場合は、「違うにゃ」と言って継続させる？
+            // ここでは一発勝負とせず、何も起きなかったことにする（再挑戦可）
+            // あるいはヒントを出すなど。
+            // 今回は「不正解」判定はせず、マッチしなかったら何もしない（聞き間違いの可能性が高いので）
+            return false;
         }
     }
     return false; 
@@ -1072,6 +1136,10 @@ window.showQuizResult = function(isWin) {
     const nextBtn = document.getElementById('next-quiz-btn');
     const ansDisplay = document.getElementById('quiz-answer-display');
     const ansText = document.getElementById('quiz-answer-text');
+    const micBtn = document.getElementById('quiz-mic-btn');
+
+    // マイクボタンを隠す
+    if(micBtn) micBtn.parentElement.style.display = 'none';
 
     const btns = controls.querySelectorAll('button:not(#next-quiz-btn)');
     btns.forEach(b => b.classList.remove('hidden')); 
@@ -1237,6 +1305,10 @@ window.finishQuizSet = function() {
     if(oldReportBtn) oldReportBtn.remove();
     const oldLikeBtn = document.getElementById('quiz-like-btn');
     if(oldLikeBtn) oldLikeBtn.remove();
+
+    // マイクエリアを表示に戻す（非表示にしていた場合）
+    const micArea = document.getElementById('quiz-mic-area');
+    if (micArea) micArea.style.display = 'block';
 
     window.showQuizGame();
 };
