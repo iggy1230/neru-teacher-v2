@@ -1,4 +1,4 @@
-// --- js/analyze.js (v437.0: 常時対話廃止＆ボタン制御版) ---
+// --- js/analyze.js (v438.0: 個別指導音声ボタン追加版) ---
 // 音声機能 -> voice-service.js
 // カメラ・解析機能 -> camera-service.js
 // ゲーム機能 -> game-engine.js
@@ -144,8 +144,9 @@ window.selectMode = function(m) {
         if(miniKarikari) miniKarikari.classList.remove('hidden');
         if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
         
-        // ★マイクボタンの状態リセット
+        // マイクボタンの状態リセット
         window.stopEmbeddedVoiceInput();
+        window.stopSimpleVoiceInput();
         
         if (m === 'chat') { 
             document.getElementById('chat-view').classList.remove('hidden'); 
@@ -190,7 +191,7 @@ window.selectMode = function(m) {
     }
 };
 
-// ★新規: 宿題チャット用音声入力スタート
+// 宿題チャット用音声入力 (embedded)
 window.startEmbeddedVoiceInput = function() {
     const micBtn = document.getElementById('embedded-mic-btn');
     const status = document.getElementById('embedded-mic-status');
@@ -232,6 +233,56 @@ window.startEmbeddedVoiceInput = function() {
 window.stopEmbeddedVoiceInput = function(keepStatus = false) {
     const micBtn = document.getElementById('embedded-mic-btn');
     const status = document.getElementById('embedded-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で質問';
+        micBtn.style.background = "#4db6ac";
+    }
+    
+    if (status && !keepStatus) {
+        status.innerText = "";
+    }
+};
+
+// ★新規: 個別指導用音声入力 (simple)
+window.startSimpleVoiceInput = function() {
+    const micBtn = document.getElementById('simple-mic-btn');
+    const status = document.getElementById('simple-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = true;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
+        micBtn.style.background = "#ff5252";
+    }
+    
+    if (status) status.innerText = "お話してにゃ！";
+    
+    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+
+    if (typeof window.startOneShotRecognition === 'function') {
+        window.startOneShotRecognition(
+            (transcript) => {
+                if (transcript && transcript.trim() !== "") {
+                     const input = document.getElementById('simple-text-input');
+                     if (input) input.value = transcript;
+                     window.sendSimpleText();
+                }
+                window.stopSimpleVoiceInput(true);
+            },
+            () => {
+                window.stopSimpleVoiceInput();
+            }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopSimpleVoiceInput();
+    }
+};
+
+window.stopSimpleVoiceInput = function(keepStatus = false) {
+    const micBtn = document.getElementById('simple-mic-btn');
+    const status = document.getElementById('simple-mic-status');
     
     if (micBtn) {
         micBtn.disabled = false;
