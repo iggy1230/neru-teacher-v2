@@ -1,10 +1,10 @@
-// --- js/analyze.js (v439.0: 連打防止 & 宿題判定報酬制限 完全版) ---
+// --- js/analyze.js (v440.0: 連打防止 & 宿題判定報酬制限 完全版) ---
 
 // グローバル変数
 window.currentLocation = null;
 window.currentAddress = null; // 住所文字列
 window.locationWatchId = null;
-window.isHomeworkDetected = false; // ★新規: 宿題判定フラグ
+window.isHomeworkDetected = false; // ★新規: 解析画像が宿題かどうかのフラグ
 window.lastAnalysisTime = 0;
 
 // 住所特定ヘルパー (OpenStreetMap Nominatim API使用)
@@ -501,11 +501,20 @@ function createProblemItem(p, mode) {
 }
 
 window.showGradingView = function(silent = false) { 
-    document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.remove('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); 
-    const container = document.getElementById('problem-list-grade'); container.innerHTML = ""; 
+    document.getElementById('problem-selection-view').classList.add('hidden'); 
+    document.getElementById('final-view').classList.remove('hidden'); 
+    document.getElementById('grade-sheet-container').classList.remove('hidden'); 
+    const container = document.getElementById('problem-list-grade'); 
+    container.innerHTML = ""; 
     window.transcribedProblems.forEach(p => { container.appendChild(createProblemItem(p, 'grade')); }); 
-    const btnDiv = document.createElement('div'); btnDiv.style.textAlign = "center"; btnDiv.style.marginTop = "20px"; btnDiv.innerHTML = `<button onclick="window.finishGrading(this)" class="main-btn orange-btn">💯 採点おわり！</button>`; container.appendChild(btnDiv); 
-    if (!silent) { window.updateGradingMessage(); } 
+    const btnDiv = document.createElement('div'); btnDiv.style.textAlign = "center"; btnDiv.style.marginTop = "20px"; 
+    btnDiv.innerHTML = `<button onclick="window.finishGrading(this)" class="main-btn orange-btn">💯 採点おわり！</button>`; 
+    container.appendChild(btnDiv); 
+    if (!silent) {
+        let correctCount = 0;
+        window.transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; });
+        window.updateNellMessage(`${window.transcribedProblems.length}問中、${correctCount}問正解だにゃ！`, "happy");
+    } 
 };
 
 window.renderProblemSelection = function() { 
@@ -513,7 +522,10 @@ window.renderProblemSelection = function() {
     const l = document.getElementById('transcribed-problem-list'); l.innerHTML = ""; 
     window.transcribedProblems.forEach(p => { l.appendChild(createProblemItem(p, 'explain')); }); 
     const btn = document.querySelector('#problem-selection-view button.orange-btn'); 
-    if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
+    if (btn) { 
+        btn.disabled = false; 
+        btn.innerText = "✨ ぜんぶわかったにゃ！"; 
+    } 
 };
 
 window.normalizeAnswer = function(str) { if (!str) return ""; let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; };
@@ -717,7 +729,7 @@ window.initCustomCropper = function() {
     const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); el.onmousedown = (e) => { e.preventDefault(); window.activeHandle = idx; }; el.ontouchstart = (e) => { e.preventDefault(); window.activeHandle = idx; }; }); 
     const move = (e) => { if (window.activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let relX = (clientX - rect.left) / rect.width; let relY = (clientY - rect.top) / rect.height; window.cropPoints[window.activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; window.updateCropUI(canvas); }; 
     const end = () => { window.activeHandle = -1; }; window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end; 
-    document.getElementById('cropper-ok-btn').onclick = () => { modal.classList.add('hidden'); const croppedBase64 = window.performPerspectiveCrop(canvas, window.cropPoints); window.startAnalysis(croppedBase64); }; 
+    document.getElementById('cropper-ok-btn').onclick = () => { if (window.sfxHirameku) { window.safePlay(window.sfxHirameku); } modal.classList.add('hidden'); const croppedBase64 = window.performPerspectiveCrop(canvas, window.cropPoints); window.startAnalysis(croppedBase64); }; 
 };
 
 window.updateCropUI = function(canvas) { 
@@ -730,14 +742,38 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
 
 window.startAnalysis = async function(b64) {
     const now = Date.now();
-    if (window.lastAnalysisTime && (now - window.lastAnalysisTime < 15000)) { window.updateNellMessage("ちょっと待ってにゃ、目が回っちゃうにゃ…。", "thinking"); return; }
+    if (window.lastAnalysisTime && (now - window.lastAnalysisTime < 15000)) { 
+        window.updateNellMessage("ちょっと待ってにゃ、目が回っちゃうにゃ…。", "thinking"); 
+        return; 
+    }
     window.lastAnalysisTime = now;
     window.isAnalyzing = true; 
-    window.isHomeworkDetected = false; // フラグリセット
+    window.isHomeworkDetected = false; 
     
     document.getElementById('cropper-modal').classList.add('hidden'); 
     document.getElementById('thinking-view').classList.remove('hidden');
     
+    // 分析実況演出
+    const msgs = [
+        "じーっと見て、問題を書き写してるにゃ…",
+        "肉球がちょっとじゃまだにゃ…",
+        "ふむふむ…この問題、なかなか手強いにゃ…",
+        "今、ネル先生の天才的な頭脳で解いてるからにゃね…"
+    ];
+    let msgIdx = 0;
+    const interval = setInterval(() => {
+        if (!window.isAnalyzing) { clearInterval(interval); return; }
+        window.updateNellMessage(msgs[msgIdx % msgs.length], "thinking", false, true);
+        msgIdx++;
+    }, 4000);
+
+    let p = 0;
+    const pInterval = setInterval(() => {
+        if (!window.isAnalyzing) { clearInterval(pInterval); return; }
+        if (p < 90) p += Math.random() * 5;
+        window.updateProgress(p);
+    }, 500);
+
     try {
         const res = await fetch('/analyze', { 
             method: 'POST', 
@@ -757,16 +793,31 @@ window.startAnalysis = async function(b64) {
         window.isHomeworkDetected = data.some(p => p.is_homework === true);
         console.log("Homework Detection Result:", window.isHomeworkDetected);
 
-        window.transcribedProblems = data.map((p, i) => ({ ...p, id: i + 1, maxUnlockedHintLevel: 0 }));
+        window.transcribedProblems = data.map((p, i) => ({ 
+            ...p, 
+            id: i + 1, 
+            maxUnlockedHintLevel: 0 
+        }));
+
         window.isAnalyzing = false;
-        document.getElementById('thinking-view').classList.add('hidden');
-        if (window.currentMode === 'grade') window.showGradingView(); else window.renderProblemSelection();
-        window.updateNellMessage("読めたにゃ！", "happy");
+        clearInterval(interval);
+        clearInterval(pInterval);
+        window.updateProgress(100);
+
+        setTimeout(() => {
+            document.getElementById('thinking-view').classList.add('hidden');
+            if (window.currentMode === 'grade') window.showGradingView(); 
+            else window.renderProblemSelection();
+            window.updateNellMessage("読めたにゃ！", "happy");
+        }, 500);
+
     } catch (err) { 
         window.isAnalyzing = false; 
+        clearInterval(interval);
+        clearInterval(pInterval);
         document.getElementById('thinking-view').classList.add('hidden'); 
         document.getElementById('upload-controls').classList.remove('hidden');
-        window.updateNellMessage("うまく読めなかったにゃ…。", "thinking"); 
+        window.updateNellMessage("うまく読めなかったにゃ…もう一回お願いにゃ！", "thinking"); 
     }
 };
 
@@ -777,4 +828,28 @@ window.processImageForAI = function(sourceCanvas) {
     const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; 
     const ctx = canvas.getContext('2d'); ctx.drawImage(sourceCanvas, 0, 0, w, h); 
     return canvas.toDataURL('image/jpeg', QUALITY);
+};
+
+// ==========================================
+// 5. お宝図鑑用・会話画像送信
+// ==========================================
+
+window.sendImageToChatAPI = async function(base64Data, context) {
+    try {
+        window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
+        const res = await fetch('/chat-dialogue', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                image: base64Data, 
+                text: "この写真を解説して", 
+                name: currentUser ? currentUser.name : "生徒", 
+                history: window.chatSessionHistory 
+            })
+        });
+        const data = await res.json();
+        const speechText = data.speech || data.reply || "教えてあげるにゃ！";
+        window.updateNellMessage(speechText, "happy", true, true);
+    } catch(e) {
+        console.error("HTTP Image Error:", e);
+    }
 };
