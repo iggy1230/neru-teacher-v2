@@ -1,4 +1,4 @@
-// --- js/analyze.js (v448.0: クロップ不具合修正 & 図鑑読み上げ修正完全版) ---
+// --- js/analyze.js (v449.0: クロップ座標ズレ修正完全版) ---
 
 // グローバル変数
 window.currentLocation = null;
@@ -296,19 +296,6 @@ window.startMouthAnimation = function() {
     }, 150);
 };
 window.startMouthAnimation();
-
-window.addEventListener('DOMContentLoaded', () => {
-    if(typeof window.startLocationWatch === 'function') {
-        window.startLocationWatch();
-    }
-
-    const camIn = document.getElementById('hw-input-camera'); 
-    const albIn = document.getElementById('hw-input-album'); 
-    if(camIn) camIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
-    if(albIn) albIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
-    const startCamBtn = document.getElementById('start-webcam-btn');
-    if (startCamBtn && window.startHomeworkWebcam) startCamBtn.onclick = window.startHomeworkWebcam;
-});
 
 window.saveToNellMemory = function(role, text) {
     if (!currentUser || !currentUser.id) return;
@@ -638,8 +625,8 @@ window.backToProblemSelection = function() {
     document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); 
     if (window.currentMode === 'grade') window.showGradingView(); else { window.renderProblemSelection(); window.updateNellMessage("他も見るにゃ？", "normal", false); } 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; } 
+    if (window.selectedProblem && window.selectedProblem.id) { setTimeout(() => { const targetId = `grade-item-${window.selectedProblem.id}`; const targetElement = document.getElementById(targetId); if (targetElement) { targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' }); const originalBg = targetElement.style.backgroundColor; targetElement.style.transition = "background-color 0.3s"; targetElement.style.backgroundColor = "#fff9c4"; setTimeout(() => { targetElement.style.backgroundColor = originalBg; }, 800); } }, 100); }
 };
-
 window.pressThanks = function() { window.backToProblemSelection(); };
 
 // ★修正: 連打防止 & 宿題判定報酬制限 & ロビー遷移修正
@@ -941,7 +928,7 @@ window.performPerspectiveCrop = function(sourceCanvas, points) {
 
 window.startAnalysis = async function(b64) {
     const now = Date.now();
-    if (window.lastAnalysisTime && (now - window.lastAnalysisTime < 5000)) { // 制限緩和
+    if (window.lastAnalysisTime && (now - window.lastAnalysisTime < 15000)) { 
         window.updateNellMessage("ちょっと待ってにゃ、目が回っちゃうにゃ…。", "thinking"); 
         return; 
     }
@@ -989,7 +976,7 @@ window.startAnalysis = async function(b64) {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
-        // ★宿題フラグの取得
+        // ★宿題フラグの取得 (全問題のいずれかが宿題であればtrue)
         window.isHomeworkDetected = data.some(p => p.is_homework === true);
         console.log("Homework Detection Result:", window.isHomeworkDetected);
 
