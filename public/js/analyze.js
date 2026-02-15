@@ -1,10 +1,10 @@
-// --- js/analyze.js (v442.0: 連打防止 & 宿題判定報酬制限 完全版) ---
+// --- js/analyze.js (v443.0: 連打防止 & 宿題分析報酬廃止版) ---
 
 // グローバル変数
 window.currentLocation = null;
 window.currentAddress = null; // 住所文字列
 window.locationWatchId = null;
-window.isHomeworkDetected = false; // ★新規: 解析画像が宿題かどうかのフラグ
+window.isHomeworkDetected = false; // 解析画像が宿題かどうかのフラグ
 window.lastAnalysisTime = 0;
 
 // 住所特定ヘルパー (OpenStreetMap Nominatim API使用)
@@ -17,6 +17,7 @@ window.fetchAddressFromCoords = async function(lat, lon) {
             const addr = data.address;
             
             let fullAddress = "";
+
             const appendIfNew = (str) => {
                 if (str && !fullAddress.includes(str)) {
                     fullAddress += str;
@@ -172,7 +173,6 @@ window.selectMode = function(m) {
     }
 };
 
-// 宿題チャット用音声入力
 window.startEmbeddedVoiceInput = function() {
     const micBtn = document.getElementById('embedded-mic-btn');
     const status = document.getElementById('embedded-mic-status');
@@ -592,21 +592,11 @@ window.pressThanks = function() { window.backToProblemSelection(); };
 window.finishGrading = async function(btnElement) { 
     if(!btnElement || btnElement.disabled) return; 
     btnElement.disabled = true; 
-    btnElement.innerText = "送信中にゃ...";
+    btnElement.innerText = "おつかれさま！";
 
-    if (currentUser) { 
-        // 宿題判定をチェック
-        if (window.isHomeworkDetected) {
-            currentUser.karikari += 100; 
-            if(typeof saveAndSync === 'function') saveAndSync(); 
-            window.updateMiniKarikari(); 
-            window.showKarikariEffect(100); 
-            await window.updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited", false); 
-        } else {
-            // 宿題でない場合は褒めるだけ
-            await window.updateNellMessage("面白い写真を見せてくれてありがとうにゃ！次は宿題も見せてにゃ！", "happy", false);
-        }
-    } 
+    // カリカリ付与は行わず、褒めるだけ
+    await window.updateNellMessage("採点おつかれさまにゃ！しっかり見直しできてえらいにゃ！", "happy", false);
+    
     setTimeout(() => { if(typeof window.backToLobby === 'function') window.backToLobby(true); }, 3000); 
 };
 
@@ -616,17 +606,9 @@ window.pressAllSolved = async function(btnElement) {
     btnElement.disabled = true; 
     btnElement.innerText = "すごい！";
 
-    if (currentUser) { 
-        if (window.isHomeworkDetected) {
-            currentUser.karikari += 100; 
-            if(typeof saveAndSync === 'function') saveAndSync(); 
-            window.showKarikariEffect(100); 
-            window.updateMiniKarikari(); 
-            await window.updateNellMessage("全部わかったなんてすごいにゃ！カリカリ100個あげるにゃ！", "excited", false);
-        } else {
-            await window.updateNellMessage("物知りだにゃ〜！また色んなものを見せてにゃ！", "happy", false);
-        }
-    } 
+    // カリカリ付与は行わず、褒めるだけ
+    await window.updateNellMessage("全部わかったにゃ？すごいにゃ！その調子だにゃ！", "happy", false);
+    
     setTimeout(() => { if(typeof window.backToLobby === 'function') window.backToLobby(true); }, 3000);
 };
 
