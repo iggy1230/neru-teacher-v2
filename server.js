@@ -817,6 +817,7 @@ app.post('/identify-item', async (req, res) => {
 
         let locationInfo = "";
         
+        // ★修正: 住所情報がある場合、それを絶対視する指示を追加
         if (address) {
             locationInfo = `
             【★最優先：場所の特定情報】
@@ -826,9 +827,10 @@ app.post('/identify-item', async (req, res) => {
             1. **提供された住所「${address}」を絶対的な正解として扱ってください。**
             2. たとえ画像の見た目が、有名な観光地（例：熊本城、東京タワー）や別の場所に似ていても、**住所「${address}」と異なる場合は、視覚情報を無視してください。**
             3. 画像に写っている物体や施設は、**必ず住所「${address}」の中に実在するもの**として特定してください。
-            4. Google検索を行う際も、「${address} 観光」「${address} 公園」「${address} 店」などのキーワードを使って、その住所内での負荷を探してください。
+            4. Google検索を行う際も、「${address} 観光」「${address} 公園」「${address} 店」などのキーワードを使って、その住所内での候補を探してください。
             `;
         } else if (location && location.lat && location.lon) {
+             // 住所文字列がなく、座標のみの場合 (基本的にはありえないが念のため)
             locationInfo = `
             【位置情報】
             GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
@@ -885,7 +887,8 @@ app.post('/identify-item', async (req, res) => {
         ]);
 
         const responseText = result.response.text();
-        
+        console.log("Raw AI Response:", responseText); // ログ出力
+
         let json;
         try {
             const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -897,14 +900,14 @@ app.post('/identify-item', async (req, res) => {
                 throw new Error("JSON parse failed");
             }
         } catch (e) {
-            console.warn("JSON Parse Fallback (Item):", responseText);
-            let fallbackText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            console.error("JSON Parse Error in identify-item:", e);
+            // フォールバック: エラーでクライアントを落とさない
             json = {
                 itemName: "なぞの物体",
                 rarity: 1, 
-                description: fallbackText,
-                realDescription: "AIの解析結果を直接表示しています。",
-                speechText: fallbackText
+                description: "よくわからなかったにゃ…",
+                realDescription: "AIの解析に失敗しました。",
+                speechText: "よくわからなかったにゃ…"
             };
         }
         
@@ -1068,6 +1071,7 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
+                        // MODEL_REALTIME を使用
                         model: `models/${MODEL_REALTIME}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
@@ -1119,6 +1123,7 @@ wss.on('connection', async (clientWs, req) => {
 
             geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
             
+            // Gemini側からの切断を検知
             geminiWs.on('close', (code, reason) => {
                 console.log(`Gemini WS Closed: ${code} ${reason}`);
                 if (clientWs.readyState === WebSocket.OPEN) {
