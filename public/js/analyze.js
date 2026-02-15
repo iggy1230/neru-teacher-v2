@@ -1,4 +1,4 @@
-// --- js/analyze.js (v447.0: 宿題分析復旧 & 図鑑同期修正 & 報酬実装版) ---
+// --- js/analyze.js (v448.0: クロップ不具合修正 & 図鑑読み上げ修正完全版) ---
 
 // グローバル変数
 window.currentLocation = null;
@@ -6,6 +6,10 @@ window.currentAddress = null; // 住所文字列
 window.locationWatchId = null;
 window.isHomeworkDetected = false; // 解析画像が宿題かどうかのフラグ
 window.lastAnalysisTime = 0;
+// 画像処理用変数
+window.cropImg = null;
+window.cropPoints = [];
+window.activeHandle = -1;
 
 // 住所特定ヘルパー (OpenStreetMap Nominatim API使用)
 window.fetchAddressFromCoords = async function(lat, lon) {
@@ -174,71 +178,104 @@ window.selectMode = function(m) {
     }
 };
 
-// 宿題チャット用音声入力
+// 宿題チャット用音声入力 (embedded)
 window.startEmbeddedVoiceInput = function() {
     const micBtn = document.getElementById('embedded-mic-btn');
     const status = document.getElementById('embedded-mic-status');
+    
     if (micBtn) {
         micBtn.disabled = true;
         micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
         micBtn.style.background = "#ff5252";
     }
+    
     if (status) status.innerText = "お話してにゃ！";
+    
     if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+
     if (typeof window.startOneShotRecognition === 'function') {
-        window.startOneShotRecognition((transcript) => {
+        window.startOneShotRecognition(
+            (transcript) => {
                 if (transcript && transcript.trim() !== "") {
                      const input = document.getElementById('embedded-text-input');
                      if (input) input.value = transcript;
                      window.sendEmbeddedText();
                 }
                 window.stopEmbeddedVoiceInput(true);
-            }, () => window.stopEmbeddedVoiceInput());
+            },
+            () => {
+                window.stopEmbeddedVoiceInput();
+            }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopEmbeddedVoiceInput();
     }
 };
 
 window.stopEmbeddedVoiceInput = function(keepStatus = false) {
     const micBtn = document.getElementById('embedded-mic-btn');
     const status = document.getElementById('embedded-mic-status');
+    
     if (micBtn) {
         micBtn.disabled = false;
         micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で質問';
         micBtn.style.background = "#4db6ac";
     }
-    if (status && !keepStatus) status.innerText = "";
+    
+    if (status && !keepStatus) {
+        status.innerText = "";
+    }
 };
 
+// 個別指導用音声入力 (simple)
 window.startSimpleVoiceInput = function() {
     const micBtn = document.getElementById('simple-mic-btn');
     const status = document.getElementById('simple-mic-status');
+    
     if (micBtn) {
         micBtn.disabled = true;
         micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
         micBtn.style.background = "#ff5252";
     }
+    
     if (status) status.innerText = "お話してにゃ！";
+    
     if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+
     if (typeof window.startOneShotRecognition === 'function') {
-        window.startOneShotRecognition((transcript) => {
+        window.startOneShotRecognition(
+            (transcript) => {
                 if (transcript && transcript.trim() !== "") {
                      const input = document.getElementById('simple-text-input');
                      if (input) input.value = transcript;
                      window.sendSimpleText();
                 }
                 window.stopSimpleVoiceInput(true);
-            }, () => window.stopSimpleVoiceInput());
+            },
+            () => {
+                window.stopSimpleVoiceInput();
+            }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopSimpleVoiceInput();
     }
 };
 
 window.stopSimpleVoiceInput = function(keepStatus = false) {
     const micBtn = document.getElementById('simple-mic-btn');
     const status = document.getElementById('simple-mic-status');
+    
     if (micBtn) {
         micBtn.disabled = false;
         micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で質問';
         micBtn.style.background = "#4db6ac";
     }
-    if (status && !keepStatus) status.innerText = "";
+    
+    if (status && !keepStatus) {
+        status.innerText = "";
+    }
 };
 
 window.startMouthAnimation = function() {
@@ -259,6 +296,19 @@ window.startMouthAnimation = function() {
     }, 150);
 };
 window.startMouthAnimation();
+
+window.addEventListener('DOMContentLoaded', () => {
+    if(typeof window.startLocationWatch === 'function') {
+        window.startLocationWatch();
+    }
+
+    const camIn = document.getElementById('hw-input-camera'); 
+    const albIn = document.getElementById('hw-input-album'); 
+    if(camIn) camIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
+    if(albIn) albIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
+    const startCamBtn = document.getElementById('start-webcam-btn');
+    if (startCamBtn && window.startHomeworkWebcam) startCamBtn.onclick = window.startHomeworkWebcam;
+});
 
 window.saveToNellMemory = function(role, text) {
     if (!currentUser || !currentUser.id) return;
@@ -287,6 +337,8 @@ window.setSubject = function(s) {
     document.getElementById('upload-controls').classList.remove('hidden'); 
     window.updateNellMessage(`${window.currentSubject}の問題をみせてにゃ！`, "happy", false); 
 };
+
+window.setAnalyzeMode = function(type) { window.analysisType = 'precision'; };
 
 // ==========================================
 // ★ タイマー関連
@@ -324,23 +376,59 @@ window.toggleTimer = function() {
         document.getElementById('timer-toggle-btn').className = "main-btn blue-btn";
     } else {
         if (window.studyTimerValue <= 0) return alert("時間をセットしてにゃ！");
+        
+        if (window.sfxCountdown) {
+            Object.values(window.sfxCountdown).forEach(audio => {
+                const originalVol = audio.volume;
+                audio.volume = 0;
+                audio.play().then(() => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                    audio.volume = originalVol; 
+                }).catch(e => {});
+            });
+            if (window.sfxChime) {
+                const vol = window.sfxChime.volume;
+                window.sfxChime.volume = 0;
+                window.sfxChime.play().then(()=>{
+                    window.sfxChime.pause();
+                    window.sfxChime.currentTime = 0;
+                    window.sfxChime.volume = vol;
+                }).catch(()=>{});
+            }
+        }
+
         window.studyTimerRunning = true;
         window.studyTimerCheck = 0;
         document.getElementById('timer-toggle-btn').innerText = "一時停止";
         document.getElementById('timer-toggle-btn').className = "main-btn gray-btn";
         document.getElementById('mini-timer-display').classList.remove('hidden');
         window.closeTimerModal();
+        
         window.updateNellMessage("今からネル先生が時間を計ってやるにゃ", "normal", false, true);
+        
         window.studyTimerInterval = setInterval(() => {
             if (window.studyTimerValue > 0) {
+                if (window.studyTimerValue <= 11 && window.studyTimerValue >= 2) {
+                     const soundIndex = window.studyTimerValue - 1;
+                     const sfx = window.sfxCountdown[soundIndex];
+                     if (sfx) window.safePlay(sfx);
+                }
+
                 window.studyTimerValue--;
                 window.studyTimerCheck++;
                 window.updateTimerDisplay();
+                
+                if (window.studyTimerValue === 600) window.updateNellMessage("10分前だにゃ〜。お茶でも飲んで落ち着くにゃ。", "gentle", false, true);
+                else if (window.studyTimerValue === 300) window.updateNellMessage("あと5分。一歩ずつ、一歩ずつだにゃ〜。", "normal", false, true);
+                else if (window.studyTimerValue === 180) window.updateNellMessage("3分前。深呼吸して、もうひと踏ん張りだにゃ。", "excited", false, true);
+                else if (window.studyTimerValue === 60) window.updateNellMessage("あと1分だにゃ。最後までネル先生が見守ってるにゃ。", "excited", false, true);
             } else {
                 clearInterval(window.studyTimerInterval);
                 window.studyTimerRunning = false;
                 document.getElementById('timer-toggle-btn').innerText = "スタート！";
                 document.getElementById('timer-toggle-btn').className = "main-btn pink-btn";
+                
                 setTimeout(() => {
                     if(window.safePlay) window.safePlay(window.sfxChime); 
                     window.updateNellMessage("時間だにゃ！お疲れ様だにゃ〜。さ、ゆっくり休むにゃ。", "happy", false, true);
@@ -366,15 +454,23 @@ window.showKarikariEffect = function(amount) { const container = document.queryS
 
 window.giveLunch = function() { 
     if (currentUser.karikari < 1) return window.updateNellMessage("カリカリがないにゃ……", "thinking", false); 
+    
     window.updateNellMessage("もぐもぐ……", "normal", false); 
+    
     currentUser.karikari--; 
     if(typeof saveAndSync === 'function') saveAndSync(); 
     window.updateMiniKarikari(); 
     window.showKarikariEffect(-1); 
+    window.lunchCount++; 
+    
     fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
         .then(r => r.json())
-        .then(d => { window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); })
-        .catch(e => { window.updateNellMessage("おいしいにゃ！", "happy", false); }); 
+        .then(d => { 
+            window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); 
+        })
+        .catch(e => { 
+            window.updateNellMessage("おいしいにゃ！", "happy", false); 
+        }); 
 }; 
 
 window.renderMistakeSelection = function() { 
@@ -542,8 +638,8 @@ window.backToProblemSelection = function() {
     document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); 
     if (window.currentMode === 'grade') window.showGradingView(); else { window.renderProblemSelection(); window.updateNellMessage("他も見るにゃ？", "normal", false); } 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; } 
-    if (window.selectedProblem && window.selectedProblem.id) { setTimeout(() => { const targetId = `grade-item-${window.selectedProblem.id}`; const targetElement = document.getElementById(targetId); if (targetElement) { targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' }); const originalBg = targetElement.style.backgroundColor; targetElement.style.transition = "background-color 0.3s"; targetElement.style.backgroundColor = "#fff9c4"; setTimeout(() => { targetElement.style.backgroundColor = originalBg; }, 800); } }, 100); }
 };
+
 window.pressThanks = function() { window.backToProblemSelection(); };
 
 // ★修正: 連打防止 & 宿題判定報酬制限 & ロビー遷移修正
@@ -609,7 +705,7 @@ window.pressAllSolved = async function(btnElement) {
 window.cleanupAnalysis = function() { window.isAnalyzing = false; if(window.sfxBunseki) window.sfxBunseki.pause(); if(typeof window.analysisTimers !== 'undefined' && window.analysisTimers) { window.analysisTimers.forEach(t => clearTimeout(t)); window.analysisTimers = []; } };
 
 // ==========================================
-// 5. カメラ・画像処理ロジック (復元)
+// 5. カメラ・画像処理ロジック (完全版復元)
 // ==========================================
 
 window.captureAndSendLiveImage = function(context = 'main') {
@@ -691,33 +787,161 @@ window.closeHomeworkCamera = function() {
     if (modal) modal.classList.add('hidden');
 };
 
+// ★修正: 宿題分析用ファイルアップロードとクロッパー起動
 window.handleFileUpload = async function(file) { 
     if (window.isAnalyzing || !file) return; 
     document.getElementById('upload-controls').classList.add('hidden'); 
     document.getElementById('cropper-modal').classList.remove('hidden'); 
-    const canvas = document.getElementById('crop-canvas'); canvas.style.opacity = '0'; 
-    const reader = new FileReader(); reader.onload = async (e) => { window.cropImg = new Image(); window.cropImg.onload = async () => { const w = window.cropImg.width; const h = window.cropImg.height; window.cropPoints = [ { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 } ]; canvas.style.opacity = '1'; window.initCustomCropper(); }; window.cropImg.src = e.target.result; }; reader.readAsDataURL(file); 
+    
+    // Canvas初期化
+    const canvas = document.getElementById('crop-canvas'); 
+    canvas.style.opacity = '0'; 
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const reader = new FileReader(); 
+    reader.onload = async (e) => { 
+        window.cropImg = new Image(); 
+        window.cropImg.crossOrigin = "Anonymous"; // CORS対策
+        window.cropImg.onload = async () => { 
+            const w = window.cropImg.width; 
+            const h = window.cropImg.height; 
+            // 初期クロップ範囲（中央80%）
+            window.cropPoints = [ { x: w * 0.1, y: h * 0.1 }, { x: w * 0.9, y: h * 0.1 }, { x: w * 0.9, y: h * 0.9 }, { x: w * 0.1, y: h * 0.9 } ]; 
+            canvas.style.opacity = '1'; 
+            window.initCustomCropper(); 
+        }; 
+        window.cropImg.onerror = () => {
+            alert("画像の読み込みに失敗しました。");
+            document.getElementById('cropper-modal').classList.add('hidden');
+            document.getElementById('upload-controls').classList.remove('hidden');
+        };
+        window.cropImg.src = e.target.result; 
+    }; 
+    reader.readAsDataURL(file); 
 };
 
 window.initCustomCropper = function() { 
-    const modal = document.getElementById('cropper-modal'); modal.classList.remove('hidden'); const canvas = document.getElementById('crop-canvas'); const MAX_CANVAS_SIZE = 2500; let w = window.cropImg.width; let h = window.cropImg.height; if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); w *= scale; h *= scale; window.cropPoints = window.cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); } canvas.width = w; canvas.height = h; const ctx = canvas.getContext('2d'); ctx.drawImage(window.cropImg, 0, 0, w, h); window.updateCropUI(canvas); 
-    const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; handles.forEach((id, idx) => { const el = document.getElementById(id); el.onmousedown = (e) => { e.preventDefault(); window.activeHandle = idx; }; el.ontouchstart = (e) => { e.preventDefault(); window.activeHandle = idx; }; }); 
-    const move = (e) => { if (window.activeHandle === -1) return; e.preventDefault(); const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; let relX = (clientX - rect.left) / rect.width; let relY = (clientY - rect.top) / rect.height; window.cropPoints[window.activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; window.updateCropUI(canvas); }; 
-    const end = () => { window.activeHandle = -1; }; window.onmousemove = move; window.ontouchmove = move; window.onmouseup = end; window.ontouchend = end; 
-    document.getElementById('cropper-ok-btn').onclick = () => { if (window.sfxHirameku) { window.safePlay(window.sfxHirameku); } modal.classList.add('hidden'); const croppedBase64 = window.performPerspectiveCrop(canvas, window.cropPoints); window.startAnalysis(croppedBase64); }; 
+    const modal = document.getElementById('cropper-modal'); 
+    // 確実に表示
+    modal.classList.remove('hidden'); 
+    
+    const canvas = document.getElementById('crop-canvas'); 
+    const MAX_CANVAS_SIZE = 1200; // 制限緩和
+    let w = window.cropImg.width; 
+    let h = window.cropImg.height; 
+    
+    if (w > MAX_CANVAS_SIZE || h > MAX_CANVAS_SIZE) { 
+        const scale = Math.min(MAX_CANVAS_SIZE / w, MAX_CANVAS_SIZE / h); 
+        w *= scale; h *= scale; 
+        window.cropPoints = window.cropPoints.map(p => ({ x: p.x * scale, y: p.y * scale })); 
+    } 
+    
+    canvas.width = w; 
+    canvas.height = h; 
+    const ctx = canvas.getContext('2d'); 
+    ctx.drawImage(window.cropImg, 0, 0, w, h); 
+    window.updateCropUI(canvas); 
+    
+    // イベントリスナー再登録
+    const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; 
+    handles.forEach((id, idx) => { 
+        const el = document.getElementById(id); 
+        el.onmousedown = (e) => { e.preventDefault(); window.activeHandle = idx; }; 
+        el.ontouchstart = (e) => { e.preventDefault(); window.activeHandle = idx; }; 
+    }); 
+    
+    const move = (e) => { 
+        if (window.activeHandle === -1) return; 
+        e.preventDefault(); 
+        const rect = canvas.getBoundingClientRect(); 
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX; 
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY; 
+        let relX = (clientX - rect.left) / rect.width; 
+        let relY = (clientY - rect.top) / rect.height; 
+        
+        // 範囲制限
+        relX = Math.max(0, Math.min(1, relX));
+        relY = Math.max(0, Math.min(1, relY));
+
+        window.cropPoints[window.activeHandle] = { x: relX * canvas.width, y: relY * canvas.height }; 
+        window.updateCropUI(canvas); 
+    }; 
+    
+    const end = () => { window.activeHandle = -1; }; 
+    
+    window.onmousemove = move; 
+    window.ontouchmove = move; 
+    window.onmouseup = end; 
+    window.ontouchend = end; 
+    
+    const okBtn = document.getElementById('cropper-ok-btn');
+    // クローンしてリスナー重複防止
+    const newOkBtn = okBtn.cloneNode(true);
+    okBtn.parentNode.replaceChild(newOkBtn, okBtn);
+    
+    newOkBtn.onclick = () => { 
+        if (window.sfxHirameku) { window.safePlay(window.sfxHirameku); } 
+        modal.classList.add('hidden'); 
+        // イベント解除
+        window.onmousemove = null; window.ontouchmove = null; window.onmouseup = null; window.ontouchend = null;
+
+        const croppedBase64 = window.performPerspectiveCrop(canvas, window.cropPoints); 
+        window.startAnalysis(croppedBase64); 
+    }; 
+    
+    const cancelBtn = document.getElementById('cropper-cancel-btn');
+    cancelBtn.onclick = () => {
+         modal.classList.add('hidden');
+         document.getElementById('upload-controls').classList.remove('hidden');
+    };
 };
 
 window.updateCropUI = function(canvas) { 
-    const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; const rect = canvas.getBoundingClientRect(); const toScreen = (p) => ({ x: (p.x / canvas.width) * rect.width + rect.left, y: (p.y / canvas.height) * rect.height + rect.top }); const screenPoints = window.cropPoints.map(toScreen); screenPoints.forEach((p, i) => { const el = document.getElementById(handles[i]); if(el) { el.style.left = p.x + 'px'; el.style.top = p.y + 'px'; } }); const svg = document.getElementById('crop-lines'); if(svg) { const ptsStr = screenPoints.map(p => `${p.x},${p.y}`).join(' '); svg.innerHTML = `<polyline points="${ptsStr} ${screenPoints[0].x},${screenPoints[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; } 
+    const handles = ['handle-tl', 'handle-tr', 'handle-br', 'handle-bl']; 
+    const rect = canvas.getBoundingClientRect(); 
+    const toScreen = (p) => ({ x: (p.x / canvas.width) * rect.width + rect.left, y: (p.y / canvas.height) * rect.height + rect.top }); 
+    const screenPoints = window.cropPoints.map(toScreen); 
+    
+    screenPoints.forEach((p, i) => { 
+        const el = document.getElementById(handles[i]); 
+        if(el) { el.style.left = p.x + 'px'; el.style.top = p.y + 'px'; } 
+    }); 
+    
+    const svg = document.getElementById('crop-lines'); 
+    if(svg) { 
+        // SVG座標系は画面全体基準ではなくCanvas基準のほうがズレにくいが、ここではstyleで位置合わせしているのでCanvas内座標に変換
+        // SVG自体がCanvasの上にabsoluteで被さっている前提
+        const svgPoints = window.cropPoints.map(p => {
+             // Canvasサイズに対する比率 * SVG表示サイズ
+             return {
+                 x: (p.x / canvas.width) * canvas.offsetWidth,
+                 y: (p.y / canvas.height) * canvas.offsetHeight
+             };
+        });
+        
+        const ptsStr = svgPoints.map(p => `${p.x},${p.y}`).join(' '); 
+        svg.innerHTML = `<polyline points="${ptsStr} ${svgPoints[0].x},${svgPoints[0].y}" style="fill:rgba(255,255,255,0.2);stroke:#ff4081;stroke-width:2;stroke-dasharray:5" />`; 
+    } 
 };
 
 window.performPerspectiveCrop = function(sourceCanvas, points) { 
-    const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); let w = maxX - minX, h = maxY - minY; if(w < 1) w = 1; if(h < 1) h = 1; const tempCv = document.createElement('canvas'); tempCv.width = w; tempCv.height = h; const ctx = tempCv.getContext('2d'); ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, w, h); const result = window.processImageForAI(tempCv).split(',')[1]; return result; 
+    const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x)); 
+    const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y)); 
+    let w = maxX - minX, h = maxY - minY; 
+    if(w < 1) w = 1; if(h < 1) h = 1; 
+    
+    const tempCv = document.createElement('canvas'); 
+    tempCv.width = w; tempCv.height = h; 
+    const ctx = tempCv.getContext('2d'); 
+    ctx.drawImage(sourceCanvas, minX, minY, w, h, 0, 0, w, h); 
+    const result = window.processImageForAI(tempCv).split(',')[1]; 
+    return result; 
 };
 
 window.startAnalysis = async function(b64) {
     const now = Date.now();
-    if (window.lastAnalysisTime && (now - window.lastAnalysisTime < 15000)) { 
+    if (window.lastAnalysisTime && (now - window.lastAnalysisTime < 5000)) { // 制限緩和
         window.updateNellMessage("ちょっと待ってにゃ、目が回っちゃうにゃ…。", "thinking"); 
         return; 
     }
@@ -765,7 +989,7 @@ window.startAnalysis = async function(b64) {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
-        // ★宿題フラグの取得 (全問題のいずれかが宿題であればtrue)
+        // ★宿題フラグの取得
         window.isHomeworkDetected = data.some(p => p.is_homework === true);
         console.log("Homework Detection Result:", window.isHomeworkDetected);
 
@@ -834,8 +1058,13 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
         const data = await res.json();
         
         let speech = "";
-        if (data.speechText) { speech = data.speechText; await window.updateNellMessage(data.speechText, "happy", true, true); } 
-        else if (data.text) { speech = data.text; await window.updateNellMessage(data.text, "happy", true, true); }
+        if (data.speechText) { speech = data.speechText; } 
+        else if (data.text) { speech = data.text; }
+        
+        // ★修正: 括弧除去（TTS読み飛ばし対策）
+        // ネル先生のセリフ内の（）を「、」などに置換してから渡す
+        let safeSpeech = speech.replace(/[\(（]/g, "、").replace(/[\)）]/g, "。");
+        await window.updateNellMessage(safeSpeech, "happy", true, true);
 
         if (data.itemName && window.NellMemory && window.generateTradingCard) {
             let collectionCount = 0;
@@ -858,15 +1087,13 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
             if (currentUser && window.NellMemory) {
                 const updatedProfile = await window.NellMemory.getUserProfile(currentUser.id);
                 if (updatedProfile) {
-                    // user.js側の構造に合わせて更新
                     if (!currentUser.profile) currentUser.profile = {};
                     currentUser.profile = updatedProfile;
-                    // 一部の実装ではルートにcollectionを持っている場合があるので念のため同期
                     if (updatedProfile.collection) currentUser.collection = updatedProfile.collection;
                 }
             }
 
-            // ★新規: レアリティ別報酬付与
+            // ★新規: レアリティ別報酬付与 (指定された額)
             let reward = 0;
             const r = data.rarity || 1;
             if (r === 1) reward = 100;
