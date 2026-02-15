@@ -737,6 +737,9 @@ app.post('/analyze', async (req, res) => {
         あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
         提供された画像（生徒のノートやドリル）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。
 
+        【重要：宿題判定】
+        - **is_homework**: 解析した画像が、学習に関連する「宿題」「問題」「ノート」「ドリル」「教科書」などである場合は true を、それ以外（花の写真、ペットの写真、おもちゃ、関係ない風景など）の場合は false にしてください。
+
         【重要: 教科別の解析ルール (${subject})】
         ${subjectSpecificInstructions}
         - **表記ルール**: 解説文の中に読み間違いやすい人名、地名、難読漢字が出てくる場合は、『漢字(ふりがな)』の形式で記述してください（例: 筑後市(ちくごし)）。**一般的な簡単な漢字にはふりがなを振らないでください。**
@@ -761,6 +764,7 @@ app.post('/analyze', async (req, res) => {
         [
           {
             "id": 1,
+            "is_homework": true または false,
             "label": "①",
             "question": "問題文",
             "correct_answer": ["正解"], 
@@ -813,7 +817,6 @@ app.post('/identify-item', async (req, res) => {
 
         let locationInfo = "";
         
-        // ★修正: 住所情報がある場合、それを絶対視する指示を追加
         if (address) {
             locationInfo = `
             【★最優先：場所の特定情報】
@@ -823,10 +826,9 @@ app.post('/identify-item', async (req, res) => {
             1. **提供された住所「${address}」を絶対的な正解として扱ってください。**
             2. たとえ画像の見た目が、有名な観光地（例：熊本城、東京タワー）や別の場所に似ていても、**住所「${address}」と異なる場合は、視覚情報を無視してください。**
             3. 画像に写っている物体や施設は、**必ず住所「${address}」の中に実在するもの**として特定してください。
-            4. Google検索を行う際も、「${address} 観光」「${address} 公園」「${address} 店」などのキーワードを使って、その住所内での候補を探してください。
+            4. Google検索を行う際も、「${address} 観光」「${address} 公園」「${address} 店」などのキーワードを使って、その住所内での負荷を探してください。
             `;
         } else if (location && location.lat && location.lon) {
-             // 住所文字列がなく、座標のみの場合 (基本的にはありえないが念のため)
             locationInfo = `
             【位置情報】
             GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
@@ -899,7 +901,7 @@ app.post('/identify-item', async (req, res) => {
             let fallbackText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             json = {
                 itemName: "なぞの物体",
-                rarity: 1, // Fallback
+                rarity: 1, 
                 description: fallbackText,
                 realDescription: "AIの解析結果を直接表示しています。",
                 speechText: fallbackText
@@ -1066,7 +1068,6 @@ wss.on('connection', async (clientWs, req) => {
 
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // MODEL_REALTIME を使用
                         model: `models/${MODEL_REALTIME}`,
                         generationConfig: { 
                             responseModalities: ["AUDIO"],
@@ -1118,7 +1119,6 @@ wss.on('connection', async (clientWs, req) => {
 
             geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
             
-            // Gemini側からの切断を検知
             geminiWs.on('close', (code, reason) => {
                 console.log(`Gemini WS Closed: ${code} ${reason}`);
                 if (clientWs.readyState === WebSocket.OPEN) {
