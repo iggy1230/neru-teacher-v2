@@ -23,7 +23,7 @@ app.use(express.static(publicDir));
 // --- AI Model Constants ---
 // コスト削減のため、Gemini 2.0 Flash をメインに使用
 const MODEL_HOMEWORK = "gemini-2.5-pro";
-const MODEL_FAST = "gemini-2.0-flash"; 
+const MODEL_FAST = "gemini-2.5-flash-lite"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // Realtime API用
 
 // --- Server Log ---
@@ -858,7 +858,7 @@ app.post('/identify-item', async (req, res) => {
         - **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
 
         【解説のルール】
-        1. **ネル先生の解説**: 猫視点でのユーモラスな解説。語尾は「にゃ」。**文字数は150文字程度（140文字から160文字の間）で詳しく書いてください。**
+        1. **ネル先生の解説**: 猫視点でのクスッと笑えるユーモラスな解説。語尾は「にゃ」。**文字数は150文字程度（140文字から160文字の間）で詳しく書いてください。**
         2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。**文字数は150文字程度（140文字から160文字の間）で詳しく書いてください。**
         3. **ふりがな**: 読み間違いやすい語句のみ『漢字(ふりがな)』の形式で。
         4. **場所の言及ルール**: 
