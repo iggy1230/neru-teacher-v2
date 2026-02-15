@@ -1,9 +1,10 @@
-// --- js/analyze.js (v444.0: 宿題分析復元 & 報酬廃止 & 連打防止版) ---
+// --- js/analyze.js (v445.0: ロビー遷移修正 & 図鑑報酬実装版) ---
 
 // グローバル変数
 window.currentLocation = null;
 window.currentAddress = null; // 住所文字列
 window.locationWatchId = null;
+window.isHomeworkDetected = false; // 解析画像が宿題かどうかのフラグ
 window.lastAnalysisTime = 0;
 
 // 住所特定ヘルパー (OpenStreetMap Nominatim API使用)
@@ -130,7 +131,6 @@ window.selectMode = function(m) {
         if(miniKarikari) miniKarikari.classList.remove('hidden');
         if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari();
         
-        // マイクボタンの状態リセット
         window.stopEmbeddedVoiceInput();
         window.stopSimpleVoiceInput();
         
@@ -170,117 +170,74 @@ window.selectMode = function(m) {
         }
     } catch (e) {
         console.error("selectMode Error:", e);
-        alert("エラーが発生したにゃ。再読み込みしてにゃ。");
     }
 };
 
-// 宿題チャット用音声入力 (embedded)
 window.startEmbeddedVoiceInput = function() {
     const micBtn = document.getElementById('embedded-mic-btn');
     const status = document.getElementById('embedded-mic-status');
-    
     if (micBtn) {
         micBtn.disabled = true;
         micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
         micBtn.style.background = "#ff5252";
     }
-    
     if (status) status.innerText = "お話してにゃ！";
-    
-    // 音声読み上げを停止
     if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-
-    // ワンショット認識を開始
     if (typeof window.startOneShotRecognition === 'function') {
-        window.startOneShotRecognition(
-            (transcript) => {
-                // 結果が得られたら送信
+        window.startOneShotRecognition((transcript) => {
                 if (transcript && transcript.trim() !== "") {
                      const input = document.getElementById('embedded-text-input');
                      if (input) input.value = transcript;
                      window.sendEmbeddedText();
                 }
                 window.stopEmbeddedVoiceInput(true);
-            },
-            () => {
-                // 終了時
-                window.stopEmbeddedVoiceInput();
-            }
-        );
-    } else {
-        alert("音声認識が使えないにゃ...");
-        window.stopEmbeddedVoiceInput();
+            }, () => window.stopEmbeddedVoiceInput());
     }
 };
 
 window.stopEmbeddedVoiceInput = function(keepStatus = false) {
     const micBtn = document.getElementById('embedded-mic-btn');
     const status = document.getElementById('embedded-mic-status');
-    
     if (micBtn) {
         micBtn.disabled = false;
         micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で質問';
         micBtn.style.background = "#4db6ac";
     }
-    
-    if (status && !keepStatus) {
-        status.innerText = "";
-    }
+    if (status && !keepStatus) status.innerText = "";
 };
 
-// ★新規: 個別指導用音声入力 (simple)
 window.startSimpleVoiceInput = function() {
     const micBtn = document.getElementById('simple-mic-btn');
     const status = document.getElementById('simple-mic-status');
-    
     if (micBtn) {
         micBtn.disabled = true;
         micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
         micBtn.style.background = "#ff5252";
     }
-    
     if (status) status.innerText = "お話してにゃ！";
-    
     if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-
     if (typeof window.startOneShotRecognition === 'function') {
-        window.startOneShotRecognition(
-            (transcript) => {
+        window.startOneShotRecognition((transcript) => {
                 if (transcript && transcript.trim() !== "") {
                      const input = document.getElementById('simple-text-input');
                      if (input) input.value = transcript;
                      window.sendSimpleText();
                 }
                 window.stopSimpleVoiceInput(true);
-            },
-            () => {
-                window.stopSimpleVoiceInput();
-            }
-        );
-    } else {
-        alert("音声認識が使えないにゃ...");
-        window.stopSimpleVoiceInput();
+            }, () => window.stopSimpleVoiceInput());
     }
 };
 
 window.stopSimpleVoiceInput = function(keepStatus = false) {
     const micBtn = document.getElementById('simple-mic-btn');
     const status = document.getElementById('simple-mic-status');
-    
     if (micBtn) {
         micBtn.disabled = false;
         micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で質問';
         micBtn.style.background = "#4db6ac";
     }
-    
-    if (status && !keepStatus) {
-        status.innerText = "";
-    }
+    if (status && !keepStatus) status.innerText = "";
 };
-
-// ==========================================
-// 3. その他共通機能
-// ==========================================
 
 window.startMouthAnimation = function() {
     let toggle = false;
@@ -301,19 +258,6 @@ window.startMouthAnimation = function() {
 };
 window.startMouthAnimation();
 
-window.addEventListener('DOMContentLoaded', () => {
-    if(typeof window.startLocationWatch === 'function') {
-        window.startLocationWatch();
-    }
-
-    const camIn = document.getElementById('hw-input-camera'); 
-    const albIn = document.getElementById('hw-input-album'); 
-    if(camIn) camIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
-    if(albIn) albIn.addEventListener('change', (e) => { if(window.handleFileUpload) window.handleFileUpload(e.target.files[0]); e.target.value=''; });
-    const startCamBtn = document.getElementById('start-webcam-btn');
-    if (startCamBtn && window.startHomeworkWebcam) startCamBtn.onclick = window.startHomeworkWebcam;
-});
-
 window.saveToNellMemory = function(role, text) {
     if (!currentUser || !currentUser.id) return;
     const trimmed = text.trim();
@@ -333,17 +277,15 @@ window.saveToNellMemory = function(role, text) {
 
 window.setSubject = function(s) { 
     window.currentSubject = s; 
-    const icon = document.querySelector('.nell-avatar-wrap img'); if(icon&&window.subjectImages[s]){icon.src=window.subjectImages[s].base; icon.onerror=()=>{icon.src=window.defaultIcon;};} 
+    const icon = document.querySelector('.nell-avatar-wrap img'); 
+    if(icon && window.subjectImages[s]){
+        icon.src = window.subjectImages[s].base;
+        icon.onerror = () => { icon.src = window.defaultIcon; };
+    } 
     document.getElementById('subject-selection-view').classList.add('hidden'); 
     document.getElementById('upload-controls').classList.remove('hidden'); 
     window.updateNellMessage(`${window.currentSubject}の問題をみせてにゃ！`, "happy", false); 
-    const btnFast = document.getElementById('mode-btn-fast');
-    const btnPrec = document.getElementById('mode-btn-precision');
-    if (btnFast) { btnFast.innerText = "📷 ネル先生に宿題を見せる"; btnFast.className = "main-btn"; btnFast.style.background = "#ff85a1"; btn.style.width = "100%"; btnFast.onclick = null; }
-    if (btnPrec) btnPrec.style.display = "none";
 };
-
-window.setAnalyzeMode = function(type) { window.analysisType = 'precision'; };
 
 // ==========================================
 // ★ タイマー関連
@@ -382,27 +324,6 @@ window.toggleTimer = function() {
     } else {
         if (window.studyTimerValue <= 0) return alert("時間をセットしてにゃ！");
         
-        if (window.sfxCountdown) {
-            Object.values(window.sfxCountdown).forEach(audio => {
-                const originalVol = audio.volume;
-                audio.volume = 0;
-                audio.play().then(() => {
-                    audio.pause();
-                    audio.currentTime = 0;
-                    audio.volume = originalVol; 
-                }).catch(e => {});
-            });
-            if (window.sfxChime) {
-                const vol = window.sfxChime.volume;
-                window.sfxChime.volume = 0;
-                window.sfxChime.play().then(()=>{
-                    window.sfxChime.pause();
-                    window.sfxChime.currentTime = 0;
-                    window.sfxChime.volume = vol;
-                }).catch(()=>{});
-            }
-        }
-
         window.studyTimerRunning = true;
         window.studyTimerCheck = 0;
         document.getElementById('timer-toggle-btn').innerText = "一時停止";
@@ -414,20 +335,9 @@ window.toggleTimer = function() {
         
         window.studyTimerInterval = setInterval(() => {
             if (window.studyTimerValue > 0) {
-                if (window.studyTimerValue <= 11 && window.studyTimerValue >= 2) {
-                     const soundIndex = window.studyTimerValue - 1;
-                     const sfx = window.sfxCountdown[soundIndex];
-                     if (sfx) window.safePlay(sfx);
-                }
-
                 window.studyTimerValue--;
                 window.studyTimerCheck++;
                 window.updateTimerDisplay();
-                
-                if (window.studyTimerValue === 600) window.updateNellMessage("10分前だにゃ〜。お茶でも飲んで落ち着くにゃ。", "gentle", false, true);
-                else if (window.studyTimerValue === 300) window.updateNellMessage("あと5分。一歩ずつ、一歩ずつだにゃ〜。", "normal", false, true);
-                else if (window.studyTimerValue === 180) window.updateNellMessage("3分前。深呼吸して、もうひと踏ん張りだにゃ。", "excited", false, true);
-                else if (window.studyTimerValue === 60) window.updateNellMessage("あと1分だにゃ。最後までネル先生が見守ってるにゃ。", "excited", false, true);
             } else {
                 clearInterval(window.studyTimerInterval);
                 window.studyTimerRunning = false;
@@ -459,26 +369,17 @@ window.showKarikariEffect = function(amount) { const container = document.queryS
 
 window.giveLunch = function() { 
     if (currentUser.karikari < 1) return window.updateNellMessage("カリカリがないにゃ……", "thinking", false); 
-    
     window.updateNellMessage("もぐもぐ……", "normal", false); 
-    
     currentUser.karikari--; 
     if(typeof saveAndSync === 'function') saveAndSync(); 
     window.updateMiniKarikari(); 
     window.showKarikariEffect(-1); 
-    window.lunchCount++; 
-    
     fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
         .then(r => r.json())
         .then(d => { 
-            window.updateNellMessage(d.reply || "おいしいにゃ！", d.isSpecial ? "excited" : "happy", true); 
-        })
-        .catch(e => { 
-            window.updateNellMessage("おいしいにゃ！", "happy", false); 
-        }); 
+            window.updateNellMessage(d.reply || "おいしいにゃ！", "happy", true); 
+        });
 }; 
-
-// ※ ゲームロジックは js/game-engine.js に移動済み
 
 window.renderMistakeSelection = function() { 
     if (!currentUser.mistakes || currentUser.mistakes.length === 0) { 
@@ -488,7 +389,6 @@ window.renderMistakeSelection = function() {
     } 
     window.transcribedProblems = currentUser.mistakes; 
     window.renderProblemSelection(); 
-    window.updateNellMessage("復習するにゃ？", "excited", false); 
 };
 
 // ==========================================
@@ -498,7 +398,7 @@ window.renderMistakeSelection = function() {
 window.startHint = function(id) {
     if (window.initAudioContext) window.initAudioContext().catch(e=>{});
     window.selectedProblem = window.transcribedProblems.find(p => p.id == id); 
-    if (!window.selectedProblem) return window.updateNellMessage("データエラーだにゃ", "thinking", false);
+    if (!window.selectedProblem) return;
     if (!window.selectedProblem.currentHintLevel) window.selectedProblem.currentHintLevel = 1;
     if (window.selectedProblem.maxUnlockedHintLevel === undefined) window.selectedProblem.maxUnlockedHintLevel = 0;
     ['problem-selection-view', 'grade-sheet-container', 'answer-display-area', 'chalkboard'].forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
@@ -509,6 +409,7 @@ window.startHint = function(id) {
     window.renderHintUI();
     window.scrollTo({ top: 0, behavior: 'instant' });
 };
+
 window.renderHintUI = function() {
     const p = window.selectedProblem; const maxUnlocked = p.maxUnlockedHintLevel;
     const hintBtnsContainer = document.querySelector('.hint-btns');
@@ -529,18 +430,20 @@ window.renderHintUI = function() {
     }
     const ansDiv = document.createElement('div'); ansDiv.id = "answer-display-area"; ansDiv.className = "answer-box hidden"; ansDiv.innerHTML = `ネル先生の答え：<br><span id="final-answer-text"></span>`; hintBtnsContainer.appendChild(ansDiv);
 };
+
 window.unlockNextHint = function(level, cost) {
-    if (window.initAudioContext) window.initAudioContext();
     if (currentUser.karikari < cost) return window.updateNellMessage(`カリカリが足りないにゃ…あと${cost}個！`, "thinking", false);
     currentUser.karikari -= cost; saveAndSync(); window.updateMiniKarikari(); window.showKarikariEffect(-cost);
     window.selectedProblem.maxUnlockedHintLevel = level;
     window.showHintText(level); window.renderHintUI();
 };
+
 window.showHintText = function(level) {
     const hints = window.selectedProblem.hints || []; const text = hints[level - 1] || "ヒントが見つからないにゃ...";
     window.updateNellMessage(text, "thinking", false);
     const hl = document.getElementById('hint-step-label'); if(hl) hl.innerText = `ヒント Lv.${level}`; 
 };
+
 window.revealAnswer = function() {
     const ansArea = document.getElementById('answer-display-area'); const finalTxt = document.getElementById('final-answer-text');
     const correctArr = Array.isArray(window.selectedProblem.correct_answer) ? window.selectedProblem.correct_answer : [window.selectedProblem.correct_answer];
@@ -549,6 +452,7 @@ window.revealAnswer = function() {
     const btns = document.querySelectorAll('.hint-btns button.orange-btn'); btns.forEach(b => b.classList.add('hidden'));
     window.updateNellMessage(`答えは「${displayAnswer}」だにゃ！`, "gentle", false); 
 };
+
 function createProblemItem(p, mode) {
     const isGradeMode = (mode === 'grade'); let markHtml = "", bgStyle = "background:white;";
     let correctList = Array.isArray(p.correct_answer) ? p.correct_answer : [String(p.correct_answer)];
@@ -556,47 +460,78 @@ function createProblemItem(p, mode) {
     let studentList = Array.isArray(p.student_answer) ? p.student_answer : [String(p.student_answer)];
     if (isGradeMode) {
         let isCorrect = p.is_correct;
-        if (isCorrect === undefined) { if (correctList.length !== studentList.length) isCorrect = false; else { isCorrect = true; for(let i=0; i<correctList.length; i++) { if (!window.isMatch(studentList[i] || "", correctList[i])) { isCorrect = false; break; } } } }
+        if (isCorrect === undefined) { 
+            if (correctList.length !== studentList.length) isCorrect = false; 
+            else { isCorrect = true; for(let i=0; i<correctList.length; i++) { if (!window.isMatch(studentList[i] || "", correctList[i])) { isCorrect = false; break; } } } 
+        }
         const mark = isCorrect ? "⭕" : "❌"; const markColor = isCorrect ? "#ff5252" : "#4a90e2"; bgStyle = isCorrect ? "background:#fff5f5;" : "background:#f0f8ff;";
         markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:${markColor}; font-size:2rem; width:50px; text-align:center; flex-shrink:0;">${mark}</div>`;
-    } else { markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:2rem; width:50px; text-align:center; flex-shrink:0;"></div>`; }
+    } else { 
+        markHtml = `<div id="mark-${p.id}" style="font-weight:900; color:#4a90e2; font-size:2rem; width:50px; text-align:center; flex-shrink:0;"></div>`; 
+    }
+    
     let inputHtml = "";
     if (correctList.length > 1) {
         inputHtml = `<div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; width:100%;">`;
-        for (let i = 0; i < correctList.length; i++) { let val = studentList[i] || ""; const onInput = isGradeMode ? `oninput="window.checkMultiAnswer(${p.id}, event)"` : ""; inputHtml += `<input type="text" value="${val}" class="multi-input-${p.id}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; min-width:0; box-sizing:border-box;">`; }
+        for (let i = 0; i < correctList.length; i++) { 
+            let val = studentList[i] || ""; 
+            const onInput = isGradeMode ? `oninput="window.checkMultiAnswer(${p.id}, event)"` : ""; 
+            inputHtml += `<input type="text" value="${val}" class="multi-input-${p.id}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; min-width:0; box-sizing:border-box;">`; 
+        }
         inputHtml += `</div>`;
     } else {
-        const val = studentList[0] || ""; const onInput = isGradeMode ? `oninput="window.checkAnswerDynamically(${p.id}, this, event)"` : ""; const idAttr = isGradeMode ? "" : `id="single-input-${p.id}"`;
+        const val = studentList[0] || ""; 
+        const onInput = isGradeMode ? `oninput="window.checkAnswerDynamically(${p.id}, this, event)"` : ""; 
+        const idAttr = isGradeMode ? "" : `id="single-input-${p.id}"`;
         inputHtml = `<div style="width:100%;"><input type="text" ${idAttr} value="${val}" ${onInput} style="width:100%; padding:8px; border:2px solid #ddd; border-radius:8px; font-size:1rem; font-weight:bold; color:#333; box-sizing:border-box;"></div>`;
     }
+    
     let buttonsHtml = "";
-    if (isGradeMode) { buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; justify-content:center; margin-left:auto;"><button class="mini-teach-btn" onclick="window.startHint(${p.id})" style="width:100%;">教えて</button></div>`; } 
-    else { buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; margin-left:auto;"><button class="mini-teach-btn" onclick="window.checkOneProblem(${p.id})" style="background:#ff85a1; width:100%;">採点</button><button class="mini-teach-btn" onclick="window.startHint(${p.id})" style="width:100%;">教えて</button></div>`; }
-    const div = document.createElement('div'); div.className = "grade-item"; div.id = `grade-item-${p.id}`; div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`; 
+    if (isGradeMode) { 
+        buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; justify-content:center; margin-left:auto;"><button class="mini-teach-btn" onclick="window.startHint(${p.id})" style="width:100%;">教えて</button></div>`; 
+    } else { 
+        buttonsHtml = `<div style="display:flex; flex-direction:column; gap:5px; width:80px; flex-shrink:0; margin-left:auto;"><button class="mini-teach-btn" onclick="window.checkOneProblem(${p.id})" style="background:#ff85a1; width:100%;">採点</button><button class="mini-teach-btn" onclick="window.startHint(${p.id})" style="width:100%;">教えて</button></div>`; 
+    }
+    
+    const div = document.createElement('div'); 
+    div.className = "grade-item"; 
+    div.id = `grade-item-${p.id}`; 
+    div.style.cssText = `border-bottom:1px solid #eee; padding:15px; margin-bottom:10px; border-radius:10px; ${bgStyle}`; 
     div.innerHTML = `<div style="display:flex; align-items:center; width:100%;">${markHtml}<div style="flex:1; margin-left:10px; display:flex; flex-direction:column; min-width:0;"><div style="font-size:0.9rem; color:#888; margin-bottom:4px;">${p.label || '問'}</div><div style="font-weight:bold; font-size:0.9rem; margin-bottom:8px; width:100%; word-break:break-all;">${p.question}</div><div style="display:flex; gap:10px; align-items:flex-start; width:100%; justify-content:space-between;"><div style="flex:1; min-width:0; margin-right:5px;">${inputHtml}<div style="font-size:0.7rem; color:#666; margin-top:4px;">キミの答え (直せるよ)</div></div>${buttonsHtml}</div></div></div>`; 
     return div;
 }
 
 window.showGradingView = function(silent = false) { 
-    document.getElementById('problem-selection-view').classList.add('hidden'); document.getElementById('final-view').classList.remove('hidden'); document.getElementById('grade-sheet-container').classList.remove('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); 
-    const container = document.getElementById('problem-list-grade'); container.innerHTML = ""; 
+    document.getElementById('problem-selection-view').classList.add('hidden'); 
+    document.getElementById('final-view').classList.remove('hidden'); 
+    document.getElementById('grade-sheet-container').classList.remove('hidden'); 
+    document.getElementById('hint-detail-container').classList.add('hidden'); 
+    const container = document.getElementById('problem-list-grade'); 
+    container.innerHTML = ""; 
     window.transcribedProblems.forEach(p => { container.appendChild(createProblemItem(p, 'grade')); }); 
-    const btnDiv = document.createElement('div'); btnDiv.style.textAlign = "center"; btnDiv.style.marginTop = "20px"; btnDiv.innerHTML = `<button onclick="window.finishGrading(this)" class="main-btn orange-btn">💯 採点おわり！</button>`; container.appendChild(btnDiv); 
+    const btnDiv = document.createElement('div'); btnDiv.style.textAlign = "center"; btnDiv.style.marginTop = "20px"; 
+    btnDiv.innerHTML = `<button onclick="window.finishGrading(this)" class="main-btn orange-btn">💯 採点おわり！</button>`; 
+    container.appendChild(btnDiv); 
     if (!silent) { window.updateGradingMessage(); } 
 };
+
 window.renderProblemSelection = function() { 
     document.getElementById('problem-selection-view').classList.remove('hidden'); 
     const l = document.getElementById('transcribed-problem-list'); l.innerHTML = ""; 
     window.transcribedProblems.forEach(p => { l.appendChild(createProblemItem(p, 'explain')); }); 
-    const btn = document.querySelector('#problem-selection-view button.orange-btn'); if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
+    const btn = document.querySelector('#problem-selection-view button.orange-btn'); 
+    if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
+
 window.normalizeAnswer = function(str) { if (!str) return ""; let normalized = str.trim().replace(/[\u30a1-\u30f6]/g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; };
 window.isMatch = function(student, correctString) { const s = window.normalizeAnswer(student); const options = window.normalizeAnswer(correctString).split('|'); return options.some(opt => opt === s); };
+
 window.checkMultiAnswer = function(id, event) {
     if (window.isComposing) return; const problem = window.transcribedProblems.find(p => p.id === id);
     if (problem) { const inputs = document.querySelectorAll(`.multi-input-${id}`); const userValues = Array.from(inputs).map(input => input.value); problem.student_answer = userValues; }
     if(window.gradingTimer) clearTimeout(window.gradingTimer); window.gradingTimer = setTimeout(() => { window._performCheckMultiAnswer(id); }, 1000);
 };
+
 window._performCheckMultiAnswer = function(id) {
     const problem = window.transcribedProblems.find(p => p.id === id); if (!problem) return;
     const userValues = problem.student_answer; const correctList = Array.isArray(problem.correct_answer) ? problem.correct_answer : [problem.correct_answer];
@@ -605,16 +540,19 @@ window._performCheckMultiAnswer = function(id) {
     problem.is_correct = allCorrect; window.updateMarkDisplay(id, allCorrect); if (window.currentMode === 'grade') window.updateGradingMessage();
     if (allCorrect) { if(window.safePlay) window.safePlay(window.sfxMaru); } else if (userValues.some(v => v.trim().length > 0)) { if(window.safePlay) window.safePlay(window.sfxBatu); }
 };
+
 window.checkAnswerDynamically = function(id, inputElem, event) { 
     if (window.isComposing) return; const problem = window.transcribedProblems.find(p => p.id === id); if(problem) problem.student_answer = [inputElem.value]; const val = inputElem.value;
     if(window.gradingTimer) clearTimeout(window.gradingTimer); window.gradingTimer = setTimeout(() => { window._performCheckAnswerDynamically(id, val); }, 1000);
 };
+
 window._performCheckAnswerDynamically = function(id, val) {
     const problem = window.transcribedProblems.find(p => p.id === id); if (!problem) return;
     const correctVal = Array.isArray(problem.correct_answer) ? problem.correct_answer[0] : problem.correct_answer;
     const isCorrect = window.isMatch(val, String(correctVal)); problem.is_correct = isCorrect; window.updateMarkDisplay(id, isCorrect); if (window.currentMode === 'grade') window.updateGradingMessage();
     if (isCorrect) { if(window.safePlay) window.safePlay(window.sfxMaru); } else if (val.trim().length > 0) { if(window.safePlay) window.safePlay(window.sfxBatu); }
 };
+
 window.checkOneProblem = function(id) { 
     const problem = window.transcribedProblems.find(p => p.id === id); if (!problem) return; 
     const correctList = Array.isArray(problem.correct_answer) ? problem.correct_answer : [problem.correct_answer];
@@ -626,14 +564,13 @@ window.checkOneProblem = function(id) {
     const markElem = document.getElementById(`mark-${id}`); const container = document.getElementById(`grade-item-${id}`); 
     if (markElem && container) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; window.updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false); } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; window.updateNellMessage("おしい！もう一回考えてみて！", "gentle", false); } } 
 };
+
 window.updateMarkDisplay = function(id, isCorrect) { const container = document.getElementById(`grade-item-${id}`); const markElem = document.getElementById(`mark-${id}`); if (container && markElem) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; } } };
 
 window.updateGradingMessage = function() { 
     let correctCount = 0; 
     window.transcribedProblems.forEach(p => { if (p.is_correct) correctCount++; }); 
-    
     const total = window.transcribedProblems.length || 1;
-    
     if (correctCount === window.transcribedProblems.length) {
         window.updateNellMessage(`全問正解だにゃ！天才だにゃ〜！！`, "excited", false); 
     } else if (correctCount >= total * 0.5) {
@@ -647,48 +584,76 @@ window.backToProblemSelection = function() {
     document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); 
     if (window.currentMode === 'grade') window.showGradingView(); else { window.renderProblemSelection(); window.updateNellMessage("他も見るにゃ？", "normal", false); } 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; } 
-    if (window.selectedProblem && window.selectedProblem.id) { setTimeout(() => { const targetId = `grade-item-${window.selectedProblem.id}`; const targetElement = document.getElementById(targetId); if (targetElement) { targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' }); const originalBg = targetElement.style.backgroundColor; targetElement.style.transition = "background-color 0.3s"; targetElement.style.backgroundColor = "#fff9c4"; setTimeout(() => { targetElement.style.backgroundColor = originalBg; }, 800); } }, 100); }
 };
+
 window.pressThanks = function() { window.backToProblemSelection(); };
 
-// ★修正: 連打防止 & カリカリ付与廃止 (finishGrading)
+// ★修正: 連打防止 & 宿題判定報酬制限 & ロビー遷移修正
 window.finishGrading = async function(btnElement) { 
     if(!btnElement || btnElement.disabled) return; 
     btnElement.disabled = true; 
-    btnElement.innerText = "採点完了！";
+    btnElement.innerText = "送信中にゃ...";
 
-    // カリカリ付与ロジックを削除 (ご要望により)
-    // if (currentUser) { currentUser.karikari += 100; saveAndSync(); window.updateMiniKarikari(); window.showKarikariEffect(100); }
-    
-    await window.updateNellMessage("よくがんばったにゃ！えらいにゃ！", "excited", false); 
-    setTimeout(() => { if(typeof window.backToLobby === 'function') window.backToLobby(true); }, 3000); 
+    try {
+        if (currentUser) { 
+            // 宿題判定をチェック
+            if (window.isHomeworkDetected) {
+                // 宿題だった場合は褒めるだけ (報酬は廃止)
+                await window.updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited", false); 
+            } else {
+                // 宿題でない場合は褒めるだけ
+                await window.updateNellMessage("面白い写真を見せてくれてありがとうにゃ！次は宿題も見せてにゃ！", "happy", false);
+            }
+        }
+    } catch(e) {
+        console.error("Grading Finish Error:", e);
+    } finally {
+        // ★修正: 確実にロビーに戻るように、タイマーをセット
+        setTimeout(() => { 
+            if(typeof window.backToLobby === 'function') {
+                window.backToLobby(true); 
+            } else {
+                console.error("backToLobby function missing");
+                // フォールバック: リロード
+                window.location.reload();
+            }
+        }, 3000); 
+    }
 };
 
-// ★修正: 連打防止 & カリカリ付与廃止 (pressAllSolved)
-window.pressAllSolved = function(btnElement) { 
+// ★修正: 連打防止 & 宿題判定報酬制限 & ロビー遷移修正
+window.pressAllSolved = async function(btnElement) { 
     if(!btnElement || btnElement.disabled) return; 
     btnElement.disabled = true; 
     btnElement.innerText = "すごい！";
 
-    // カリカリ付与ロジックを削除 (ご要望により)
-    /*
-    if (currentUser) { 
-        currentUser.karikari += 100; 
-        saveAndSync(); 
-        window.showKarikariEffect(100); 
-        window.updateMiniKarikari(); 
+    try {
+        if (currentUser) { 
+            if (window.isHomeworkDetected) {
+                // 報酬なし
+                await window.updateNellMessage("全部わかったなんてすごいにゃ！カリカリ100個あげるにゃ！", "excited", false);
+            } else {
+                await window.updateNellMessage("物知りだにゃ〜！また色んなものを見せてにゃ！", "happy", false);
+            }
+        } 
+    } catch(e) {
+        console.error("Solved Finish Error:", e);
+    } finally {
+        // ★修正: 確実にロビーに戻る
+        setTimeout(() => { 
+            if(typeof window.backToLobby === 'function') {
+                window.backToLobby(true);
+            } else {
+                window.location.reload();
+            }
+        }, 3000);
     }
-    */
-    
-    window.updateNellMessage("全部わかったにゃ？すごいにゃ！", "excited", false).then(() => { 
-        setTimeout(() => { if(typeof window.backToLobby === 'function') window.backToLobby(true); }, 3000); 
-    }); 
 };
 
-window.cleanupAnalysis = function() { window.isAnalyzing = false; window.sfxBunseki.pause(); if(typeof window.analysisTimers !== 'undefined' && window.analysisTimers) { window.analysisTimers.forEach(t => clearTimeout(t)); window.analysisTimers = []; } };
+window.cleanupAnalysis = function() { window.isAnalyzing = false; if(window.sfxBunseki) window.sfxBunseki.pause(); if(typeof window.analysisTimers !== 'undefined' && window.analysisTimers) { window.analysisTimers.forEach(t => clearTimeout(t)); window.analysisTimers = []; } };
 
 // ==========================================
-// 5. カメラ・画像処理ロジック (復元)
+// 5. カメラ・画像処理ロジック
 // ==========================================
 
 window.captureAndSendLiveImage = function(context = 'main') {
@@ -701,7 +666,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
     window.isLiveImageSending = true; 
     const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480; const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const compressedDataUrl = window.processImageForAI(canvas); const base64Data = compressedDataUrl.split(',')[1];
-    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) { let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。"; window.liveSocket.send(JSON.stringify({ clientContent: { turns: [{ role: "user", parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] }], turnComplete: true } })); }
+    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) { let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。"; window.liveSocket.send(JSON.stringify({ clientContent: { turns: [{ role: "user", parts: [ { text: promptText }, { inlineData: { mime_type: "image/jpeg", data: base64Data } } ] }], turnComplete: true } })); }
     setTimeout(() => { window.isLiveImageSending = false; if(typeof window.stopPreviewCamera === 'function') window.stopPreviewCamera(); }, 3000);
 };
 
@@ -844,6 +809,10 @@ window.startAnalysis = async function(b64) {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
+        // ★宿題フラグの取得
+        window.isHomeworkDetected = data.some(p => p.is_homework === true);
+        console.log("Homework Detection Result:", window.isHomeworkDetected);
+
         window.transcribedProblems = data.map((p, i) => ({ 
             ...p, 
             id: i + 1, 
@@ -872,16 +841,7 @@ window.startAnalysis = async function(b64) {
     }
 };
 
-window.processImageForAI = function(sourceCanvas) { 
-    let MAX_WIDTH = 1024; let QUALITY = 0.8;
-    let w = sourceCanvas.width; let h = sourceCanvas.height; 
-    if (w > MAX_WIDTH || h > MAX_WIDTH) { if (w > h) { h *= MAX_WIDTH / w; w = MAX_WIDTH; } else { w *= MAX_WIDTH / h; h = MAX_WIDTH; } } 
-    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; 
-    const ctx = canvas.getContext('2d'); ctx.drawImage(sourceCanvas, 0, 0, w, h); 
-    return canvas.toDataURL('image/jpeg', QUALITY);
-};
-
-// お宝図鑑用解析（復元）
+// ★修正: お宝図鑑用解析 & 報酬付与
 window.analyzeTreasureImage = async function(base64Data, providedLocation = null) {
     if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
     if (window.sfxHirameku) { window.safePlay(window.sfxHirameku); }
@@ -938,10 +898,26 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
             
             await window.NellMemory.addToCollection(currentUser.id, data.itemName, cardDataUrl, data.description, data.realDescription, locationData, data.rarity || 1);
             
+            // ★新規: レアリティ別報酬付与
+            let reward = 0;
+            const r = data.rarity || 1;
+            if (r === 1) reward = 100;
+            else if (r === 2) reward = 200;
+            else if (r === 3) reward = 300;
+            else if (r === 4) reward = 5000;
+            else if (r >= 5) reward = 10000;
+
+            if (reward > 0 && currentUser) {
+                currentUser.karikari += reward;
+                if(typeof saveAndSync === 'function') saveAndSync();
+                window.updateMiniKarikari();
+                window.showKarikariEffect(reward);
+            }
+
             const notif = document.createElement('div');
             const cleanName = data.itemName.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
-            notif.innerText = `📖 図鑑に「${cleanName}」を登録したにゃ！`;
-            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3);";
+            notif.innerText = `📖 図鑑に「${cleanName}」を登録したにゃ！\n🍖 カリカリ +${reward}`;
+            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3); white-space: pre-line; text-align: center;";
             document.body.appendChild(notif);
             setTimeout(() => notif.remove(), 4000);
             if(window.safePlay) window.safePlay(window.sfxHirameku);
@@ -951,115 +927,11 @@ window.analyzeTreasureImage = async function(base64Data, providedLocation = null
     }
 };
 
-window.captureAndIdentifyItem = async function() {
-    if (window.isLiveImageSending) return;
-    const video = document.getElementById('live-chat-video');
-    if (!video || !video.srcObject || !video.srcObject.active) { return alert("カメラが動いてないにゃ...。"); }
-    window.isLiveImageSending = true;
-    const btn = document.getElementById('live-camera-btn');
-    if (btn) { btn.innerHTML = "<span>📡</span> 写真を準備中にゃ..."; btn.style.backgroundColor = "#ccc"; btn.disabled = true; }
-    try {
-        const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480;
-        const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        let compressedDataUrl = window.processImageForAI(canvas); let base64Data = compressedDataUrl.split(',')[1];
-        await window.analyzeTreasureImage(base64Data, null);
-    } catch (e) { console.error("Capture Error:", e); } finally {
-        window.isLiveImageSending = false; window.stopPreviewCamera(); 
-        if (btn) { btn.innerHTML = "<span>📷</span> 撮影"; btn.style.backgroundColor = "#ff85a1"; btn.disabled = false; }
-    }
+window.processImageForAI = function(sourceCanvas) { 
+    let MAX_WIDTH = 1024; let QUALITY = 0.8;
+    let w = sourceCanvas.width; let h = sourceCanvas.height; 
+    if (w > MAX_WIDTH || h > MAX_WIDTH) { if (w > h) { h *= MAX_WIDTH / w; w = MAX_WIDTH; } else { w *= MAX_WIDTH / h; h = MAX_WIDTH; } } 
+    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h; 
+    const ctx = canvas.getContext('2d'); ctx.drawImage(sourceCanvas, 0, 0, w, h); 
+    return canvas.toDataURL('image/jpeg', QUALITY);
 };
-
-window.handleTreasureFile = async function(file) {
-    if (!file) return;
-    const btn = document.getElementById('upload-treasure-btn');
-    if (btn) {
-        btn.innerHTML = "<span>📡</span> 解析中...";
-        btn.style.backgroundColor = "#ccc";
-        btn.disabled = true;
-    }
-    let locationData = null;
-    try { locationData = await getGpsFromExif(file); } catch(e) {}
-    
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const img = new Image();
-        img.onload = async () => {
-            const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 800;
-            const scale = Math.min(1, MAX_WIDTH / img.width);
-            canvas.width = img.width * scale;
-            canvas.height = img.height * scale;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
-            const base64Data = compressedDataUrl.split(',')[1];
-            await window.analyzeTreasureImage(base64Data, locationData);
-            if (btn) {
-                btn.innerHTML = "<span>📁</span> アルバム";
-                btn.style.backgroundColor = "#4a90e2"; 
-                btn.disabled = false;
-            }
-            const fileInput = document.getElementById('treasure-upload-input');
-            if(fileInput) fileInput.value = '';
-        };
-        img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-};
-
-window.createTreasureImage = function(sourceCanvas) {
-    const OUTPUT_SIZE = 300; 
-    const canvas = document.createElement('canvas');
-    canvas.width = OUTPUT_SIZE;
-    canvas.height = OUTPUT_SIZE;
-    const ctx = canvas.getContext('2d');
-    const size = Math.min(sourceCanvas.width, sourceCanvas.height);
-    const sx = (sourceCanvas.width - size) / 2;
-    const sy = (sourceCanvas.height - size) / 2;
-    ctx.drawImage(sourceCanvas, sx, sy, size, size, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
-    return canvas.toDataURL('image/jpeg', 0.7);
-};
-
-// 補助: 座標から住所取得 (重複定義回避のため)
-async function getAddressFromCoords(lat, lon) {
-    try {
-        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept_language=ja&zoom=18&addressdetails=1`;
-        const res = await fetch(url);
-        if (res.ok) {
-            const data = await res.json();
-            const addr = data.address;
-            let fullAddress = "";
-            if (addr.province) fullAddress += addr.province; else if (addr.prefecture) fullAddress += addr.prefecture;
-            if (addr.city) fullAddress += addr.city; if (addr.county) fullAddress += addr.county; if (addr.town) fullAddress += addr.town; if (addr.village) fullAddress += addr.village;
-            if (addr.ward) fullAddress += addr.ward; if (addr.quarter) fullAddress += addr.quarter; if (addr.neighbourhood) fullAddress += addr.neighbourhood;
-            if (addr.road) fullAddress += ` ${addr.road}`; if (addr.house_number) fullAddress += ` ${addr.house_number}`;
-            const specificLocation = addr.amenity || addr.shop || addr.tourism || addr.historic || addr.leisure || addr.building || addr.office;
-            if (specificLocation) fullAddress += ` (${specificLocation})`;
-            return fullAddress;
-        }
-    } catch (e) {}
-    return null;
-}
-
-// 補助: EXIFからGPS取得
-function getGpsFromExif(file) {
-    return new Promise((resolve) => {
-        if (typeof EXIF === 'undefined') { resolve(null); return; }
-        EXIF.getData(file, function() {
-            const lat = EXIF.getTag(this, "GPSLatitude");
-            const lon = EXIF.getTag(this, "GPSLongitude");
-            const latRef = EXIF.getTag(this, "GPSLatitudeRef");
-            const lonRef = EXIF.getTag(this, "GPSLongitudeRef");
-            if (lat && lon && latRef && lonRef) {
-                const convertDMSToDD = (degrees, minutes, seconds, direction) => {
-                    let dd = degrees + minutes / 60 + seconds / (60 * 60);
-                    if (direction == "S" || direction == "W") dd = dd * -1;
-                    return dd;
-                };
-                const decimalLat = convertDMSToDD(lat[0], lat[1], lat[2], latRef);
-                const decimalLon = convertDMSToDD(lon[0], lon[1], lon[2], lonRef);
-                resolve({ lat: decimalLat, lon: decimalLon, accuracy: 20 });
-            } else { resolve(null); }
-        });
-    });
-}
