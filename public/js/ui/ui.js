@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v433.0: 中断時保存対応版) ---
+// --- js/ui/ui.js (v439.1: 図鑑3列グリッド修正版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -312,6 +312,7 @@ window.showCollection = async function() {
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
     
+    // ★修正: グリッドレイアウトを強制的に横3列 (repeat(3, 1fr)) に変更
     modal.innerHTML = `
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 85vh; display: flex; flex-direction: column;">
             <h3 style="text-align:center; margin:0 0 10px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
@@ -338,8 +339,8 @@ window.showCollection = async function() {
                 </div>
             </div>
 
-            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:12px; flex: 1; overflow-y:auto; padding:5px;">
-                <p style="width:100%; text-align:center;">読み込み中にゃ...</p>
+            <div id="collection-grid" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; flex: 1; overflow-y:auto; padding:5px; align-content: start;">
+                <p style="width:100%; text-align:center; grid-column: span 3;">読み込み中にゃ...</p>
             </div>
             
             <div style="text-align:center; margin-top:15px; flex-shrink: 0;"><button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div>
@@ -358,7 +359,7 @@ window.renderCollectionList = async function() {
     
     if (!grid) return;
 
-    grid.innerHTML = '<p style="width:100%; text-align:center;">読み込み中にゃ...</p>';
+    grid.innerHTML = '<p style="width:100%; text-align:center; grid-column: span 3;">読み込み中にゃ...</p>';
     
     let items = [];
 
@@ -403,7 +404,7 @@ window.renderCollectionList = async function() {
     grid.innerHTML = '';
 
     if (items.length === 0) {
-        grid.innerHTML = '<p style="width:100%; text-align:center; color:#888;">まだ何もないにゃ。</p>';
+        grid.innerHTML = '<p style="width:100%; text-align:center; color:#888; grid-column: span 3;">まだ何もないにゃ。</p>';
         return;
     }
 
@@ -420,6 +421,7 @@ window.renderCollectionList = async function() {
             const div = document.createElement('div');
             div.className = "collection-grid-item"; 
             
+            // ★修正: スタイルを簡略化し、アスペクト比を固定して高さを確保
             div.style.cssText = `
                 background: white;
                 border-radius: 8px;
@@ -429,6 +431,7 @@ window.renderCollectionList = async function() {
                 position: relative;
                 overflow: hidden;
                 aspect-ratio: 0.68;
+                width: 100%;
                 display: flex;
                 flex-direction: column;
                 margin: 0;
