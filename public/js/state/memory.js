@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v438.0: 登録時データ消失対策版) ---
+// --- js/state/memory.js (v455.0: ローカルユーザーデータ消失バグ完全修正版) ---
 
 (function(global) {
     const Memory = {};
@@ -59,20 +59,47 @@
         const defaultProfile = Memory.createEmptyProfile();
         if (!profile) return defaultProfile;
         if (!Array.isArray(profile.collection)) profile.collection = []; 
-        return profile;
+        return { ...defaultProfile, ...profile };
     };
 
     Memory.saveUserProfile = async function(userId, profile) {
         if (Array.isArray(profile)) profile = profile[0] || Memory.createEmptyProfile();
         const safeId = String(userId);
         
+        // 1. 個別プロファイルを保存
         const profileStr = JSON.stringify(profile);
         localStorage.setItem(`nell_profile_${userId}`, profileStr);
         
+        // 2. Firestoreにも保存 (オンラインの場合)
         if (typeof db !== 'undefined' && db !== null) {
             try {
                 await db.collection("users").doc(safeId).set({ profile: profile }, { merge: true });
             } catch(e) { console.error("Firestore Profile Save Error:", e); }
+        }
+
+        // ★★★ データ消失バグ修正: ユーザー一覧リスト(`nekoneko_users`)も必ず更新する ★★★
+        if (window.currentUser && String(window.currentUser.id) === safeId && window.users && Array.isArray(window.users)) {
+            const userIndex = window.users.findIndex(u => String(u.id) === safeId);
+            
+            // currentUserは最新の状態になっているはずなので、それをベースに更新する
+            const updatedUserForList = {
+                ...window.currentUser, // 既存のトップレベルプロパティ(id, name, karikari等)を維持
+                profile: profile       // 最新のプロファイルをマージ
+            };
+            // 互換性のため、一部のプロファイルデータをトップレベルにもコピー
+            updatedUserForList.name = profile.nickname || updatedUserForList.name;
+
+
+            if (userIndex !== -1) {
+                // 既存のユーザー情報を更新
+                window.users[userIndex] = updatedUserForList;
+            } else {
+                // 万が一見つからない場合は追加
+                window.users.push(updatedUserForList);
+            }
+            // ローカルストレージのマスターリストを上書き保存
+            localStorage.setItem('nekoneko_users', JSON.stringify(window.users));
+            console.log(`[SYNC FIX] Master user list ('nekoneko_users') has been updated for user ${safeId}.`);
         }
     };
 
@@ -127,7 +154,6 @@
 
     Memory.addToCollection = async function(userId, itemName, imageBase64, description = "", realDescription = "", location = null, rarity = 1) {
         try {
-            // ★最新のプロファイルを取得
             const profile = await Memory.getUserProfile(userId);
             if (!Array.isArray(profile.collection)) profile.collection = [];
             
@@ -156,7 +182,6 @@
                 isShared: false
             };
 
-            // コレクションに追加
             profile.collection.unshift(newItem); 
             
             const maxLimit = (imageUrl.startsWith('http')) ? 500 : 30;
@@ -169,23 +194,16 @@
                 }
             }
 
-            // 保存
-            await Memory.saveUserProfile(userId, profile);
-
-            // ★重要: 現在のメモリ上のcurrentUserにも反映させる（消失対策）
+            // ★重要: currentUserのメモリ上のデータも即時更新
             if (window.currentUser && String(window.currentUser.id) === String(userId)) {
-                // user.js側で持っているデータ構造に合わせて更新する
-                // currentUser.profile.collection ではなく、トップレベルにプロファイル情報が混ざっている場合があるが、
-                // 基本的に user.js の login 関数などを見ると、Firestoreのデータをそのまま currentUser にしている。
-                // Firestore上では { profile: { ... } } となっているはず。
-                if (!window.currentUser.profile) window.currentUser.profile = {};
+                if (!window.currentUser.profile) window.currentUser.profile = Memory.createEmptyProfile();
                 window.currentUser.profile.collection = profile.collection;
-                
-                // もしトップレベルに展開しているならそちらも更新（念のため）
-                // しかし、saveAndSync は currentUser 全体を保存するため、
-                // ここで currentUser.profile を更新しておけば、次回の saveAndSync で上書きされても大丈夫なはず。
-                console.log("Memory: Syncing current user collection in RAM.");
+                // トップレベルにもコレクションがある古いデータ構造との互換性
+                window.currentUser.collection = profile.collection;
             }
+
+            // 保存処理（ここで一覧データも更新される）
+            await Memory.saveUserProfile(userId, profile);
 
         } catch (e) {
             console.error("[Memory] Add Collection Error:", e);
@@ -198,7 +216,6 @@
             if (profile.collection && profile.collection[index]) {
                 const item = profile.collection[index];
                 
-                // 公開されている場合は公開コレクションからも削除
                 if (item.isShared) {
                     await Memory.unshareFromPublicCollection(userId, index);
                 }
@@ -209,7 +226,6 @@
                 profile.collection.splice(index, 1);
                 await Memory.saveUserProfile(userId, profile);
 
-                // メモリ同期
                 if (window.currentUser && String(window.currentUser.id) === String(userId)) {
                     if (window.currentUser.profile) {
                         window.currentUser.profile.collection = profile.collection;
@@ -243,7 +259,6 @@
         item.isShared = true;
         await Memory.saveUserProfile(userId, profile);
         
-        // メモリ同期
         if (window.currentUser && String(window.currentUser.id) === String(userId)) {
             if (window.currentUser.profile) {
                 window.currentUser.profile.collection = profile.collection;
@@ -253,7 +268,6 @@
         return "SUCCESS";
     };
 
-    // ★追加: 公開を取り消す（非公開に戻す）
     Memory.unshareFromPublicCollection = async function(userId, itemIndex) {
         if (!db) throw new Error("Database not connected");
         
@@ -264,8 +278,6 @@
         if (!item.isShared) return "NOT_SHARED";
 
         try {
-            // 画像URLと投稿者IDで検索して削除
-            // (ユニークIDを持っていないため、この方法で特定する)
             const snapshot = await db.collection("public_collection")
                 .where("discovererId", "==", String(userId))
                 .where("image", "==", item.image)
@@ -277,11 +289,9 @@
             });
             await batch.commit();
 
-            // ローカルのフラグを戻す
             item.isShared = false;
             await Memory.saveUserProfile(userId, profile);
 
-            // メモリ同期
             if (window.currentUser && String(window.currentUser.id) === String(userId)) {
                 if (window.currentUser.profile) {
                     window.currentUser.profile.collection = profile.collection;
@@ -342,10 +352,8 @@
         }
         await Memory.saveUserProfile(userId, profile);
         
-        // メモリ同期
         if (window.currentUser && String(window.currentUser.id) === String(userId)) {
             if (window.currentUser.profile) {
-                 // プロパティごとに同期
                  window.currentUser.profile[category] = profile[category];
             }
         }
