@@ -1,4 +1,4 @@
-// --- js/analyze.js (v441.0: 連打防止 & 宿題判定報酬制限 完全版) ---
+// --- js/analyze.js (v442.0: 連打防止 & 宿題判定報酬制限 完全版) ---
 
 // グローバル変数
 window.currentLocation = null;
@@ -17,7 +17,6 @@ window.fetchAddressFromCoords = async function(lat, lon) {
             const addr = data.address;
             
             let fullAddress = "";
-
             const appendIfNew = (str) => {
                 if (str && !fullAddress.includes(str)) {
                     fullAddress += str;
@@ -173,6 +172,7 @@ window.selectMode = function(m) {
     }
 };
 
+// 宿題チャット用音声入力
 window.startEmbeddedVoiceInput = function() {
     const micBtn = document.getElementById('embedded-mic-btn');
     const status = document.getElementById('embedded-mic-status');
@@ -374,7 +374,7 @@ window.giveLunch = function() {
     if(typeof saveAndSync === 'function') saveAndSync(); 
     window.updateMiniKarikari(); 
     window.showKarikariEffect(-1); 
-    fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount || 0, name: currentUser.name }) })
+    fetch('/lunch-reaction', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count: window.lunchCount, name: currentUser.name }) })
         .then(r => r.json())
         .then(d => { 
             window.updateNellMessage(d.reply || "おいしいにゃ！", "happy", true); 
@@ -595,6 +595,7 @@ window.finishGrading = async function(btnElement) {
     btnElement.innerText = "送信中にゃ...";
 
     if (currentUser) { 
+        // 宿題判定をチェック
         if (window.isHomeworkDetected) {
             currentUser.karikari += 100; 
             if(typeof saveAndSync === 'function') saveAndSync(); 
@@ -602,6 +603,7 @@ window.finishGrading = async function(btnElement) {
             window.showKarikariEffect(100); 
             await window.updateNellMessage("よくがんばったにゃ！カリカリ100個あげるにゃ！", "excited", false); 
         } else {
+            // 宿題でない場合は褒めるだけ
             await window.updateNellMessage("面白い写真を見せてくれてありがとうにゃ！次は宿題も見せてにゃ！", "happy", false);
         }
     } 
@@ -815,6 +817,144 @@ window.startAnalysis = async function(b64) {
     }
 };
 
+window.analyzeTreasureImage = async function(base64Data, providedLocation = null) {
+    if (typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
+    if (window.sfxHirameku) { window.safePlay(window.sfxHirameku); }
+
+    const flash = document.createElement('div');
+    flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;";
+    document.body.appendChild(flash);
+    setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
+
+    window.updateNellMessage("詳しい場所を調べてるにゃ…", "thinking");
+
+    let addressToSend = null;
+    let locationData = providedLocation || window.currentLocation;
+    
+    if (locationData && locationData.lat && locationData.lon) {
+         addressToSend = await getAddressFromCoords(locationData.lat, locationData.lon);
+    } else {
+         addressToSend = window.currentAddress;
+    }
+
+    window.updateNellMessage("ん？何を見つけたのかにゃ…？", "thinking");
+
+    try {
+        const res = await fetch('/identify-item', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                image: base64Data, 
+                name: currentUser ? currentUser.name : "生徒", 
+                location: locationData, 
+                address: addressToSend 
+            })
+        });
+        if (!res.ok) throw new Error("サーバー通信エラー");
+        const data = await res.json();
+        
+        let speech = "";
+        if (data.speechText) { speech = data.speechText; await window.updateNellMessage(data.speechText, "happy", true, true); } 
+        else if (data.text) { speech = data.text; await window.updateNellMessage(data.text, "happy", true, true); }
+
+        if (data.itemName && window.NellMemory && window.generateTradingCard) {
+            let collectionCount = 0;
+            try { 
+                const profile = await window.NellMemory.getUserProfile(currentUser.id); 
+                if (profile && Array.isArray(profile.collection)) collectionCount = profile.collection.length; 
+            } catch (e) {}
+            
+            const nextNo = collectionCount + 1;
+            let cardDataUrl = null;
+            try { 
+                cardDataUrl = await window.generateTradingCard(base64Data, data, currentUser, nextNo); 
+            } catch (genErr) { 
+                cardDataUrl = "data:image/jpeg;base64," + base64Data; 
+            }
+            
+            await window.NellMemory.addToCollection(currentUser.id, data.itemName, cardDataUrl, data.description, data.realDescription, locationData, data.rarity || 1);
+            
+            const notif = document.createElement('div');
+            const cleanName = data.itemName.replace(/([一-龠々ヶ]+)[\(（]([ぁ-んァ-ンー]+)[\)）]/g, '$1');
+            notif.innerText = `📖 図鑑に「${cleanName}」を登録したにゃ！`;
+            notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #00bcd4; color:#006064; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3);";
+            document.body.appendChild(notif);
+            setTimeout(() => notif.remove(), 4000);
+            if(window.safePlay) window.safePlay(window.sfxHirameku);
+        }
+    } catch (e) {
+        window.updateNellMessage(`エラーだにゃ…: ${e.message || "解析失敗"}`, "thinking");
+    }
+};
+
+window.captureAndIdentifyItem = async function() {
+    if (window.isLiveImageSending) return;
+    const video = document.getElementById('live-chat-video');
+    if (!video || !video.srcObject || !video.srcObject.active) { return alert("カメラが動いてないにゃ...。"); }
+    window.isLiveImageSending = true;
+    const btn = document.getElementById('live-camera-btn');
+    if (btn) { btn.innerHTML = "<span>📡</span> 写真を準備中にゃ..."; btn.style.backgroundColor = "#ccc"; btn.disabled = true; }
+    try {
+        const canvas = document.createElement('canvas'); canvas.width = video.videoWidth || 640; canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d'); ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        let compressedDataUrl = window.processImageForAI(canvas); let base64Data = compressedDataUrl.split(',')[1];
+        await window.analyzeTreasureImage(base64Data, null);
+    } catch (e) { console.error("Capture Error:", e); } finally {
+        window.isLiveImageSending = false; window.stopPreviewCamera(); 
+        if (btn) { btn.innerHTML = "<span>📷</span> 撮影"; btn.style.backgroundColor = "#ff85a1"; btn.disabled = false; }
+    }
+};
+
+window.handleTreasureFile = async function(file) {
+    if (!file) return;
+    const btn = document.getElementById('upload-treasure-btn');
+    if (btn) {
+        btn.innerHTML = "<span>📡</span> 解析中...";
+        btn.style.backgroundColor = "#ccc";
+        btn.disabled = true;
+    }
+    let locationData = null;
+    try { locationData = await getGpsFromExif(file); } catch(e) {}
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const img = new Image();
+        img.onload = async () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 800;
+            const scale = Math.min(1, MAX_WIDTH / img.width);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
+            const base64Data = compressedDataUrl.split(',')[1];
+            await window.analyzeTreasureImage(base64Data, locationData);
+            if (btn) {
+                btn.innerHTML = "<span>📁</span> アルバム";
+                btn.style.backgroundColor = "#4a90e2"; 
+                btn.disabled = false;
+            }
+            const fileInput = document.getElementById('treasure-upload-input');
+            if(fileInput) fileInput.value = '';
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+};
+
+window.createTreasureImage = function(sourceCanvas) {
+    const OUTPUT_SIZE = 300; 
+    const canvas = document.createElement('canvas');
+    canvas.width = OUTPUT_SIZE;
+    canvas.height = OUTPUT_SIZE;
+    const ctx = canvas.getContext('2d');
+    const size = Math.min(sourceCanvas.width, sourceCanvas.height);
+    const sx = (sourceCanvas.width - size) / 2;
+    const sy = (sourceCanvas.height - size) / 2;
+    ctx.drawImage(sourceCanvas, sx, sy, size, size, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE);
+    return canvas.toDataURL('image/jpeg', 0.7);
+};
+
 window.processImageForAI = function(sourceCanvas) { 
     let MAX_WIDTH = 1024; let QUALITY = 0.8;
     let w = sourceCanvas.width; let h = sourceCanvas.height; 
@@ -823,3 +963,47 @@ window.processImageForAI = function(sourceCanvas) {
     const ctx = canvas.getContext('2d'); ctx.drawImage(sourceCanvas, 0, 0, w, h); 
     return canvas.toDataURL('image/jpeg', QUALITY);
 };
+
+// 補助: 座標から住所取得 (重複定義回避のため)
+async function getAddressFromCoords(lat, lon) {
+    try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&accept_language=ja&zoom=18&addressdetails=1`;
+        const res = await fetch(url);
+        if (res.ok) {
+            const data = await res.json();
+            const addr = data.address;
+            let fullAddress = "";
+            if (addr.province) fullAddress += addr.province; else if (addr.prefecture) fullAddress += addr.prefecture;
+            if (addr.city) fullAddress += addr.city; if (addr.county) fullAddress += addr.county; if (addr.town) fullAddress += addr.town; if (addr.village) fullAddress += addr.village;
+            if (addr.ward) fullAddress += addr.ward; if (addr.quarter) fullAddress += addr.quarter; if (addr.neighbourhood) fullAddress += addr.neighbourhood;
+            if (addr.road) fullAddress += ` ${addr.road}`; if (addr.house_number) fullAddress += ` ${addr.house_number}`;
+            const specificLocation = addr.amenity || addr.shop || addr.tourism || addr.historic || addr.leisure || addr.building || addr.office;
+            if (specificLocation) fullAddress += ` (${specificLocation})`;
+            return fullAddress;
+        }
+    } catch (e) {}
+    return null;
+}
+
+// 補助: EXIFからGPS取得
+function getGpsFromExif(file) {
+    return new Promise((resolve) => {
+        if (typeof EXIF === 'undefined') { resolve(null); return; }
+        EXIF.getData(file, function() {
+            const lat = EXIF.getTag(this, "GPSLatitude");
+            const lon = EXIF.getTag(this, "GPSLongitude");
+            const latRef = EXIF.getTag(this, "GPSLatitudeRef");
+            const lonRef = EXIF.getTag(this, "GPSLongitudeRef");
+            if (lat && lon && latRef && lonRef) {
+                const convertDMSToDD = (degrees, minutes, seconds, direction) => {
+                    let dd = degrees + minutes / 60 + seconds / (60 * 60);
+                    if (direction == "S" || direction == "W") dd = dd * -1;
+                    return dd;
+                };
+                const decimalLat = convertDMSToDD(lat[0], lat[1], lat[2], latRef);
+                const decimalLon = convertDMSToDD(lon[0], lon[1], lon[2], lonRef);
+                resolve({ lat: decimalLat, lon: decimalLon, accuracy: 20 });
+            } else { resolve(null); }
+        });
+    });
+}
