@@ -1,4 +1,4 @@
-// --- js/state/user.js (完全版 v451.0: 低スペック端末向け軽量化版) ---
+// --- js/state/user.js (完全版 v452.0: PNG保存復活＆無限ロード対策版) ---
 
 // Firebase初期化
 let app, auth, db, storage;
@@ -30,7 +30,6 @@ window.isEditMode = false;
 window.isEditingInitialized = false;
 window.isGoogleEnrollment = false;
 
-// パス修正
 const sfxDoor = new Audio('assets/sounds/system/class_door1.mp3');
 const idBase = new Image(); idBase.crossOrigin = "Anonymous"; 
 idBase.src = 'assets/images/items/student-id-base.png?' + new Date().getTime();
@@ -40,6 +39,31 @@ decoEars.src = 'assets/images/items/ears.png?' + new Date().getTime();
 
 const decoMuzzle = new Image(); decoMuzzle.crossOrigin = "Anonymous"; 
 decoMuzzle.src = 'assets/images/items/muzzle.png?' + new Date().getTime();
+
+// ★ヘルパー: タイムアウト付き画像読み込み
+function loadImageWithTimeout(src, timeout = 5000) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        
+        const timer = setTimeout(() => {
+            img.src = ""; // キャンセル
+            reject(new Error("Image load timeout"));
+        }, timeout);
+
+        img.onload = () => {
+            clearTimeout(timer);
+            resolve(img);
+        };
+        
+        img.onerror = (err) => {
+            clearTimeout(timer);
+            reject(err);
+        };
+        
+        img.src = src;
+    });
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     renderUserList();
@@ -51,11 +75,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (auth) {
         auth.onAuthStateChanged(async (user) => {
             if (user) {
-                // ログイン済みならDBから取得を試みる
                 const doc = await db.collection("users").doc(user.uid).get();
                 if (doc.exists) {
                     const userData = doc.data();
-                    // ローカルストレージとも同期
                     updateLocalUserList(userData);
                     
                     if (!currentUser) {
@@ -72,7 +94,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function updateLocalUserList(userData) {
-    // ローカルストレージのリストを更新・追加
     const idx = users.findIndex(u => u.id === userData.id);
     if (idx !== -1) {
         users[idx] = userData;
@@ -172,6 +193,9 @@ window.showEnrollment = function() {
     if (baseImg) baseImg.src = "assets/images/items/student-id-base.png";
     const nameEl = document.querySelector('.id-name-text'); const gradeEl = document.querySelector('.id-grade-text');
     if (nameEl) nameEl.style.display = 'block'; if (gradeEl) gradeEl.style.display = 'block'; enrollFile = null; updateIDPreviewText();
+    
+    // ボタンのロックを解除
+    if(btn) btn.disabled = false;
 };
 
 window.startEditProfile = function() {
@@ -184,24 +208,23 @@ window.startEditProfile = function() {
     if (baseImg) baseImg.src = currentUser.photo; if (slot) { slot.style.display = 'none'; slot.innerHTML = ""; }
     const nameEl = document.querySelector('.id-name-text'); const gradeEl = document.querySelector('.id-grade-text');
     if (nameEl) nameEl.style.display = 'none'; if (gradeEl) gradeEl.style.display = 'none'; enrollFile = null; updateIDPreviewText();
+    
+    // ボタンのロックを解除
+    if(btn) btn.disabled = false;
 };
 
 window.deleteCurrentUser = async function() {
     if (!currentUser) return;
     if (confirm(`本当に${currentUser.name}さんの学生証を削除するにゃ？\n（復元できないにゃ）`)) {
-        const uid = String(currentUser.id); // String化
+        const uid = String(currentUser.id);
         if (db) {
             try {
                 await db.collection("users").doc(uid).delete();
-                // 認証ユーザーならログアウト
                 if (auth && auth.currentUser) await auth.signOut();
             } catch(e) { console.error("Firestore Delete Error:", e); }
         }
-        
-        // ローカルからも削除
         users = users.filter(u => String(u.id) !== uid);
         try { localStorage.setItem('nekoneko_users', JSON.stringify(users)); renderUserList(); } catch(err) {}
-        
         currentUser = null; alert("削除したにゃ..."); switchScreen('screen-gate');
     }
 };
@@ -209,18 +232,20 @@ window.deleteCurrentUser = async function() {
 async function loadFaceModels() {
     if (modelsLoaded) return;
     const status = document.getElementById('loading-models'); const btn = document.getElementById('complete-btn');
-    if(status) status.innerText = "猫化AIを準備中にゃ... 📷"; if(btn) btn.disabled = true;
+    if(status) status.innerText = "猫化AIを準備中にゃ... 📷"; 
+    // AI読み込み中も手動入力はブロックしないようにする（低スペック対策）
+    // if(btn) btn.disabled = true; 
     try {
         const MODEL_URL = 'https://cdn.jsdelivr.net/gh/cgarciagl/face-api.js@0.22.2/weights';
         await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL); await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-        modelsLoaded = true; if(status) status.innerText = "AI準備完了にゃ！"; if(btn) btn.disabled = false; if(enrollFile) updatePhotoPreview(enrollFile);
+        modelsLoaded = true; if(status) status.innerText = "AI準備完了にゃ！"; if(enrollFile) updatePhotoPreview(enrollFile);
     } catch (e) { 
         if(status) status.innerText = "AIの準備に失敗したにゃ…(手動モード)"; 
-        if(btn) btn.disabled = false; 
     }
+    if(btn) btn.disabled = false;
 }
 
-// ★修正: AI認識用のリサイズサイズを縮小してメモリ節約 (800 -> 480)
+// AI認識用のリサイズ (480pxに制限)
 async function resizeForAI(img, maxSize = 480) {
     return new Promise(resolve => {
         const canvas = document.createElement('canvas'); let width = img.width; let height = img.height;
@@ -235,45 +260,58 @@ async function updatePhotoPreview(file) {
     const slot = document.getElementById('id-photo-slot'); if (!slot) return;
     slot.innerHTML = '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#666;font-size:0.8rem;font-weight:bold;">🐱 加工中にゃ...</div>';
     
-    const img = new Image(); 
-    img.src = URL.createObjectURL(file); 
-    await new Promise(r => img.onload = r);
+    // ★ Blob URLの生成と解放管理
+    const blobUrl = URL.createObjectURL(file);
     
-    const canvas = document.createElement('canvas'); canvas.width = img.width; canvas.height = img.height;
-    canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'cover';
-    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0); 
-    slot.innerHTML = ''; slot.appendChild(canvas);
-    
-    if (modelsLoaded) {
-        try {
-            const aiImg = await resizeForAI(img); 
-            const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
-            const detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
-            
-            if (detection) {
-                const landmarks = detection.landmarks;
-                const nose = landmarks.getNose()[3]; const leftEyeBrow = landmarks.getLeftEyeBrow()[2]; const rightEyeBrow = landmarks.getRightEyeBrow()[2];
-                const aiScale = img.width / aiImg.width; 
+    try {
+        const img = await loadImageWithTimeout(blobUrl);
+        
+        const canvas = document.createElement('canvas'); canvas.width = img.width; canvas.height = img.height;
+        canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.objectFit = 'cover';
+        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0); 
+        
+        // プレビュー表示（加工前）
+        slot.innerHTML = ''; slot.appendChild(canvas);
+        
+        if (modelsLoaded) {
+            try {
+                // AI処理中にフリーズしないよう少し待機
+                await new Promise(r => setTimeout(r, 50));
                 
-                const transX = (val) => val * aiScale;
-                const transY = (val) => val * aiScale;
-                const transS = (val) => val * aiScale;
+                const aiImg = await resizeForAI(img, 480); 
+                const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+                const detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
+                
+                if (detection) {
+                    const landmarks = detection.landmarks;
+                    const nose = landmarks.getNose()[3]; const leftEyeBrow = landmarks.getLeftEyeBrow()[2]; const rightEyeBrow = landmarks.getRightEyeBrow()[2];
+                    const aiScale = img.width / aiImg.width; 
+                    
+                    const transX = (val) => val * aiScale;
+                    const transY = (val) => val * aiScale;
+                    const transS = (val) => val * aiScale;
 
-                if (decoMuzzle.complete) { 
-                    const nX = transX(nose.x); const nY = transY(nose.y); 
-                    const faceW = transS(detection.detection.box.width); 
-                    const muzW = faceW * 0.8; const muzH = muzW * 0.8; 
-                    ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH); 
+                    if (decoMuzzle.complete) { 
+                        const nX = transX(nose.x); const nY = transY(nose.y); 
+                        const faceW = transS(detection.detection.box.width); 
+                        const muzW = faceW * 0.8; const muzH = muzW * 0.8; 
+                        ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH); 
+                    }
+                    if (decoEars.complete) { 
+                        const browX = transX((leftEyeBrow.x + rightEyeBrow.x)/2); 
+                        const browY = transY((leftEyeBrow.y + rightEyeBrow.y)/2); 
+                        const faceW = transS(detection.detection.box.width); 
+                        const earW = faceW * 1.7; const earH = earW * 0.7; const earOffset = earH * 0.35; 
+                        ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH); 
+                    }
                 }
-                if (decoEars.complete) { 
-                    const browX = transX((leftEyeBrow.x + rightEyeBrow.x)/2); 
-                    const browY = transY((leftEyeBrow.y + rightEyeBrow.y)/2); 
-                    const faceW = transS(detection.detection.box.width); 
-                    const earW = faceW * 1.7; const earH = earW * 0.7; const earOffset = earH * 0.35; 
-                    ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH); 
-                }
-            }
-        } catch (e) { console.error("Preview AI Error:", e); }
+            } catch (e) { console.error("Preview AI Error:", e); }
+        }
+    } catch (e) {
+        console.error("Image load failed:", e);
+        slot.innerHTML = '<div style="color:red; font-size:0.8rem;">画像の読み込みに失敗したにゃ...</div>';
+    } finally {
+        URL.revokeObjectURL(blobUrl);
     }
 }
 
@@ -300,71 +338,73 @@ async function startEnrollmentWebCamera(callback) {
 function closeEnrollCamera() { const modal = document.getElementById('camera-modal'); const video = document.getElementById('camera-video'); if (enrollStream) { enrollStream.getTracks().forEach(t => t.stop()); enrollStream = null; } if (video) video.srcObject = null; if (modal) modal.classList.add('hidden'); }
 
 async function renderForSave() {
-    const img = new Image(); img.crossOrigin = "Anonymous"; 
-    try { await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; 
-        img.src = 'assets/images/items/student-id-base.png?' + new Date().getTime(); 
-    }); } catch (e) { return null; }
-    
-    const BASE_W = 300; 
-    const scaleFactor = BASE_W / img.width; 
-    const canvas = document.createElement('canvas');
-    canvas.width = BASE_W; canvas.height = img.height * scaleFactor; 
-    
-    const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
-    
-    const rx = canvas.width / 640; 
-    const ry = canvas.height / 400;
-    
-    if (enrollFile) {
-        try {
-            const photoImg = new Image(); photoImg.src = URL.createObjectURL(enrollFile); await new Promise(r => photoImg.onload = r);
-            const destX = 35 * rx; const destY = 143 * ry; const destW = 195 * rx; const destH = 180 * ry; 
-            const scale = Math.max(destW / photoImg.width, destH / photoImg.height); 
-            const cropW = destW / scale; const cropH = destH / scale; 
-            const cropX = (photoImg.width - cropW) / 2; const cropY = (photoImg.height - cropH) / 2;
-            
-            ctx.save(); ctx.beginPath(); ctx.roundRect(destX, destY, destW, destH, 2 * rx); ctx.clip(); 
-            ctx.drawImage(photoImg, cropX, cropY, cropW, cropH, destX, destY, destW, destH); ctx.restore();
-            
-            if (modelsLoaded) {
-                try {
-                    // ★修正: リサイズサイズを縮小してメモリ節約
-                    const aiImg = await resizeForAI(photoImg, 480); 
-                    const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
-                    const detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
-                    
-                    if (detection) {
-                        const landmarks = detection.landmarks;
-                        const nose = landmarks.getNose()[3]; const leftEyeBrow = landmarks.getLeftEyeBrow()[2]; const rightEyeBrow = landmarks.getRightEyeBrow()[2];
-                        const aiScale = photoImg.width / aiImg.width; 
-                        const transX = (val) => (val - cropX) * scale + destX; 
-                        const transY = (val) => (val - cropY) * scale + destY; 
-                        const transS = (val) => val * scale;
+    try {
+        const img = await loadImageWithTimeout('assets/images/items/student-id-base.png?' + new Date().getTime());
+        
+        const BASE_W = 300; 
+        const scaleFactor = BASE_W / img.width; 
+        const canvas = document.createElement('canvas');
+        canvas.width = BASE_W; canvas.height = img.height * scaleFactor; 
+        
+        const ctx = canvas.getContext('2d'); ctx.drawImage(img, 0, 0, canvas.width, canvas.height); 
+        
+        const rx = canvas.width / 640; 
+        const ry = canvas.height / 400;
+        
+        if (enrollFile) {
+            const blobUrl = URL.createObjectURL(enrollFile);
+            try {
+                const photoImg = await loadImageWithTimeout(blobUrl);
+                const destX = 35 * rx; const destY = 143 * ry; const destW = 195 * rx; const destH = 180 * ry; 
+                const scale = Math.max(destW / photoImg.width, destH / photoImg.height); 
+                const cropW = destW / scale; const cropH = destH / scale; 
+                const cropX = (photoImg.width - cropW) / 2; const cropY = (photoImg.height - cropH) / 2;
+                
+                ctx.save(); ctx.beginPath(); ctx.roundRect(destX, destY, destW, destH, 2 * rx); ctx.clip(); 
+                ctx.drawImage(photoImg, cropX, cropY, cropW, cropH, destX, destY, destW, destH); ctx.restore();
+                
+                if (modelsLoaded) {
+                    try {
+                        const aiImg = await resizeForAI(photoImg, 480); // AI用は縮小
+                        const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
+                        const detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
                         
-                        if (decoMuzzle.complete) { 
-                            const nX = transX(nose.x * aiScale); const nY = transY(nose.y * aiScale); 
-                            const faceW = transS(detection.detection.box.width * aiScale); 
-                            const muzW = faceW * 0.8; const muzH = muzW * 0.8; 
-                            ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH); 
+                        if (detection) {
+                            const landmarks = detection.landmarks;
+                            const nose = landmarks.getNose()[3]; const leftEyeBrow = landmarks.getLeftEyeBrow()[2]; const rightEyeBrow = landmarks.getRightEyeBrow()[2];
+                            const aiScale = photoImg.width / aiImg.width; 
+                            const transX = (val) => (val - cropX) * scale + destX; 
+                            const transY = (val) => (val - cropY) * scale + destY; 
+                            const transS = (val) => val * scale;
+                            
+                            if (decoMuzzle.complete) { 
+                                const nX = transX(nose.x * aiScale); const nY = transY(nose.y * aiScale); 
+                                const faceW = transS(detection.detection.box.width * aiScale); 
+                                const muzW = faceW * 0.8; const muzH = muzW * 0.8; 
+                                ctx.drawImage(decoMuzzle, nX - muzW/2, nY - muzH/2.5, muzW, muzH); 
+                            }
+                            if (decoEars.complete) { 
+                                const browX = transX(((leftEyeBrow.x + rightEyeBrow.x)/2) * aiScale); 
+                                const browY = transY(((leftEyeBrow.y + rightEyeBrow.y)/2) * aiScale); 
+                                const faceW = transS(detection.detection.box.width * aiScale); 
+                                const earW = faceW * 1.7; const earH = earW * 0.7; const earOffset = earH * 0.35; 
+                                ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH); 
+                            }
                         }
-                        if (decoEars.complete) { 
-                            const browX = transX(((leftEyeBrow.x + rightEyeBrow.x)/2) * aiScale); 
-                            const browY = transY(((leftEyeBrow.y + rightEyeBrow.y)/2) * aiScale); 
-                            const faceW = transS(detection.detection.box.width * aiScale); 
-                            const earW = faceW * 1.7; const earH = earW * 0.7; const earOffset = earH * 0.35; 
-                            ctx.drawImage(decoEars, browX - earW/2, browY - earH + earOffset, earW, earH); 
-                        }
-                    }
-                } catch(aiErr) { console.error("AI Decoration Failed (Non-fatal):", aiErr); }
-            }
-        } catch(e) { console.error(e); }
-    } else if (window.isEditMode && currentUser) {
-        try { const currentImg = new Image(); currentImg.src = currentUser.photo; await new Promise(r => currentImg.onload = r); const sX = currentImg.width * 0.055; const sY = currentImg.height * 0.3575; const sW = currentImg.width * 0.305; const sH = currentImg.height * 0.45; const dX = 35 * rx; const dY = 143 * ry; const dW = 195 * rx; const dH = 180 * ry; ctx.drawImage(currentImg, sX, sY, sW, sH, dX, dY, dW, dH); } catch(e) {}
+                    } catch(aiErr) { console.error("AI Decoration Failed (Non-fatal):", aiErr); }
+                }
+            } catch(e) { console.error(e); } finally { URL.revokeObjectURL(blobUrl); }
+        } else if (window.isEditMode && currentUser) {
+            try { const currentImg = await loadImageWithTimeout(currentUser.photo); const sX = currentImg.width * 0.055; const sY = currentImg.height * 0.3575; const sW = currentImg.width * 0.305; const sH = currentImg.height * 0.45; const dX = 35 * rx; const dY = 143 * ry; const dW = 195 * rx; const dH = 180 * ry; ctx.drawImage(currentImg, sX, sY, sW, sH, dX, dY, dW, dH); } catch(e) {}
+        }
+        const nameVal = document.getElementById('new-student-name').value; const gradeVal = document.getElementById('new-student-grade').value; ctx.fillStyle = "#333"; const fontSize = 32 * rx; ctx.font = `bold ${fontSize}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; const textX = 346 * rx; if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
+        
+        // ★修正: 透過対応のためPNG形式に戻す
+        return canvas.toDataURL('image/png');
+    } catch(e) {
+        console.error("Render Failed:", e);
+        return null;
     }
-    const nameVal = document.getElementById('new-student-name').value; const gradeVal = document.getElementById('new-student-grade').value; ctx.fillStyle = "#333"; const fontSize = 32 * rx; ctx.font = `bold ${fontSize}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; const textX = 346 * rx; if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
-    
-    // ★修正: PNGではなくJPEG (0.85) で軽量化して保存
-    try { return canvas.toDataURL('image/jpeg', 0.85); } catch (e) { return null; }
 }
 
 async function processAndCompleteEnrollment() {
@@ -373,6 +413,7 @@ async function processAndCompleteEnrollment() {
     
     btn.disabled = true; 
     btn.innerText = window.isEditMode ? "更新中にゃ..." : "作成中にゃ..."; 
+    // UI更新待ち
     await new Promise(r => setTimeout(r, 100)); 
 
     try {
@@ -395,7 +436,7 @@ async function processAndCompleteEnrollment() {
         }
         
         userToSave = { 
-            id: userUid || String(Date.now()), // フォールバック
+            id: userUid || String(Date.now()), 
             name, 
             grade, 
             photo: finalPhoto, 
@@ -433,6 +474,7 @@ async function processAndCompleteEnrollment() {
         }
         console.error(err);
     } finally { 
+        // 処理が終わったら必ずボタンを戻す
         btn.disabled = false; 
         btn.innerText = window.isEditMode ? "更新する！" : "入学する！"; 
     }
