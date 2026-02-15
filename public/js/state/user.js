@@ -1,4 +1,4 @@
-// --- js/state/user.js (完全版 v421.0: 匿名認証対応版) ---
+// --- js/state/user.js (完全版 v451.0: 低スペック端末向け軽量化版) ---
 
 // Firebase初期化
 let app, auth, db, storage;
@@ -220,7 +220,8 @@ async function loadFaceModels() {
     }
 }
 
-async function resizeForAI(img, maxSize = 800) {
+// ★修正: AI認識用のリサイズサイズを縮小してメモリ節約 (800 -> 480)
+async function resizeForAI(img, maxSize = 480) {
     return new Promise(resolve => {
         const canvas = document.createElement('canvas'); let width = img.width; let height = img.height;
         if (width > height) { if (width > maxSize) { height *= maxSize / width; width = maxSize; } } 
@@ -327,7 +328,8 @@ async function renderForSave() {
             
             if (modelsLoaded) {
                 try {
-                    const aiImg = await resizeForAI(photoImg); 
+                    // ★修正: リサイズサイズを縮小してメモリ節約
+                    const aiImg = await resizeForAI(photoImg, 480); 
                     const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.3 });
                     const detection = await faceapi.detectSingleFace(aiImg, options).withFaceLandmarks();
                     
@@ -361,7 +363,8 @@ async function renderForSave() {
     }
     const nameVal = document.getElementById('new-student-name').value; const gradeVal = document.getElementById('new-student-grade').value; ctx.fillStyle = "#333"; const fontSize = 32 * rx; ctx.font = `bold ${fontSize}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = "left"; ctx.textBaseline = "middle"; const textX = 346 * rx; if (gradeVal) ctx.fillText(gradeVal + "年生", textX, 168 * ry + 1); if (nameVal) ctx.fillText(nameVal, textX, 231 * ry + 3);
     
-    try { return canvas.toDataURL('image/png'); } catch (e) { return null; }
+    // ★修正: PNGではなくJPEG (0.85) で軽量化して保存
+    try { return canvas.toDataURL('image/jpeg', 0.85); } catch (e) { return null; }
 }
 
 async function processAndCompleteEnrollment() {
@@ -380,23 +383,17 @@ async function processAndCompleteEnrollment() {
         let userToSave = null;
         let userUid = null;
 
-        // ★修正: 匿名認証（ゲスト）またはGoogleログインでFirebaseに保存する
         if (window.isGoogleEnrollment) {
-             // Googleログイン済みの場合 (uidはそのまま)
              if (auth.currentUser) userUid = auth.currentUser.uid;
         } else if (currentUser && currentUser.id && auth.currentUser) {
-             // 編集モード等 (uidはそのまま)
              userUid = currentUser.id;
         } else {
-             // ★ここが重要: 完全に新規の「入学（ゲスト）」の場合
-             // 匿名ログインを実行してUIDを取得する
              if (auth) {
                  const cred = await auth.signInAnonymously();
                  userUid = cred.user.uid;
              }
         }
         
-        // 最終的なデータ構築
         userToSave = { 
             id: userUid || String(Date.now()), // フォールバック
             name, 
@@ -414,12 +411,10 @@ async function processAndCompleteEnrollment() {
             isGoogleUser: !!(auth && auth.currentUser && !auth.currentUser.isAnonymous) 
         };
 
-        // ★Firestoreに保存
         if (db && userUid) {
             await db.collection("users").doc(userUid).set(userToSave, { merge: true });
         }
         
-        // ローカルストレージにも保存（オフライン対応用）
         updateLocalUserList(userToSave);
 
         currentUser = userToSave; 
@@ -445,7 +440,6 @@ async function processAndCompleteEnrollment() {
 
 function renderUserList() { const list = document.getElementById('user-list'); if(!list) return; list.innerHTML = users.length ? "" : "<p style='text-align:center; width:100%; color:white; font-weight:bold; opacity:0.8;'>まだ誰もいないにゃ</p>"; users.forEach(user => { const div = document.createElement('div'); div.className = "user-card"; div.innerHTML = `<img src="${user.photo}"><div class="card-karikari-badge">🍖${user.karikari || 0}</div>`; div.onclick = () => login(user, false); list.appendChild(div); }); }
 
-// ★修正: ログイン処理（既存ユーザー選択時）
 async function login(user, isGoogle = false) { 
     try { sfxDoor.currentTime = 0; sfxDoor.play(); } catch(e){}
     currentUser = user; 
@@ -453,35 +447,22 @@ async function login(user, isGoogle = false) {
     if (!currentUser.quizLevels) currentUser.quizLevels = { "全ジャンル": 1 }; 
     if (!currentUser.savedQuizzes) currentUser.savedQuizzes = []; 
 
-    // IDが数値（旧仕様のローカルユーザー）の場合、自動的に匿名認証に移行してデータ移行する
     if (typeof user.id === 'number' && auth) {
          try {
-             // 匿名ログイン
              const cred = await auth.signInAnonymously();
              const newUid = cred.user.uid;
-             
-             // 古いIDのデータを削除（ローカル）
              users = users.filter(u => u.id !== user.id);
-             
-             // 新しいIDでデータを更新
              currentUser.id = newUid;
              currentUser.isGoogleUser = false;
-             
-             // DBに保存
              await db.collection("users").doc(newUid).set(currentUser, { merge: true });
-             
-             // ローカルも更新
              updateLocalUserList(currentUser);
              console.log("Migrated local user to Anonymous Auth:", newUid);
          } catch(e) {
              console.error("Migration failed:", e);
          }
     } else if (auth && !auth.currentUser) {
-        // IDは文字列だが、セッションが切れている場合 -> 再ログインを試みる（匿名ユーザーなら自動復帰は難しいが、永続性設定があれば戻る）
-        // ここでは単純にfirestoreを見に行く
     }
     
-    // 出席＆ボーナス判定
     const today = new Date().toISOString().split('T')[0]; 
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
 
@@ -527,13 +508,11 @@ async function saveAndSync() {
     const miniKCounter = document.getElementById('mini-karikari-count');
     if (miniKCounter) miniKCounter.innerText = currentUser.karikari;
 
-    // ★修正: Googleユーザーだけでなく、IDが文字列なら（＝匿名含む）同期する
     if (typeof currentUser.id === 'string' && db) {
         try {
             await db.collection("users").doc(currentUser.id).set(currentUser, { merge: true });
         } catch(e) { console.error("Firestore sync error:", e); }
     }
     
-    // ローカル同期
     updateLocalUserList(currentUser);
 }
