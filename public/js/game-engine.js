@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v467.0: ランキング関数名修正・完全版) ---
+// --- js/game-engine.js (v468.0: 完全版 Part 1) ---
 
 console.log("Game Engine Loading...");
 
@@ -70,6 +70,7 @@ window.saveHighScore = async function(gameKey, score) {
     const storageKey = `nell_highscore_${gameKey}_${userId}`;
     let currentHigh = parseInt(localStorage.getItem(storageKey) || "0");
     
+    // スコア更新時のみ保存
     if (score > currentHigh) {
         localStorage.setItem(storageKey, score);
         try {
@@ -96,6 +97,9 @@ window.saveHighScore = async function(gameKey, score) {
 window.showGame = function() { 
     if (typeof window.switchScreen === 'function') {
         window.switchScreen('screen-game'); 
+    } else {
+        document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+        document.getElementById('screen-game').classList.remove('hidden');
     }
     document.getElementById('mini-karikari-display').classList.remove('hidden'); 
     if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari(); 
@@ -430,10 +434,14 @@ function gameOverDanmaku() {
     danmakuState.running = false; 
     if(window.safePlay) window.safePlay(window.sfxOver);
     
+    // ★重要修正: ランキングには元のスコアを保存
+    window.saveHighScore('vs_robot', danmakuState.score);
+    
     if (danmakuState.score > 0) { 
-        window.giveGameReward(danmakuState.score); 
-        window.saveHighScore('vs_robot', danmakuState.score); // Ranking Save
-        window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${danmakuState.score}個ゲットだにゃ！`, "sad"); 
+        // ★報酬はスコアの1/10
+        const reward = Math.floor(danmakuState.score / 10);
+        window.giveGameReward(reward); 
+        window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${reward}個ゲットだにゃ！`, "sad"); 
     } else { 
         window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad"); 
     }
@@ -546,7 +554,6 @@ window.showLevelSelection = function(genre) {
     // ★ランキングボタン
     const rankBtn = document.getElementById('quiz-ranking-btn');
     if (rankBtn) {
-        // ★修正: 関数名を showRanking に統一
         rankBtn.onclick = () => window.showRanking(`quiz_${genre}`, `🏆 ${genre} ランキング`);
     }
 };
