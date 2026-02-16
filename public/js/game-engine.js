@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v462.0: 漢字・なぞなぞ機能復旧版) ---
+// --- js/game-engine.js (v462.2: 完全版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -1348,7 +1348,10 @@ window.reportQuizError = async function() {
 let riddleState = {
     currentRiddle: null,
     nextRiddle: null,
-    isFinished: false
+    isFinished: false,
+    score: 0,
+    questionCount: 0,
+    maxQuestions: 5
 };
 
 async function fetchRiddleData() {
@@ -1387,6 +1390,8 @@ window.showRiddleGame = function() {
     
     document.getElementById('riddle-answer-display').classList.add('hidden');
     document.getElementById('riddle-mic-status').innerText = "";
+    document.getElementById('riddle-mic-area').style.display = 'none';
+    document.getElementById('riddle-progress').innerText = "";
     
     if(typeof window.updateNellMessage === 'function') {
         window.updateNellMessage("なぞなぞで遊ぶにゃ！", "excited", false);
@@ -1399,21 +1404,48 @@ window.startRiddle = async function() {
     const startBtn = document.getElementById('start-riddle-btn');
     startBtn.style.display = 'none';
     
+    riddleState.score = 0;
+    riddleState.questionCount = 0;
+    
     document.getElementById('riddle-controls').style.display = 'flex';
     document.getElementById('riddle-answer-display').classList.add('hidden');
+    document.getElementById('riddle-mic-area').style.display = 'block';
     
-    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+    // ★常時聞き取りは廃止
+    // if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
     
     window.nextRiddle();
 };
 
 window.nextRiddle = async function() {
+    if (riddleState.questionCount >= riddleState.maxQuestions) {
+        const reward = riddleState.score * 100;
+        let msg = "";
+        if (riddleState.score === 5) {
+            msg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
+        } else if (riddleState.score > 0) {
+            msg = `${riddleState.score}問正解！カリカリ${reward}個あげるにゃ！`;
+        } else {
+            msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
+        }
+        
+        window.giveGameReward(reward);
+        window.updateNellMessage(msg, "happy", false, true);
+        alert(msg);
+        window.showRiddleGame();
+        return;
+    }
+
+    riddleState.questionCount++;
+    document.getElementById('riddle-progress').innerText = `${riddleState.questionCount} / ${riddleState.maxQuestions} 問目`;
+
     const qText = document.getElementById('riddle-question-text');
     const controls = document.getElementById('riddle-controls');
     const nextBtn = document.getElementById('next-riddle-btn');
     const ansDisplay = document.getElementById('riddle-answer-display');
     const micStatus = document.getElementById('riddle-mic-status');
     const giveUpBtn = controls.querySelector('button.gray-btn');
+    const micBtn = document.getElementById('riddle-mic-btn');
 
     qText.innerText = "なぞなぞを考えてるにゃ…";
     window.updateNellMessage("なぞなぞを考えてるにゃ…", "thinking");
@@ -1421,6 +1453,13 @@ window.nextRiddle = async function() {
     ansDisplay.classList.add('hidden');
     nextBtn.classList.add('hidden');
     if(giveUpBtn) giveUpBtn.classList.remove('hidden');
+    
+    // マイクボタンのリセット
+    if(micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
+        micBtn.style.background = "#4db6ac";
+    }
     
     let riddleData = null;
     if (riddleState.nextRiddle) {
@@ -1453,9 +1492,56 @@ window.nextRiddle = async function() {
     }
 };
 
+// ★新規: なぞなぞ用音声入力
+window.startRiddleVoiceInput = function() {
+    const micBtn = document.getElementById('riddle-mic-btn');
+    const status = document.getElementById('riddle-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = true;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
+        micBtn.style.background = "#ff5252";
+    }
+    
+    if (status) status.innerText = "お話してにゃ！";
+    
+    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+
+    if (typeof window.startOneShotRecognition === 'function') {
+        window.startOneShotRecognition(
+            (transcript) => {
+                const isCorrect = window.checkRiddleAnswer(transcript);
+                // 正解なら即次へボタンなどを出すが、不正解なら再トライ可能にする？
+                // ここでは一発判定としてボタンを戻す
+                window.stopRiddleVoiceInput(true);
+            },
+            () => {
+                window.stopRiddleVoiceInput();
+            }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopRiddleVoiceInput();
+    }
+};
+
+window.stopRiddleVoiceInput = function(keepStatus = false) {
+    const micBtn = document.getElementById('riddle-mic-btn');
+    const status = document.getElementById('riddle-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
+        micBtn.style.background = "#4db6ac";
+    }
+    
+    if (status && !keepStatus) status.innerText = "";
+};
+
 window.checkRiddleAnswer = function(userSpeech) {
     if (!riddleState.currentRiddle || window.currentMode !== 'riddle') return false; 
     
+    // 既に回答済みなら無視
     if (!document.getElementById('riddle-answer-display').classList.contains('hidden')) return false;
 
     const correct = riddleState.currentRiddle.answer;
@@ -1463,7 +1549,7 @@ window.checkRiddleAnswer = function(userSpeech) {
     const userAnswer = userSpeech.trim();
     
     const status = document.getElementById('riddle-mic-status');
-    status.innerText = `「${userAnswer}」？`;
+    if(status) status.innerText = `「${userAnswer}」？`;
     
     let isCorrect = false;
     if (fuzzyContains(userAnswer, correct)) isCorrect = true;
@@ -1478,12 +1564,14 @@ window.checkRiddleAnswer = function(userSpeech) {
     
     if (isCorrect) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
-        window.updateNellMessage(`大正解だにゃ！答えは「${correct}」！カリカリ20個あげるにゃ！`, "excited", false, true);
-        window.giveGameReward(20);
+        window.updateNellMessage(`大正解だにゃ！答えは「${correct}」！`, "excited", false, true);
+        riddleState.score++;
         window.showRiddleResult(true);
         return true; 
-    } 
-    return false; 
+    } else {
+        window.updateNellMessage("違うにゃ〜。もう一回考えてみてにゃ！", "gentle");
+        return false;
+    }
 };
 
 window.giveUpRiddle = function() {
@@ -1512,7 +1600,7 @@ window.showRiddleResult = function(isWin) {
 // ==========================================
 // 5. ネル先生の漢字ドリル
 // ==========================================
-let kanjiState = { data: null, canvas: null, ctx: null, isDrawing: false, mode: 'writing', questionCount: 0, maxQuestions: 5 };
+let kanjiState = { data: null, canvas: null, ctx: null, isDrawing: false, mode: 'writing', questionCount: 0, maxQuestions: 5, correctCount: 0 };
 
 window.showKanjiMenu = function() {
     window.switchScreen('screen-kanji');
@@ -1525,6 +1613,7 @@ window.startKanjiSet = function(mode) {
     window.currentMode = 'kanji';
     kanjiState.mode = mode;
     kanjiState.questionCount = 0;
+    kanjiState.correctCount = 0;
     document.getElementById('kanji-menu-container').style.display = 'none';
     document.getElementById('kanji-game-container').classList.remove('hidden');
     const canvas = document.getElementById('kanji-canvas');
@@ -1536,14 +1625,30 @@ window.startKanjiSet = function(mode) {
     const getPos = (e) => { const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; return { x: clientX - rect.left, y: clientY - rect.top }; };
     canvas.onmousedown = startDraw; canvas.onmousemove = draw; canvas.onmouseup = endDraw;
     canvas.ontouchstart = startDraw; canvas.ontouchmove = draw; canvas.ontouchend = endDraw;
-    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+    
+    // ★常時聞き取りは廃止
+    // if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+    
     window.nextKanjiQuestion();
 };
 
 window.nextKanjiQuestion = async function() {
     if (kanjiState.questionCount >= kanjiState.maxQuestions) {
-        window.updateNellMessage("5問クリア！よくがんばったにゃ！", "excited", false, true);
-        setTimeout(() => { alert("おつかれさま！メニューに戻るにゃ。"); window.showKanjiMenu(); }, 2000);
+        const reward = kanjiState.correctCount * 100;
+        let msg = "";
+        if (kanjiState.correctCount === 5) {
+            msg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
+        } else if (kanjiState.correctCount > 0) {
+            msg = `${kanjiState.correctCount}問正解！カリカリ${reward}個あげるにゃ！`;
+        } else {
+            msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
+        }
+
+        window.giveGameReward(reward);
+        window.updateNellMessage(msg, "happy", false, true);
+        alert(msg);
+        
+        window.showKanjiMenu(); 
         return;
     }
     kanjiState.questionCount++;
@@ -1551,6 +1656,17 @@ window.nextKanjiQuestion = async function() {
     document.getElementById('kanji-controls').style.display = 'none';
     document.getElementById('next-kanji-btn').style.display = 'none';
     document.getElementById('kanji-answer-display').classList.add('hidden');
+    
+    // マイクボタンのリセット
+    const micBtn = document.getElementById('kanji-mic-btn');
+    const micStatus = document.getElementById('kanji-mic-status');
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:2rem;">🎤</span> 声で答える';
+        micBtn.style.background = "#4db6ac";
+    }
+    if(micStatus) micStatus.innerText = "";
+
     const qText = document.getElementById('kanji-question-text');
     qText.innerText = "問題を探してるにゃ…";
     window.updateNellMessage("問題を探してるにゃ…", "thinking");
@@ -1583,6 +1699,55 @@ window.nextKanjiQuestion = async function() {
     }
 };
 
+// ★新規: 漢字ドリル用音声入力 (読み問題用)
+window.startKanjiVoiceInput = function() {
+    const micBtn = document.getElementById('kanji-mic-btn');
+    const status = document.getElementById('kanji-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = true;
+        micBtn.innerHTML = '<span style="font-size:2rem;">👂</span> 聞いてるにゃ...';
+        micBtn.style.background = "#ff5252";
+    }
+    
+    if (status) status.innerText = "お話してにゃ！";
+    
+    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+
+    if (typeof window.startOneShotRecognition === 'function') {
+        window.startOneShotRecognition(
+            (transcript) => {
+                window.checkKanjiVoiceAnswer(transcript);
+                window.stopKanjiVoiceInput(true);
+            },
+            () => { window.stopKanjiVoiceInput(); }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopKanjiVoiceInput();
+    }
+};
+
+window.stopKanjiVoiceInput = function(keepStatus = false) {
+    const micBtn = document.getElementById('kanji-mic-btn');
+    const status = document.getElementById('kanji-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:2rem;">🎤</span> 声で答える';
+        micBtn.style.background = "#4db6ac";
+    }
+    
+    if (status && !keepStatus) status.innerText = "";
+};
+
+window.checkKanjiVoiceAnswer = function(transcript) {
+    const status = document.getElementById('kanji-mic-status');
+    if(status) status.innerText = `「${transcript}」？`;
+    
+    window.checkKanjiReading(transcript);
+};
+
 window.clearKanjiCanvas = function() {
     if (!kanjiState.ctx) return;
     kanjiState.ctx.clearRect(0, 0, kanjiState.canvas.width, kanjiState.canvas.height);
@@ -1611,7 +1776,7 @@ window.checkKanji = async function() {
         window.updateNellMessage(data.comment, data.is_correct ? "happy" : "gentle", false, true);
         if (data.is_correct) {
             if(window.safePlay) window.safePlay(window.sfxMaru);
-            window.giveGameReward(10);
+            kanjiState.correctCount++;
             document.getElementById('kanji-controls').style.display = 'none';
             document.getElementById('next-kanji-btn').style.display = 'inline-block';
             document.getElementById('kanji-answer-display').classList.remove('hidden');
@@ -1625,6 +1790,9 @@ window.checkKanji = async function() {
 
 window.checkKanjiReading = function(text) {
     if (!kanjiState.data || kanjiState.data.type !== 'reading') return false;
+    // 既に回答済みなら無視
+    if (!document.getElementById('kanji-answer-display').classList.contains('hidden')) return false;
+
     const correctHiragana = kanjiState.data.reading;
     const correctKanji = kanjiState.data.kanji;
     const correctKatakana = correctHiragana.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
@@ -1637,16 +1805,18 @@ window.checkKanjiReading = function(text) {
 
     if (isCorrect) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
-        window.updateNellMessage(`正解だにゃ！「${correctHiragana}」だにゃ！カリカリ10個あげるにゃ！`, "excited", false, true);
-        window.giveGameReward(10);
+        window.updateNellMessage(`正解だにゃ！「${correctHiragana}」だにゃ！`, "excited", false, true);
+        kanjiState.correctCount++;
         document.getElementById('kanji-controls').style.display = 'none';
         document.getElementById('next-kanji-btn').style.display = 'inline-block';
         document.getElementById('kanji-answer-display').classList.remove('hidden');
         document.getElementById('kanji-answer-text').innerText = correctHiragana;
         window.currentMinitest = null; 
         return true;
+    } else {
+        window.updateNellMessage("違うにゃ〜。もう一回言ってにゃ！", "gentle");
+        return false;
     }
-    return false;
 };
 
 window.giveUpKanji = function() {
@@ -1669,226 +1839,6 @@ window.sendHttpTextInternal = function(text) {
         const speechText = data.speech || data.reply;
         if(typeof window.updateNellMessage === 'function') { window.updateNellMessage(speechText, "normal", true, true); }
     });
-};
-
-// ==========================================
-// 6. ネル先生のミニテスト
-// ==========================================
-
-let minitestState = {
-    currentQuestionIndex: 0,
-    maxQuestions: 5,
-    currentQuestionData: null,
-    subject: null,
-    score: 0
-};
-
-window.showMinitestMenu = function() {
-    window.switchScreen('screen-minitest');
-    window.currentMode = 'minitest';
-    document.getElementById('minitest-subject-select').classList.remove('hidden');
-    document.getElementById('minitest-game-area').classList.add('hidden');
-};
-
-window.startMinitest = function(subject) {
-    minitestState.subject = subject;
-    minitestState.currentQuestionIndex = 0;
-    minitestState.score = 0;
-    
-    document.getElementById('minitest-subject-select').classList.add('hidden');
-    document.getElementById('minitest-game-area').classList.remove('hidden');
-    
-    window.updateNellMessage(`${subject}のテストだにゃ！がんばるにゃ！`, "excited");
-    
-    // ★常時聞き取りは廃止
-    // if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-
-    window.nextMinitestQuestion();
-};
-
-window.nextMinitestQuestion = async function() {
-    if (minitestState.currentQuestionIndex >= minitestState.maxQuestions) {
-        // ★修正: 正解数に応じて報酬を計算
-        const correctCount = minitestState.score / 20; // 1問20点
-        const reward = correctCount * 200;
-        
-        let resultMsg = "";
-        if (correctCount === 5) {
-            resultMsg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
-        } else if (correctCount > 0) {
-            resultMsg = `${minitestState.score}点だったにゃ！カリカリ${reward}個あげるにゃ！`;
-        } else {
-            resultMsg = `0点だったにゃ…。次はがんばるにゃ！`;
-        }
-
-        window.giveGameReward(reward);
-        window.updateNellMessage(resultMsg, "happy", false, true);
-        alert(resultMsg);
-        
-        window.currentMinitest = null; 
-        window.showMinitestMenu();
-        return;
-    }
-
-    minitestState.currentQuestionIndex++;
-    document.getElementById('minitest-progress').innerText = `${minitestState.currentQuestionIndex} / ${minitestState.maxQuestions} 問目`;
-    
-    const qText = document.getElementById('minitest-question');
-    const optionsDiv = document.getElementById('minitest-options');
-    const explanationArea = document.getElementById('minitest-explanation-area');
-    
-    // ★マイクボタンのリセット
-    const micBtn = document.getElementById('minitest-mic-btn');
-    const micStatus = document.getElementById('minitest-mic-status');
-    if (micBtn) {
-        micBtn.disabled = false;
-        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
-        micBtn.style.background = "#4db6ac";
-    }
-    if (micStatus) micStatus.innerText = "";
-
-    qText.innerText = "問題を作成中にゃ...";
-    optionsDiv.innerHTML = "";
-    explanationArea.classList.add('hidden');
-    
-    try {
-        const res = await fetch('/generate-minitest', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                grade: currentUser ? currentUser.grade : "1",
-                subject: minitestState.subject 
-            })
-        });
-        const data = await res.json();
-        
-        if (data.question && data.options) {
-            minitestState.currentQuestionData = data;
-            window.currentMinitest = data; 
-            
-            qText.innerText = data.question;
-            window.updateNellMessage("さあ、どっちが正解かにゃ？", "normal", false, true); 
-            
-            const shuffledOptions = [...data.options].sort(() => Math.random() - 0.5);
-            
-            shuffledOptions.forEach(opt => {
-                const btn = document.createElement('button');
-                btn.className = "minitest-option-btn";
-                btn.innerText = opt;
-                btn.onclick = () => window.checkMinitestAnswer(opt, btn);
-                optionsDiv.appendChild(btn);
-            });
-            
-        } else {
-            throw new Error("Invalid Minitest Data");
-        }
-    } catch (e) {
-        console.error(e);
-        qText.innerText = "エラーが発生したにゃ。";
-    }
-};
-
-// ★新規: 音声回答ロジック
-window.startMinitestVoiceInput = function() {
-    const micBtn = document.getElementById('minitest-mic-btn');
-    const status = document.getElementById('minitest-mic-status');
-    
-    if (micBtn) {
-        micBtn.disabled = true;
-        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
-        micBtn.style.background = "#ff5252";
-    }
-    
-    if (status) status.innerText = "お話してにゃ！";
-    
-    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-
-    if (typeof window.startOneShotRecognition === 'function') {
-        window.startOneShotRecognition(
-            (transcript) => {
-                window.checkMinitestVoiceAnswer(transcript);
-                window.stopMinitestVoiceInput(true);
-            },
-            () => { window.stopMinitestVoiceInput(); }
-        );
-    } else {
-        alert("音声認識が使えないにゃ...");
-        window.stopMinitestVoiceInput();
-    }
-};
-
-window.stopMinitestVoiceInput = function(keepStatus = false) {
-    const micBtn = document.getElementById('minitest-mic-btn');
-    const status = document.getElementById('minitest-mic-status');
-    
-    if (micBtn) {
-        micBtn.disabled = false;
-        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
-        micBtn.style.background = "#4db6ac";
-    }
-    
-    if (status && !keepStatus) status.innerText = "";
-};
-
-window.checkMinitestVoiceAnswer = function(transcript) {
-    const status = document.getElementById('minitest-mic-status');
-    if(status) status.innerText = `「${transcript}」？`;
-
-    // 選択肢の中から一致するものを探す
-    const buttons = document.querySelectorAll('.minitest-option-btn');
-    let matchedBtn = null;
-    let matchedText = null;
-
-    buttons.forEach(btn => {
-        const optText = btn.innerText;
-        // 完全一致 or あいまい一致
-        if (fuzzyContains(transcript, optText)) {
-            matchedBtn = btn;
-            matchedText = optText;
-        }
-    });
-
-    if (matchedBtn) {
-        // ボタンクリックと同じ処理を呼ぶ
-        window.checkMinitestAnswer(matchedText, matchedBtn);
-    } else {
-        // 一致なし
-        window.updateNellMessage("ん？どれのことかにゃ？もう一回言ってにゃ。", "thinking");
-    }
-};
-
-window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
-    const buttons = document.querySelectorAll('.minitest-option-btn');
-    buttons.forEach(b => b.disabled = true);
-    
-    const correct = minitestState.currentQuestionData.answer;
-    const isCorrect = (selectedAnswer === correct);
-    
-    if (isCorrect) {
-        btnElement.classList.add('minitest-correct');
-        if(window.safePlay) window.safePlay(window.sfxMaru);
-        window.updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false, true);
-        minitestState.score += 20; 
-        // ★ここでの個別報酬は削除し、最後にまとめて付与する方式に変更
-        // window.giveGameReward(10); 
-    } else {
-        btnElement.classList.add('minitest-wrong');
-        buttons.forEach(b => {
-            if (b.innerText === correct) b.classList.add('minitest-correct');
-        });
-        if(window.safePlay) window.safePlay(window.sfxBatu);
-        window.updateNellMessage("残念...正解はこっちだにゃ。", "gentle", false, true);
-    }
-    
-    const expArea = document.getElementById('minitest-explanation-area');
-    const expText = document.getElementById('minitest-explanation-text');
-    if (minitestState.currentQuestionData.explanation) {
-        expText.innerText = minitestState.currentQuestionData.explanation;
-        expArea.classList.remove('hidden');
-    } else {
-        expText.innerText = ""; 
-        expArea.classList.remove('hidden');
-    }
 };
 
 // ==========================================
