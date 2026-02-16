@@ -1,4 +1,6 @@
-// --- js/ui/ranking.js (v1.2: 関数名統一・エラーハンドリング強化版) ---
+--- START OF FILE ranking.js ---
+
+// --- js/ui/ranking.js (v468.0: 単位表示対応・完全版) ---
 
 window.showRanking = async function(rankingType = 'karikari', title = '🏆 カリカリランキング') {
     window.switchScreen('screen-ranking');
@@ -6,10 +8,10 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
     const titleEl = document.getElementById('ranking-subtitle');
     const myScoreEl = document.getElementById('ranking-myscore');
     
-    if (!container || !titleEl || !myScoreEl) return;
+    if (!container) return;
 
-    titleEl.innerText = title;
-    myScoreEl.innerText = '';
+    if (titleEl) titleEl.innerText = title;
+    if (myScoreEl) myScoreEl.innerText = '';
 
     container.innerHTML = '<p style="text-align:center; padding:20px; color:#666;">集計中にゃ...</p>';
 
@@ -24,8 +26,10 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
 
         // クエリ分岐
         if (rankingType === 'karikari') {
+            // 既存のカリカリランキング
             query = db.collection("users").orderBy("karikari", "desc").limit(30);
         } else {
+            // ゲーム別ランキング (highscoresコレクションを使用)
             query = db.collection("highscores")
                       .where("gameKey", "==", rankingType)
                       .orderBy("score", "desc")
@@ -58,6 +62,7 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
 
         snapshot.forEach(doc => {
             const data = doc.data();
+            // ゲームランキングの場合、userデータ構造に変換して渡す
             let userData = data;
             
             if (rankingType !== 'karikari') {
@@ -66,9 +71,11 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
                     name: data.userName,
                     photo: data.userPhoto,
                     grade: data.userGrade,
-                    karikari: data.score 
+                    // 表示用スコアとして渡す
+                    displayScore: data.score 
                 };
                 
+                // 自分のデータかチェック
                 if (currentUser && data.userId === currentUser.id) {
                     myRankData = { rank: rank, score: data.score };
                 }
@@ -78,7 +85,7 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
                 }
             }
 
-            const el = createRankingItem(rank, userData);
+            const el = createRankingItem(rank, userData, rankingType);
             container.appendChild(el);
             rank++;
         });
@@ -87,12 +94,13 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
         if (rankingType !== 'karikari' && currentUser && !myRankData) {
             const localScore = localStorage.getItem(`nell_highscore_${rankingType}_${currentUser.id}`);
             if (localScore) {
-                myScoreEl.innerText = `あなたのハイスコア: ${localScore}`;
+                myScoreEl.innerText = `あなたのハイスコア: ${localScore} 点`;
             } else {
                 myScoreEl.innerText = "まだ記録がないにゃ。";
             }
         } else if (myRankData) {
-             myScoreEl.innerText = `あなたは ${myRankData.rank}位 (${myRankData.score}) だにゃ！`;
+            const unit = (rankingType === 'karikari') ? '' : ' 点';
+            myScoreEl.innerText = `あなたは ${myRankData.rank}位 (${myRankData.score}${unit}) だにゃ！`;
         }
 
     } catch (e) {
@@ -105,11 +113,12 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
     }
 };
 
-function createRankingItem(rank, user) {
+window.createRankingItem = function(rank, user, rankingType) {
     const div = document.createElement('div');
     div.className = `ranking-item rank-${rank}`;
     if (rank <= 3) div.classList.add('top-rank');
 
+    // 現在のユーザーならハイライト
     if (currentUser && user.id === currentUser.id) {
         div.classList.add('current-user-rank');
     }
@@ -118,14 +127,29 @@ function createRankingItem(rank, user) {
     const name = user.name || "ななしの猫";
     const grade = user.grade ? (user.grade.includes('年') ? user.grade : `${user.grade}年生`) : "";
     
-    const score = user.karikari !== undefined ? user.karikari : 0;
+    // スコアの取得元を分岐
+    let score = 0;
+    if (user.displayScore !== undefined) {
+        score = user.displayScore;
+    } else {
+        score = user.karikari !== undefined ? user.karikari : 0;
+    }
 
+    // 順位バッジ
     let rankBadge = `<span class="rank-num">${rank}</span>`;
     if (rank === 1) rankBadge = `<span class="rank-medal">🥇</span>`;
     else if (rank === 2) rankBadge = `<span class="rank-medal">🥈</span>`;
     else if (rank === 3) rankBadge = `<span class="rank-medal">🥉</span>`;
 
+    // 数値フォーマットと単位
     const formattedScore = score.toLocaleString();
+    let scoreDisplay = "";
+    
+    if (rankingType === 'karikari') {
+        scoreDisplay = `🍖 ${formattedScore}`;
+    } else {
+        scoreDisplay = `${formattedScore} <span style="font-size:0.8rem;">点</span>`;
+    }
 
     div.innerHTML = `
         <div class="rank-left">
@@ -137,7 +161,7 @@ function createRankingItem(rank, user) {
             </div>
         </div>
         <div class="rank-right">
-            <span class="rank-score">${formattedScore}</span>
+            <span class="rank-score">${scoreDisplay}</span>
         </div>
     `;
 
