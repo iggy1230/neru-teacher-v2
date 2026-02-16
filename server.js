@@ -480,7 +480,7 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API (修正版) ---
+// --- 漢字ドリル生成 API (修正版: JSONパース強化) ---
 app.post('/generate-kanji', async (req, res) => {
     try {
         const { grade, mode } = req.body; 
@@ -522,7 +522,15 @@ app.post('/generate-kanji', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        
+        // ★修正: JSON抽出を強化
+        const firstBrace = text.indexOf('{');
+        const lastBrace = text.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) {
+            text = text.substring(firstBrace, lastBrace + 1);
+        }
+
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Kanji Gen Error:", e);
