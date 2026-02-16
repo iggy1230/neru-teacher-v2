@@ -21,9 +21,9 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-const MODEL_HOMEWORK = "gemini-2.5-pro";
-const MODEL_FAST = "gemini-2.5-flash-lite"; 
-const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // Realtime API用
+const MODEL_HOMEWORK = "gemini-2.0-pro-exp-02-05"; // 視覚認識強化
+const MODEL_FAST = "gemini-2.0-flash"; 
+const MODEL_REALTIME = "gemini-2.0-flash-exp"; // Realtime API用
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -63,12 +63,10 @@ try {
 
 // ★JSON抽出強化関数: 最初の {...} または [...] ブロックを正しく切り出す
 function extractFirstJson(text) {
-    // 最初の '{' または '[' を探す
     const firstBrace = text.indexOf('{');
     const firstBracket = text.indexOf('[');
     
     let start = -1;
-    let isArray = false;
 
     if (firstBrace === -1 && firstBracket === -1) return text;
 
@@ -76,7 +74,6 @@ function extractFirstJson(text) {
         start = firstBrace;
     } else {
         start = firstBracket;
-        isArray = true;
     }
 
     let depth = 0;
@@ -104,7 +101,6 @@ function extractFirstJson(text) {
         if (char === '\\' && !escape) escape = true;
         else escape = false;
     }
-    // 見つからなければ元のテキストを返す
     return text;
 }
 
@@ -162,7 +158,6 @@ const GENRE_REFERENCES = {
     ]
 };
 
-// クイズのバラエティを増やすための「視点」リスト
 const QUIZ_PERSPECTIVES = [
     "【視点: 名言・セリフ】キャラクターの決め台詞、口癖、または印象的な会話シーンから出題してください。",
     "【視点: 数字・データ】身長、体重、年号、個数、威力など、具体的な『数字』に関する事実から出題してください。",
@@ -176,7 +171,6 @@ const QUIZ_PERSPECTIVES = [
     "【視点: 場所・地名】物語の舞台となる場所、地名、建物の名前について出題してください。"
 ];
 
-// クイズ検証関数 (Grounding)
 async function verifyQuiz(quizData, genre) {
     try {
         const model = genAI.getGenerativeModel({ 
@@ -223,7 +217,7 @@ async function verifyQuiz(quizData, genre) {
 // API Endpoints
 // ==========================================
 
-// --- クイズ生成 API (自動リトライ・出典確認強化版) ---
+// --- クイズ生成 API ---
 app.post('/generate-quiz', async (req, res) => {
     const MAX_RETRIES = 3; 
     let attempt = 0;
@@ -244,7 +238,6 @@ app.post('/generate-quiz', async (req, res) => {
                 targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
             }
 
-            // ★視点をランダムに選択
             const selectedPerspective = QUIZ_PERSPECTIVES[Math.floor(Math.random() * QUIZ_PERSPECTIVES.length)];
 
             const currentLevel = level || 1;
@@ -311,8 +304,6 @@ app.post('/generate-quiz', async (req, res) => {
 
             const result = await model.generateContent(prompt);
             let text = result.response.text();
-            
-            // JSON抽出ロジック
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const cleanText = extractFirstJson(text); // ★JSON抽出強化
 
@@ -324,7 +315,6 @@ app.post('/generate-quiz', async (req, res) => {
                 throw new Error("JSON Parse Failed");
             }
 
-            // --- 1. 形式バリデーション ---
             const { options, answer, question, fact_basis } = jsonResponse;
             if (!question || !options || !answer) throw new Error("Invalid format: missing fields");
             if (!options.includes(answer)) {
@@ -336,16 +326,14 @@ app.post('/generate-quiz', async (req, res) => {
                 throw new Error("Invalid format: duplicate options");
             }
 
-            // --- 2. 事実確認バリデーション (verifyQuiz) ---
             console.log(`[Attempt ${attempt}] Verifying quiz... Fact Basis: ${fact_basis}`);
             const isVerified = await verifyQuiz(jsonResponse, targetGenre);
             
             if (isVerified) {
                 res.json(jsonResponse);
-                return; // 成功！
+                return; 
             } else {
                 console.warn(`[Attempt ${attempt}] Verification Failed. Retrying...`);
-                // ループ継続してリトライ
             }
 
         } catch (e) {
@@ -363,13 +351,11 @@ app.post('/generate-quiz', async (req, res) => {
 app.post('/correct-quiz', async (req, res) => {
     try {
         const { oldQuiz, reason, genre } = req.body;
-        // 修正時は念入りに調べるため Google Search を必須にする
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST, 
             tools: [{ google_search: {} }] 
         });
 
-        // 信頼できるソースがあればプロンプトに含める
         let referenceInstructions = "";
         if (GENRE_REFERENCES[genre]) {
             referenceInstructions = `
@@ -404,13 +390,10 @@ app.post('/correct-quiz', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        let text = result.response.text();
-        text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
         const cleanText = extractFirstJson(text); // ★JSON抽出強化
-
         const jsonResponse = JSON.parse(cleanText);
         
-        // 簡易バリデーション
         if (!jsonResponse.options.includes(jsonResponse.answer)) {
             throw new Error("修正版の生成に失敗しました（正解が選択肢にない）");
         }
@@ -423,33 +406,17 @@ app.post('/correct-quiz', async (req, res) => {
     }
 });
 
-// --- なぞなぞ生成 API (品質向上版) ---
+// --- なぞなぞ生成 API ---
 app.post('/generate-riddle', async (req, res) => {
     try {
         const { grade } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
 
         const patterns = [
-            {
-                type: "言葉遊び・ダジャレ",
-                desc: "「パンはパンでも…」や「イスはイスでも…」のような、言葉の響きを使った古典的で面白いなぞなぞ。",
-                example: "「パンはパンでも、食べられないパンはなーんだ？（答え：フライパン）」"
-            },
-            {
-                type: "特徴当て（生き物・モノ）",
-                desc: "「耳が長くて、ぴょんぴょん跳ねる動物は？」のような、特徴をヒントにするクイズ。",
-                example: "「お昼になると、小さくなるものなーんだ？（答え：影）」"
-            },
-            {
-                type: "あるなしクイズ・連想",
-                desc: "「使うと減るけど、使わないと減らないものは？」のような、少し頭を使うトンチ問題。",
-                example: "「使うときは投げるもの、なーんだ？（答え：アンカー・投網・ボールなど）」"
-            },
-            {
-                type: "学校・日常あるある",
-                desc: "学校にあるものや、文房具、家にあるものを題材にしたなぞなぞ。",
-                example: "「黒くて四角くて、先生が字を書くものは？（答え：黒板）」"
-            }
+            { type: "言葉遊び・ダジャレ", desc: "「パンはパンでも…」や「イスはイスでも…」のような、言葉の響きを使った古典的で面白いなぞなぞ。", example: "「パンはパンでも、食べられないパンはなーんだ？（答え：フライパン）」" },
+            { type: "特徴当て（生き物・モノ）", desc: "「耳が長くて、ぴょんぴょん跳ねる動物は？」のような、特徴をヒントにするクイズ。", example: "「お昼になると、小さくなるものなーんだ？（答え：影）」" },
+            { type: "あるなしクイズ・連想", desc: "「使うと減るけど、使わないと減らないものは？」のような、少し頭を使うトンチ問題。", example: "「使うときは投げるもの、なーんだ？（答え：アンカー・投網・ボールなど）」" },
+            { type: "学校・日常あるある", desc: "学校にあるものや、文房具、家にあるものを題材にしたなぞなぞ。", example: "「黒くて四角くて、先生が字を書くものは？（答え：黒板）」" }
         ];
         
         const selectedPattern = patterns[Math.floor(Math.random() * patterns.length)];
@@ -478,7 +445,7 @@ app.post('/generate-riddle', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
+        text = extractFirstJson(text);
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Riddle Gen Error:", e);
@@ -511,7 +478,7 @@ app.post('/generate-minitest', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
+        text = extractFirstJson(text);
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("MiniTest Gen Error:", e);
@@ -519,58 +486,68 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API (修正版) ---
+// --- 漢字ドリル生成 API (修正版: リトライ＆JSON抽出強化) ---
 app.post('/generate-kanji', async (req, res) => {
-    try {
-        const { grade, mode } = req.body; 
-        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-        
-        const prompt = `
-        あなたは日本の小学校教師です。小学${grade}年生向けの漢字ドリルを作成してください。
-        モードは「${mode === 'reading' ? '読み問題' : '書き取り問題'}」です。
-        
-        【共通ルール】
-        - 必ず小学${grade}年生の学習指導要領で習う範囲の漢字を選んでください。
-        - 難しい熟語は避け、学年に適した一般的な単語や短い文を選んでください。
-        
-        ${mode === 'reading' ? `
-        【読み問題のルール】
-        - 漢字の「読み方」を答えさせます。
-        - 対象の漢字を含む短い例文を作成してください。
-        - **JSON出力の "question_display"**: 対象の漢字を <span style='color:red;'>漢字</span> タグで囲んでください。
-        - **JSON出力の "question_speech"**: 例文を読み上げますが、**対象の漢字の部分だけは絶対に読み方を言わず**、「この赤い漢字」や「この字」と言い換えてください。
-          - 良い例: 「『この赤い漢字』はなんて読むかな？ 山へ行きます。」
-          - 悪い例: 「『やま』はなんて読むかな？」
-        ` : `
-        【書き取り問題のルール】
-        - ひらがなを「漢字」に直させます。
-        - 対象の漢字を含む短い例文を作成してください。
-        - **JSON出力の "question_display"**: 対象となる部分を**ひらがな**にし、<span style='color:red;'>ひらがな</span> タグで囲んでください。
-          - 例: 「<span style='color:red;'>やま</span>へ行く」
-        - **JSON出力の "question_speech"**: 「（例文）。赤いところの『（ひらがな）』を漢字で書いてみてね」という形式にしてください。
-        `}
+    const MAX_RETRIES = 3;
+    let attempt = 0;
 
-        【出力フォーマット (JSONのみ)】
-        {
-            "type": "${mode}",
-            "kanji": "正解の漢字",
-            "reading": "正解の読み仮名（ひらがな）",
-            "question_display": "画面表示用HTML文字列",
-            "question_speech": "読み上げ用テキスト"
+    while (attempt < MAX_RETRIES) {
+        attempt++;
+        try {
+            const { grade, mode } = req.body; 
+            const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+            
+            const prompt = `
+            あなたは日本の小学校教師です。小学${grade}年生向けの漢字ドリルを1問作成してください。
+            モードは「${mode === 'reading' ? '読み問題' : '書き取り問題'}」です。
+
+            【必須要件】
+            1. 小学${grade}年生で習う漢字を使用すること。
+            2. 出力は以下のJSON形式のみとすること。余計な解説は不要。
+            
+            ${mode === 'reading' ? `
+            【読み問題】
+            - 漢字の「読み方」を答えさせます。
+            - 対象の漢字を含む短い例文を作成してください。
+            - **"question_display"**: 対象の漢字を <span style='color:red;'>漢字</span> タグで囲んでください。
+            - **"question_speech"**: 例文を読み上げますが、**対象の漢字の部分だけは絶対に読み方を言わず**、「この赤い漢字」や「この字」と言い換えてください。
+              - 良い例: 「『この赤い漢字』はなんて読むかな？ 山へ行きます。」
+            ` : `
+            【書き取り問題】
+            - ひらがなを「漢字」に直させます。
+            - 対象の漢字を含む短い例文を作成してください。
+            - **"question_display"**: 対象となる部分を**ひらがな**にし、<span style='color:red;'>ひらがな</span> タグで囲んでください。
+              - 例: 「<span style='color:red;'>やま</span>へ行く」
+            - **"question_speech"**: 「（例文）。赤いところの『（ひらがな）』を漢字で書いてみてね」という形式にしてください。
+            `}
+
+            【出力JSONフォーマット】
+            {
+                "type": "${mode}",
+                "kanji": "正解の漢字",
+                "reading": "正解の読み仮名（ひらがな）",
+                "question_display": "画面表示用HTML",
+                "question_speech": "読み上げ用テキスト"
+            }
+            `;
+
+            const result = await model.generateContent(prompt);
+            let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+            const cleanText = extractFirstJson(text); // ★JSON抽出強化
+
+            const json = JSON.parse(cleanText);
+            
+            // 検証
+            if (json.kanji && json.reading && json.question_display) {
+                 res.json(json);
+                 return;
+            }
+        } catch (e) {
+            console.error(`Kanji Gen Error (Attempt ${attempt}):`, e.message);
         }
-        `;
-
-        const result = await model.generateContent(prompt);
-        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        
-        // ★修正: 厳密なJSON抽出を使用
-        const cleanText = extractFirstJson(text);
-
-        res.json(JSON.parse(cleanText));
-    } catch (e) {
-        console.error("Kanji Gen Error:", e);
-        res.status(500).json({ error: "漢字が見つからないにゃ…" });
     }
+    // リトライ失敗
+    res.status(500).json({ error: "漢字が見つからないにゃ…" });
 });
 
 // --- 漢字採点 API ---
@@ -829,8 +806,6 @@ app.post('/analyze', async (req, res) => {
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
-            
-            // 配列の場合は別途対応が必要だが、extractFirstJsonは配列も対応済み
             problems = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
@@ -934,7 +909,6 @@ app.post('/identify-item', async (req, res) => {
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
-
             json = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error in identify-item:", e);
