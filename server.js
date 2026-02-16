@@ -21,7 +21,6 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-// コスト削減のため、Gemini 2.0 Flash をメインに使用
 const MODEL_HOMEWORK = "gemini-2.5-pro";
 const MODEL_FAST = "gemini-2.5-flash-lite"; 
 const MODEL_REALTIME = "gemini-2.5-flash-native-audio-preview-09-2025"; // Realtime API用
@@ -53,7 +52,6 @@ try {
     if (!process.env.GEMINI_API_KEY) {
         console.error("⚠️ GEMINI_API_KEY が設定されていません。");
     } else {
-        // APIキーのみで初期化
         genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         console.log("✅ Google Generative AI Initialized with API Key.");
     }
@@ -62,6 +60,53 @@ try {
 // ==========================================
 // Helper Functions
 // ==========================================
+
+// ★JSON抽出強化関数: 最初の {...} または [...] ブロックを正しく切り出す
+function extractFirstJson(text) {
+    // 最初の '{' または '[' を探す
+    const firstBrace = text.indexOf('{');
+    const firstBracket = text.indexOf('[');
+    
+    let start = -1;
+    let isArray = false;
+
+    if (firstBrace === -1 && firstBracket === -1) return text;
+
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+        start = firstBrace;
+    } else {
+        start = firstBracket;
+        isArray = true;
+    }
+
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    
+    for (let i = start; i < text.length; i++) {
+        const char = text[i];
+        
+        if (char === '"' && !escape) {
+            inString = !inString;
+        }
+        
+        if (!inString) {
+            if (char === '{' || char === '[') {
+                depth++;
+            } else if (char === '}' || char === ']') {
+                depth--;
+                if (depth === 0) {
+                    return text.substring(start, i + 1);
+                }
+            }
+        }
+        
+        if (char === '\\' && !escape) escape = true;
+        else escape = false;
+    }
+    // 見つからなければ元のテキストを返す
+    return text;
+}
 
 function getSubjectInstructions(subject) {
     switch (subject) {
@@ -269,15 +314,11 @@ app.post('/generate-quiz', async (req, res) => {
             
             // JSON抽出ロジック
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = text.indexOf('{');
-            const lastBrace = text.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                text = text.substring(firstBrace, lastBrace + 1);
-            }
+            const cleanText = extractFirstJson(text); // ★JSON抽出強化
 
             let jsonResponse;
             try {
-                jsonResponse = JSON.parse(text);
+                jsonResponse = JSON.parse(cleanText);
             } catch (e) {
                 console.error(`JSON Parse Error (Attempt ${attempt}):`, text);
                 throw new Error("JSON Parse Failed");
@@ -365,13 +406,9 @@ app.post('/correct-quiz', async (req, res) => {
         const result = await model.generateContent(prompt);
         let text = result.response.text();
         text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-        const firstBrace = text.indexOf('{');
-        const lastBrace = text.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1) {
-            text = text.substring(firstBrace, lastBrace + 1);
-        }
+        const cleanText = extractFirstJson(text); // ★JSON抽出強化
 
-        const jsonResponse = JSON.parse(text);
+        const jsonResponse = JSON.parse(cleanText);
         
         // 簡易バリデーション
         if (!jsonResponse.options.includes(jsonResponse.answer)) {
@@ -440,7 +477,8 @@ app.post('/generate-riddle', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Riddle Gen Error:", e);
@@ -472,7 +510,8 @@ app.post('/generate-minitest', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("MiniTest Gen Error:", e);
@@ -480,7 +519,7 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API (修正版: JSONパース強化) ---
+// --- 漢字ドリル生成 API (修正版) ---
 app.post('/generate-kanji', async (req, res) => {
     try {
         const { grade, mode } = req.body; 
@@ -524,14 +563,10 @@ app.post('/generate-kanji', async (req, res) => {
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
         
-        // ★修正: JSON抽出を強化
-        const firstBrace = text.indexOf('{');
-        const lastBrace = text.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1) {
-            text = text.substring(firstBrace, lastBrace + 1);
-        }
+        // ★修正: 厳密なJSON抽出を使用
+        const cleanText = extractFirstJson(text);
 
-        res.json(JSON.parse(text));
+        res.json(JSON.parse(cleanText));
     } catch (e) {
         console.error("Kanji Gen Error:", e);
         res.status(500).json({ error: "漢字が見つからないにゃ…" });
@@ -563,7 +598,8 @@ app.post('/check-kanji', async (req, res) => {
             { inlineData: { mime_type: "image/png", data: image } }
         ]);
         
-        const text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Kanji Check Error:", e);
@@ -707,17 +743,12 @@ app.post('/update-memory', async (req, res) => {
         `;
 
         const result = await model.generateContent(prompt);
-        const responseText = result.response.text();
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        text = extractFirstJson(text); // ★JSON抽出強化
         
         let output;
         try {
-            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                cleanText = cleanText.substring(firstBrace, lastBrace + 1);
-            }
-            output = JSON.parse(cleanText);
+            output = JSON.parse(text);
         } catch (e) {
             console.warn("Memory JSON Parse Error. Using fallback.");
             return res.json({ profile: currentProfile, summary_text: "（更新なし）" });
@@ -796,14 +827,11 @@ app.post('/analyze', async (req, res) => {
         const responseText = result.response.text();
         let problems = [];
         try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const jsonStart = cleanText.indexOf('[');
-            const jsonEnd = cleanText.lastIndexOf(']');
-            if (jsonStart !== -1 && jsonEnd !== -1) {
-                problems = JSON.parse(cleanText.substring(jsonStart, jsonEnd + 1));
-            } else {
-                throw new Error("Valid JSON array not found");
-            }
+            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
+            
+            // 配列の場合は別途対応が必要だが、extractFirstJsonは配列も対応済み
+            problems = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
             throw new Error("AIからの応答を読み取れませんでした。");
@@ -904,14 +932,10 @@ app.post('/identify-item', async (req, res) => {
 
         let json;
         try {
-            const cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            const firstBrace = cleanText.indexOf('{');
-            const lastBrace = cleanText.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace !== -1) {
-                json = JSON.parse(cleanText.substring(firstBrace, lastBrace + 1));
-            } else {
-                throw new Error("JSON parse failed");
-            }
+            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
+
+            json = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error in identify-item:", e);
             // フォールバック: エラーでクライアントを落とさない
