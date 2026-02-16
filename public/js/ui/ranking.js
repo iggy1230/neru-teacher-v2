@@ -1,5 +1,3 @@
---- START OF FILE ranking.js ---
-
 // --- js/ui/ranking.js (v468.0: 単位表示対応・完全版) ---
 
 window.showRanking = async function(rankingType = 'karikari', title = '🏆 カリカリランキング') {
