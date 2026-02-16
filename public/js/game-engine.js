@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v468.0: 完全版 Part 1) ---
+// --- js/game-engine.js (v468.1: キャッシュ対策・完全版 Part 1) ---
 
 console.log("Game Engine Loading...");
 
@@ -434,9 +434,9 @@ function gameOverDanmaku() {
     danmakuState.running = false; 
     if(window.safePlay) window.safePlay(window.sfxOver);
     
-    // ★重要修正: ランキングには元のスコアを保存
+    // ★ランキングには元のスコアを保存
     window.saveHighScore('vs_robot', danmakuState.score);
-    
+
     if (danmakuState.score > 0) { 
         // ★報酬はスコアの1/10
         const reward = Math.floor(danmakuState.score / 10);
@@ -445,6 +445,7 @@ function gameOverDanmaku() {
     } else { 
         window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad"); 
     }
+    
     const startBtn = document.getElementById('start-danmaku-btn'); 
     startBtn.disabled = false; startBtn.innerText = "もう一回！";
 }
@@ -492,7 +493,7 @@ function drawDanmakuFrame() {
     let lifeStr = "❤️".repeat(Math.max(0, danmakuState.life));
     ctx.fillText("LIFE: " + lifeStr, 10, 10);
 }
-// --- js/game-engine.js (Part 2/2: Quiz, Riddle, Kanji, Memory) ---
+// --- js/game-engine.js (Part 2/2: Quiz, Riddle, Kanji, Memory + Compatibility) ---
 
 // ==========================================
 // 3. ウルトラクイズ (showQuizGame)
@@ -1481,4 +1482,13 @@ window.endMemoryGame = function() {
     window.updateNellMessage(msg, mood, false, true);
     alert(msg);
     window.showMemoryGame(); 
+};
+
+// ★後方互換性ラッパー: 古いキャッシュのHTMLから呼ばれたとき用
+window.showGameRanking = function(gameKey, title) {
+    if (window.showRanking) {
+        window.showRanking(gameKey, title);
+    } else {
+        console.error("showRanking is missing!");
+    }
 };
