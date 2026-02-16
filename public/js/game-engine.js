@@ -1,9 +1,9 @@
---- START OF FILE game-engine.js ---
+// --- js/game-engine.js (Part 1/2: Helper, HighScore, Catch, Robot) ---
 
-// --- js/game-engine.js (v463.0: 完全版 + ランキング対応) ---
+console.log("Game Engine Loading...");
 
 // ==========================================
-// 共通ヘルパー: レーベンシュタイン距離 (編集距離)
+// 共通ヘルパー: 文字列類似度判定
 // ==========================================
 function levenshteinDistance(a, b) {
     const matrix = [];
@@ -16,10 +16,10 @@ function levenshteinDistance(a, b) {
                 matrix[i][j] = matrix[i - 1][j - 1];
             } else {
                 matrix[i][j] = Math.min(
-                    matrix[i - 1][j - 1] + 1, // 置換
+                    matrix[i - 1][j - 1] + 1,
                     Math.min(
-                        matrix[i][j - 1] + 1, // 挿入
-                        matrix[i - 1][j] + 1  // 削除
+                        matrix[i][j - 1] + 1,
+                        matrix[i - 1][j] + 1
                     )
                 );
             }
@@ -49,7 +49,6 @@ function fuzzyContains(userText, targetText, maxDistance = 1) {
     return false;
 }
 
-// 文字列からハッシュっぽいIDを生成（重複排除用）
 function generateDocIdFromText(text) {
     let hash = 0, i, chr;
     if (text.length === 0) return "empty_quiz";
@@ -62,7 +61,7 @@ function generateDocIdFromText(text) {
 }
 
 // ==========================================
-// ★ ランキング保存・管理ヘルパー
+// ★ ランキング保存ヘルパー
 // ==========================================
 window.saveHighScore = async function(gameKey, score) {
     if (!currentUser || !db) return;
@@ -71,15 +70,10 @@ window.saveHighScore = async function(gameKey, score) {
     const storageKey = `nell_highscore_${gameKey}_${userId}`;
     let currentHigh = parseInt(localStorage.getItem(storageKey) || "0");
     
-    // スコアが更新されたかチェック (ローカルまたは初回)
-    // ※今回はシンプルに「今回出したスコア」を送信し、サーバー側(Firestore)または取得側でソートする運用も考えられるが、
-    // ここではハイスコア更新時のみ書き込む形にする（書き込み数節約）
+    // スコア更新時のみ保存
     if (score > currentHigh) {
         localStorage.setItem(storageKey, score);
-        
-        // Firestoreへ保存
         try {
-            // ドキュメントIDを「UserID_GameKey」にすることで、1ユーザー1ゲーム1レコードにする
             const docId = `${userId}_${gameKey}`;
             await db.collection("highscores").doc(docId).set({
                 gameKey: gameKey,
@@ -94,13 +88,11 @@ window.saveHighScore = async function(gameKey, score) {
         } catch (e) {
             console.error("[Ranking] Save failed:", e);
         }
-    } else if (score === currentHigh) {
-        // 同点でも名前などの情報更新のために保存するケースも考えられるが、今回は省略
     }
 };
 
 // ==========================================
-// 1. カリカリキャッチ
+// 1. カリカリキャッチ (showGame)
 // ==========================================
 window.showGame = function() { 
     if (typeof window.switchScreen === 'function') {
@@ -111,10 +103,13 @@ window.showGame = function() {
     }
     document.getElementById('mini-karikari-display').classList.remove('hidden'); 
     if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari(); 
+    
     window.initGame(); 
     window.fetchGameComment("start"); 
+    
     const startBtn = document.getElementById('start-game-btn'); 
     if (startBtn) { 
+        // イベントリスナーの重複を防ぐため再生成
         const newBtn = startBtn.cloneNode(true); 
         startBtn.parentNode.replaceChild(newBtn, startBtn); 
         newBtn.onclick = () => { 
@@ -125,6 +120,8 @@ window.showGame = function() {
                 window.drawGame(); 
             } 
         }; 
+        newBtn.disabled = false;
+        newBtn.innerText = "スタート！";
     } 
 };
 
@@ -182,35 +179,49 @@ window.giveGameReward = function(amount) {
 window.drawGame = function() {
     if(!window.gameRunning) return;
     window.ctx.clearRect(0, 0, window.gameCanvas.width, window.gameCanvas.height);
-    window.ctx.beginPath(); window.ctx.arc(window.ball.x, window.ball.y, window.ball.r, 0, Math.PI*2); window.ctx.fillStyle = "#ff5722"; window.ctx.fill(); window.ctx.closePath();
-    window.ctx.beginPath(); window.ctx.rect(window.paddle.x, window.paddle.y, window.paddle.w, window.paddle.h); window.ctx.fillStyle = "#8d6e63"; window.ctx.fill(); window.ctx.closePath();
+    
+    // Ball
+    window.ctx.beginPath(); window.ctx.arc(window.ball.x, window.ball.y, window.ball.r, 0, Math.PI*2); 
+    window.ctx.fillStyle = "#ff5722"; window.ctx.fill(); window.ctx.closePath();
+    
+    // Paddle
+    window.ctx.beginPath(); window.ctx.rect(window.paddle.x, window.paddle.y, window.paddle.w, window.paddle.h); 
+    window.ctx.fillStyle = "#8d6e63"; window.ctx.fill(); window.ctx.closePath();
+    
+    // Bricks
     window.bricks.forEach(b => {
         if(b.status === 1) {
-            window.ctx.beginPath(); window.ctx.font = "20px sans-serif"; window.ctx.textAlign = "center"; window.ctx.textBaseline = "middle"; window.ctx.fillText("🍖", b.x + b.w/2, b.y + b.h/2); window.ctx.closePath();
+            window.ctx.beginPath(); window.ctx.font = "20px sans-serif"; window.ctx.textAlign = "center"; 
+            window.ctx.textBaseline = "middle"; window.ctx.fillText("🍖", b.x + b.w/2, b.y + b.h/2); window.ctx.closePath();
         }
     });
+
     window.ball.x += window.ball.dx; window.ball.y += window.ball.dy;
+    
     if(window.ball.x + window.ball.dx > window.gameCanvas.width - window.ball.r || window.ball.x + window.ball.dx < window.ball.r) window.ball.dx = -window.ball.dx;
     if(window.ball.y + window.ball.dy < window.ball.r) window.ball.dy = -window.ball.dy;
     
-    // 落下判定 (ゲームオーバー)
+    // 落下判定
     if(window.ball.y + window.ball.dy > window.gameCanvas.height - window.ball.r - 30) {
         if(window.ball.x > window.paddle.x && window.ball.x < window.paddle.x + window.paddle.w) {
             window.ball.dy = -window.ball.dy; if(window.safePlay) window.safePlay(window.sfxPaddle);
         } else if(window.ball.y + window.ball.dy > window.gameCanvas.height - window.ball.r) {
+            // Game Over
             window.gameRunning = false; if(window.safePlay) window.safePlay(window.sfxOver);
-            if (window.score > 0) { window.giveGameReward(window.score); if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`あ〜あ、落ちちゃったにゃ…。でも${window.score}個ゲットだにゃ！`, "sad"); } else { if(typeof window.updateNellMessage === 'function') window.updateNellMessage("あ〜あ、落ちちゃったにゃ…", "sad"); }
-            
-            // ★ランキング保存
-            window.saveHighScore('karikari_catch', window.score);
-            
+            if (window.score > 0) { 
+                window.giveGameReward(window.score); 
+                window.saveHighScore('karikari_catch', window.score); // Ranking Save
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`あ〜あ、落ちちゃったにゃ…。でも${window.score}個ゲットだにゃ！`, "sad"); 
+            } else { 
+                if(typeof window.updateNellMessage === 'function') window.updateNellMessage("あ〜あ、落ちちゃったにゃ…", "sad"); 
+            }
             window.fetchGameComment("end", window.score);
             const startBtn = document.getElementById('start-game-btn'); if(startBtn) { startBtn.disabled = false; startBtn.innerText = "もう一回！"; }
             return;
         }
     }
     
-    // ブロック判定
+    // クリア判定
     let allCleared = true;
     window.bricks.forEach(b => {
         if(b.status === 1) {
@@ -223,23 +234,22 @@ window.drawGame = function() {
         }
     });
     
-    // クリア判定
     if (allCleared) {
-        window.gameRunning = false; window.giveGameReward(window.score);
+        window.gameRunning = false; 
+        window.giveGameReward(window.score);
+        window.saveHighScore('karikari_catch', window.score); // Ranking Save
+        
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`全部取ったにゃ！すごいにゃ！！${window.score}個ゲットだにゃ！`, "excited");
-        
-        // ★ランキング保存
-        window.saveHighScore('karikari_catch', window.score);
-        
         window.fetchGameComment("end", window.score);
         const startBtn = document.getElementById('start-game-btn'); if(startBtn) { startBtn.disabled = false; startBtn.innerText = "もう一回！"; }
         return;
     }
+    
     window.gameAnimId = requestAnimationFrame(window.drawGame);
 };
 
 // ==========================================
-// 2. VS ロボット掃除機
+// 2. VS ロボット掃除機 (showDanmakuGame)
 // ==========================================
 const DANMAKU_ASSETS_PATH = '/assets/images/game/souji/';
 
@@ -250,13 +260,11 @@ const danmakuImages = {
     bads: []
 };
 
-// Goodアイテム定義
 const goodItemsDef = [
     { file: 'kari1_dot.png', score: 10, weight: 60 },
     { file: 'kari100_dot.png', score: 50, weight: 30 },
     { file: 'churu_dot.png', score: 100, weight: 10 }
 ];
-// Badアイテム定義
 const badItemsDef = [
     'soccerball_dot.png', 'baseball_dot.png', 'coffee_dot.png',
     'can_dot.png', 'mouse_dot.png', 'konchu_dot.png', 'choco_dot.png'
@@ -290,19 +298,8 @@ function loadDanmakuImages() {
 }
 
 let danmakuState = { 
-    running: false, 
-    ctx: null, 
-    canvas: null, 
-    width: 0, 
-    height: 0, 
-    score: 0, 
-    life: 3, 
-    frame: 0, 
-    invincibleTimer: 0, 
-    player: { x: 0, y: 0, w: 40, h: 40 }, 
-    boss: { x: 0, y: 0, w: 60, h: 60, angle: 0 }, 
-    bullets: [], 
-    touching: false 
+    running: false, ctx: null, canvas: null, width: 0, height: 0, score: 0, life: 3, frame: 0, invincibleTimer: 0, 
+    player: { x: 0, y: 0, w: 40, h: 40 }, boss: { x: 0, y: 0, w: 60, h: 60, angle: 0 }, bullets: [], touching: false 
 };
 
 window.showDanmakuGame = function() {
@@ -324,8 +321,10 @@ window.showDanmakuGame = function() {
     document.getElementById('danmaku-score').innerText = "0";
     
     const startBtn = document.getElementById('start-danmaku-btn'); 
-    startBtn.disabled = false; 
-    startBtn.innerText = "スタート！";
+    if(startBtn) {
+        startBtn.disabled = false; 
+        startBtn.innerText = "スタート！";
+    }
     
     window.updateNellMessage("ロボット掃除機をよけてアイテムを集めるにゃ！3回ぶつかるとゲームオーバーだにゃ！", "excited", false);
     
@@ -388,7 +387,6 @@ function loopDanmakuGame() {
 
 function updateDanmaku() {
     danmakuState.frame++; 
-    
     danmakuState.boss.x = (danmakuState.width / 2) + Math.sin(danmakuState.frame * 0.02) * (danmakuState.width / 3); 
     
     let spawnRate = Math.max(15, 60 - Math.floor(danmakuState.score / 100)); 
@@ -398,17 +396,13 @@ function updateDanmaku() {
 
     for (let i = danmakuState.bullets.length - 1; i >= 0; i--) {
         let b = danmakuState.bullets[i]; 
-        b.x += b.vx; 
-        b.y += b.vy;
+        b.x += b.vx; b.y += b.vy;
         
         if (b.y > danmakuState.height + 30 || b.x < -30 || b.x > danmakuState.width + 30 || b.y < -30) { 
-            danmakuState.bullets.splice(i, 1); 
-            continue; 
+            danmakuState.bullets.splice(i, 1); continue; 
         }
         
-        let itemRadius = 16;
-        let playerRadius = 12; 
-        
+        let itemRadius = 16; let playerRadius = 12; 
         let dx = b.x - danmakuState.player.x; 
         let dy = b.y - danmakuState.player.y; 
         let dist = Math.sqrt(dx*dx + dy*dy);
@@ -424,11 +418,7 @@ function updateDanmaku() {
                     danmakuState.life--;
                     if(window.safePlay) window.safePlay(window.sfxBatu); 
                     danmakuState.invincibleTimer = 60; 
-                    
-                    if (danmakuState.life <= 0) {
-                        gameOverDanmaku(); 
-                        return;
-                    }
+                    if (danmakuState.life <= 0) { gameOverDanmaku(); return; }
                 }
             }
         }
@@ -438,36 +428,18 @@ function updateDanmaku() {
 function spawnBullet() {
     let type = Math.random() < 0.4 ? 'good' : 'bad'; 
     let bulletObj = {};
-    
     if (type === 'good') {
-        const rand = Math.random() * 100;
-        let cumulative = 0;
-        let selected = danmakuImages.goods[0];
-        for (let g of danmakuImages.goods) {
-            cumulative += g.weight;
-            if (rand < cumulative) {
-                selected = g;
-                break;
-            }
-        }
+        const rand = Math.random() * 100; let cumulative = 0; let selected = danmakuImages.goods[0];
+        for (let g of danmakuImages.goods) { cumulative += g.weight; if (rand < cumulative) { selected = g; break; } }
         bulletObj = { type: 'good', img: selected.img, scoreVal: selected.score };
     } else {
         const randIdx = Math.floor(Math.random() * danmakuImages.bads.length);
         bulletObj = { type: 'bad', img: danmakuImages.bads[randIdx], scoreVal: 0 };
     }
-
     let angle = Math.atan2(danmakuState.player.y - danmakuState.boss.y, danmakuState.player.x - danmakuState.boss.x); 
     angle += (Math.random() - 0.5) * 0.8; 
-    
     let speed = 2 + Math.random() * 3 + (danmakuState.score / 1000); 
-    
-    danmakuState.bullets.push({ 
-        x: danmakuState.boss.x, 
-        y: danmakuState.boss.y, 
-        vx: Math.cos(angle) * speed, 
-        vy: Math.sin(angle) * speed, 
-        ...bulletObj
-    });
+    danmakuState.bullets.push({ x: danmakuState.boss.x, y: danmakuState.boss.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, ...bulletObj });
 }
 
 function gameOverDanmaku() {
@@ -476,17 +448,13 @@ function gameOverDanmaku() {
     
     if (danmakuState.score > 0) { 
         window.giveGameReward(danmakuState.score); 
+        window.saveHighScore('vs_robot', danmakuState.score); // Ranking Save
         window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${danmakuState.score}個ゲットだにゃ！`, "sad"); 
     } else { 
         window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad"); 
     }
-    
-    // ★ランキング保存
-    window.saveHighScore('vs_robot', danmakuState.score);
-    
     const startBtn = document.getElementById('start-danmaku-btn'); 
-    startBtn.disabled = false; 
-    startBtn.innerText = "もう一回！";
+    startBtn.disabled = false; startBtn.innerText = "もう一回！";
 }
 
 function drawDanmakuFrame() {
@@ -495,258 +463,52 @@ function drawDanmakuFrame() {
     const h = danmakuState.height; 
     
     ctx.clearRect(0, 0, w, h);
-    
-    ctx.fillStyle = "#fff9c4"; 
-    ctx.fillRect(0, 0, w, h); 
-    
-    ctx.strokeStyle = "#ffe082"; 
-    ctx.lineWidth = 2; 
+    ctx.fillStyle = "#fff9c4"; ctx.fillRect(0, 0, w, h); 
+    ctx.strokeStyle = "#ffe082"; ctx.lineWidth = 2; 
     for(let i=0; i<h; i+=40) { ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(w, i); ctx.stroke(); }
     
-    // Boss (Robot Cleaner)
+    // Boss
     if (danmakuImages.boss.complete && danmakuImages.boss.naturalWidth > 0) {
         ctx.drawImage(danmakuImages.boss, danmakuState.boss.x - 30, danmakuState.boss.y - 30, 60, 60);
     } else {
-        // Fallback: Gray circle
         ctx.fillStyle = "gray"; ctx.beginPath(); ctx.arc(danmakuState.boss.x, danmakuState.boss.y, 30, 0, Math.PI*2); ctx.fill();
     }
 
     if (danmakuState.invincibleTimer > 0 && Math.floor(danmakuState.frame / 4) % 2 === 0) {
-        // 無敵時間中の点滅（描画スキップ）
+        // Blink
     } else {
-        // Player (Nelu)
+        // Player
         if (danmakuImages.player.complete && danmakuImages.player.naturalWidth > 0) {
             ctx.drawImage(danmakuImages.player, danmakuState.player.x - 20, danmakuState.player.y - 20, 40, 40);
         } else {
-            // Fallback: Orange circle
             ctx.fillStyle = "orange"; ctx.beginPath(); ctx.arc(danmakuState.player.x, danmakuState.player.y, 20, 0, Math.PI*2); ctx.fill();
         }
     }
 
-    // Bullets (Items)
+    // Bullets
     danmakuState.bullets.forEach(b => {
         if (b.img && b.img.complete && b.img.naturalWidth > 0) {
             ctx.drawImage(b.img, b.x - 16, b.y - 16, 32, 32);
         } else {
-            // Fallback
             ctx.fillStyle = b.type === 'good' ? "blue" : "red";
             ctx.beginPath(); ctx.arc(b.x, b.y, 10, 0, Math.PI*2); ctx.fill();
         }
     });
 
     // Life
-    ctx.textAlign = "left"; 
-    ctx.textBaseline = "top"; 
-    ctx.font = "20px sans-serif"; 
-    ctx.fillStyle = "#ff5252";
+    ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.font = "20px sans-serif"; ctx.fillStyle = "#ff5252";
     let lifeStr = "❤️".repeat(Math.max(0, danmakuState.life));
     ctx.fillText("LIFE: " + lifeStr, 10, 10);
 }
+// --- js/game-engine.js (Part 2/2: Quiz, Riddle, Kanji, Memory) ---
 
 // ==========================================
-// 3. ウルトラクイズ
+// 3. ウルトラクイズ (showQuizGame)
 // ==========================================
-
 let quizState = {
-    currentQuestionIndex: 0,
-    maxQuestions: 5,
-    score: 0,
-    currentQuizData: null,
-    questionQueue: [], 
-    sessionQuizzes: [], 
-    genre: "全ジャンル",
-    level: 1, 
-    isFinished: false,
-    history: [],
-    sessionId: 0 
+    currentQuestionIndex: 0, maxQuestions: 5, score: 0, currentQuizData: null, questionQueue: [], sessionQuizzes: [], 
+    genre: "全ジャンル", level: 1, isFinished: false, history: [], sessionId: 0 
 };
-
-// 単一のクイズ生成と整合性チェック（リトライロジックを内包）
-async function generateValidQuiz(genre, level, sessionId) {
-    let quizData = null;
-    try {
-        const res = await fetch('/generate-quiz', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                grade: currentUser ? currentUser.grade : "1",
-                genre: genre,
-                level: level 
-            })
-        });
-        if (res.ok) {
-            quizData = await res.json();
-        }
-    } catch (e) {
-        console.error("Fetch Error:", e);
-    }
-    
-    // セッションが変わっていたら破棄
-    if (quizState.sessionId !== sessionId) return null;
-
-    if (quizData && quizData.question && quizData.answer) {
-         // クライアント側でも一応重複チェック
-         const isDuplicate = quizState.history.some(h => h === quizData.answer);
-         if (!isDuplicate) {
-             return quizData; // 成功！
-         } else {
-             console.log("Duplicate quiz detected in client bg. Dropping...", quizData.answer);
-             return null;
-         }
-    } 
-    return null;
-}
-
-// グローバルストックからクイズを取得する関数（フォールバック用）
-async function fetchQuizFromGlobalStock(genre, level) {
-    if (!db) return null;
-
-    const randomId = Math.floor(Math.random() * 100000000);
-    let quiz = null;
-
-    try {
-        // ジャンル指定がある場合
-        let queryRef = db.collection('public_quizzes');
-        
-        // 「全ジャンル」以外ならジャンルでフィルタ
-        if (genre !== "全ジャンル") {
-            queryRef = queryRef.where('genre', '==', genre);
-        }
-        
-        // レベルもフィルタ
-        queryRef = queryRef.where('level', '==', level);
-
-        // 1. random_id >= R の1件を取得
-        let snapshot = await queryRef.where('random_id', '>=', randomId).limit(1).get();
-
-        if (snapshot.empty) {
-            // 2. なければ random_id < R の1件を取得 (Wrap around)
-             if (genre !== "全ジャンル") {
-                // 再構築が必要
-                queryRef = db.collection('public_quizzes').where('genre', '==', genre).where('level', '==', level);
-             } else {
-                queryRef = db.collection('public_quizzes').where('level', '==', level);
-             }
-             
-             snapshot = await queryRef.where('random_id', '<', randomId).limit(1).get();
-        }
-
-        if (!snapshot.empty) {
-            const doc = snapshot.docs[0];
-            const data = doc.data();
-            
-            // 報告カウントチェック
-            if (data.bad_report_count >= 3) {
-                 console.log("[Quiz] Skipping bad quiz:", data.question);
-                 return null;
-            }
-
-            // 一応クライアント側で履歴重複チェック
-            const isDuplicate = quizState.history.some(h => h === data.answer);
-            const isDuplicateInQueue = quizState.questionQueue.some(q => q.question === data.question);
-            
-            if (!isDuplicate && !isDuplicateInQueue) {
-                // ★IDも持たせる（報告用）
-                quiz = { ...data, isStock: true, docId: doc.id };
-                console.log("[Quiz] Fetched from Global Stock:", quiz.question);
-            }
-        }
-    } catch(e) {
-        console.warn("[Quiz] Global Fetch Failed (Index missing?):", e);
-    }
-    return quiz;
-}
-
-// バックグラウンド生成ロジック
-async function backgroundQuizFetcher(genre, level, sessionId) {
-    const TOTAL_REQ = 5;
-    console.log(`[Quiz] Start fetcher: Generating all ${TOTAL_REQ} questions via API`);
-
-    // 全5問になるまで補充し続ける
-    while (quizState.history.length + quizState.questionQueue.length < TOTAL_REQ) {
-        if (quizState.sessionId !== sessionId || quizState.isFinished) {
-            console.log("[Quiz] Background fetcher stopped.");
-            return;
-        }
-
-        // キューが一杯なら少し待つ
-        if (quizState.questionQueue.length >= 3) {
-            await new Promise(r => setTimeout(r, 2000));
-            continue;
-        }
-
-        console.log("[Quiz] Generating via API...");
-        let newQuiz = await generateValidQuiz(genre, level, sessionId);
-        
-        if (quizState.sessionId !== sessionId) return;
-
-        if (newQuiz) {
-            console.log(`[Quiz] Pre-fetched 1 question`);
-            quizState.questionQueue.push(newQuiz);
-        } else {
-            console.warn("[Quiz] Failed to generate. Retrying...");
-            await new Promise(r => setTimeout(r, 2000));
-        }
-    }
-    console.log("[Quiz] Background fetcher completed.");
-}
-
-// グローバルストックへ保存する関数
-async function saveQuizToGlobalStock(quiz) {
-    if (!db || !currentUser) return;
-    
-    const docId = generateDocIdFromText(quiz.question); // ユニークID生成
-    const randomId = Math.floor(Math.random() * 100000000); // 検索用ランダム値
-    
-    try {
-        await db.collection("public_quizzes").doc(docId).set({
-            question: quiz.question,
-            options: quiz.options,
-            answer: quiz.answer,
-            explanation: quiz.explanation || "",
-            genre: quiz.actual_genre || quizState.genre,
-            level: quizState.level,
-            fact_basis: quiz.fact_basis || "",
-            random_id: randomId,
-            bad_report_count: 0,
-            like_count: 0,
-            created_at: new Date().toISOString(),
-            creator_grade: currentUser.grade,
-            creator_uid: currentUser.id,
-            creator_name: currentUser.name 
-        }, { merge: true }); 
-    } catch(e) {
-        console.error("Failed to save quiz to global:", e);
-    }
-}
-
-// 悪い問題を報告する関数
-async function reportBadQuiz(docId) {
-    if (!db || !currentUser || !docId) return;
-    
-    if (confirm("この問題は間違いがあるか、適切ではないにゃ？\n報告して、みんなに出ないようにするにゃ？")) {
-        try {
-            const quizRef = db.collection("public_quizzes").doc(docId);
-            await quizRef.update({
-                bad_report_count: firebase.firestore.FieldValue.increment(1)
-            });
-            alert("報告ありがとうにゃ！ネル先生が確認しておくにゃ！");
-        } catch(e) {
-            console.error("Report failed:", e);
-            alert("報告できなかったにゃ...通信エラーかも？");
-        }
-    }
-}
-
-// いいね機能
-async function likeQuiz(docId) {
-    if (!db || !currentUser || !docId) return;
-    try {
-        const quizRef = db.collection("public_quizzes").doc(docId);
-        await quizRef.update({ like_count: firebase.firestore.FieldValue.increment(1) });
-        alert("作者に「いいね！」を伝えたにゃ！");
-    } catch(e) { alert("通信エラーだにゃ..."); }
-}
 
 window.showQuizGame = function() {
     window.switchScreen('screen-quiz');
@@ -755,19 +517,9 @@ window.showQuizGame = function() {
     const levels = (currentUser && currentUser.quizLevels) ? currentUser.quizLevels : {};
     const genres = ["全ジャンル", "一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム", "マインクラフト", "ロブロックス", "ポケモン", "魔法陣グルグル", "ジョジョの奇妙な冒険", "STPR", "夏目友人帳"];
     const idMap = {
-        "全ジャンル": "btn-quiz-all",
-        "一般知識": "btn-quiz-general",
-        "雑学": "btn-quiz-trivia",
-        "芸能・スポーツ": "btn-quiz-entertainment",
-        "歴史・地理・社会": "btn-quiz-history",
-        "ゲーム": "btn-quiz-game",
-        "マインクラフト": "btn-quiz-minecraft",
-        "ロブロックス": "btn-quiz-roblox",
-        "ポケモン": "btn-quiz-pokemon",
-        "魔法陣グルグル": "btn-quiz-guruguru",
-        "ジョジョの奇妙な冒険": "btn-quiz-jojo",
-        "STPR": "btn-quiz-stpr",
-        "夏目友人帳": "btn-quiz-natsume"
+        "全ジャンル": "btn-quiz-all", "一般知識": "btn-quiz-general", "雑学": "btn-quiz-trivia", "芸能・スポーツ": "btn-quiz-entertainment",
+        "歴史・地理・社会": "btn-quiz-history", "ゲーム": "btn-quiz-game", "マインクラフト": "btn-quiz-minecraft", "ロブロックス": "btn-quiz-roblox",
+        "ポケモン": "btn-quiz-pokemon", "魔法陣グルグル": "btn-quiz-guruguru", "ジョジョの奇妙な冒険": "btn-quiz-jojo", "STPR": "btn-quiz-stpr", "夏目友人帳": "btn-quiz-natsume"
     };
 
     genres.forEach(g => {
@@ -778,29 +530,15 @@ window.showQuizGame = function() {
         }
     });
 
-    const btnNatsume = document.getElementById('btn-quiz-natsume');
-    if (btnNatsume) {
-        const lv = levels["夏目友人帳"] || 1;
-        btnNatsume.innerText = `夏目友人帳 (Lv.${lv})`;
-    }
-
     document.getElementById('quiz-genre-select').classList.remove('hidden');
     document.getElementById('quiz-level-select').classList.add('hidden'); 
     document.getElementById('quiz-game-area').classList.add('hidden');
     window.updateNellMessage("どのジャンルに挑戦するにゃ？", "normal");
 };
 
-// ★修正: ランキングボタンのイベント設定を含む
 window.showLevelSelection = function(genre) {
     const currentMaxLevel = (currentUser && currentUser.quizLevels && currentUser.quizLevels[genre]) || 1;
     
-    /*
-    if (currentMaxLevel === 1) {
-        startQuizSet(genre, 1);
-        return;
-    }
-    */
-
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-level-select').classList.remove('hidden');
     
@@ -820,8 +558,8 @@ window.showLevelSelection = function(genre) {
         btn.onclick = () => window.startQuizSet(genre, i);
         container.appendChild(btn);
     }
-
-    // ★ランキングボタンの設定
+    
+    // ★ランキングボタン
     const rankBtn = document.getElementById('quiz-ranking-btn');
     if (rankBtn) {
         rankBtn.onclick = () => window.showGameRanking(`quiz_${genre}`, `🏆 ${genre} ランキング`);
@@ -840,30 +578,56 @@ window.startQuizSet = async function(genre, level) {
     quizState.score = 0;
     quizState.isFinished = false;
     quizState.currentQuizData = null;
-    quizState.questionQueue = []; // キューをリセット
-    quizState.sessionQuizzes = []; // セッションクイズ履歴をリセット
+    quizState.questionQueue = []; 
+    quizState.sessionQuizzes = []; 
     quizState.history = []; 
     quizState.sessionId = Date.now(); 
 
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-level-select').classList.add('hidden');
     document.getElementById('quiz-game-area').classList.remove('hidden');
-    
     document.getElementById('quiz-genre-label').innerText = `${genre} Lv.${level}`;
 
-    // 先行生成を開始（非同期で放置）
     backgroundQuizFetcher(genre, level, quizState.sessionId);
-
-    // 1問目を表示へ
     window.nextQuiz();
 };
+
+async function generateValidQuiz(genre, level, sessionId) {
+    let quizData = null;
+    try {
+        const res = await fetch('/generate-quiz', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ grade: currentUser ? currentUser.grade : "1", genre: genre, level: level })
+        });
+        if (res.ok) { quizData = await res.json(); }
+    } catch (e) { console.error("Fetch Error:", e); }
+    
+    if (quizState.sessionId !== sessionId) return null;
+    if (quizData && quizData.question && quizData.answer) {
+         const isDuplicate = quizState.history.some(h => h === quizData.answer);
+         if (!isDuplicate) return quizData;
+    } 
+    return null;
+}
+
+async function backgroundQuizFetcher(genre, level, sessionId) {
+    const TOTAL_REQ = 5;
+    while (quizState.history.length + quizState.questionQueue.length < TOTAL_REQ) {
+        if (quizState.sessionId !== sessionId || quizState.isFinished) return;
+        if (quizState.questionQueue.length >= 3) { await new Promise(r => setTimeout(r, 2000)); continue; }
+        let newQuiz = await generateValidQuiz(genre, level, sessionId);
+        if (quizState.sessionId !== sessionId) return;
+        if (newQuiz) quizState.questionQueue.push(newQuiz);
+        else await new Promise(r => setTimeout(r, 2000));
+    }
+}
 
 window.nextQuiz = async function() {
     if (quizState.currentQuestionIndex >= quizState.maxQuestions) {
         window.finishQuizSet();
         return;
     }
-
     const currentSessionId = quizState.sessionId;
     quizState.currentQuestionIndex++;
     document.getElementById('quiz-progress').innerText = `${quizState.currentQuestionIndex}/${quizState.maxQuestions} 問目`;
@@ -876,7 +640,6 @@ window.nextQuiz = async function() {
     const optionsContainer = document.getElementById('quiz-options-container');
     const micBtn = document.getElementById('quiz-mic-btn');
 
-    // UI初期化
     qText.innerText = "問題を一生懸命作って、チェックしてるにゃ…";
     window.updateNellMessage("問題を一生懸命作って、チェックしてるにゃ…", "thinking");
     if(micStatus) micStatus.innerText = "";
@@ -885,7 +648,6 @@ window.nextQuiz = async function() {
     nextBtn.classList.add('hidden');
     optionsContainer.innerHTML = ""; 
     
-    // ★マイクボタンの状態リセット
     if(micBtn) {
         micBtn.disabled = false;
         micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
@@ -893,94 +655,33 @@ window.nextQuiz = async function() {
     }
     
     let quizData = null;
-    
-    // 1. まずキューを確認
     if (quizState.questionQueue.length > 0) {
         quizData = quizState.questionQueue.shift();
     } else {
-        // 2. キューが空なら待機
         let waitCount = 0;
-        const MAX_WAIT = 10; 
-        
-        while (waitCount < MAX_WAIT) {
+        while (waitCount < 10) {
             if (quizState.sessionId !== currentSessionId) return; 
-            if (quizState.questionQueue.length > 0) {
-                quizData = quizState.questionQueue.shift();
-                break;
-            }
+            if (quizState.questionQueue.length > 0) { quizData = quizState.questionQueue.shift(); break; }
             await new Promise(r => setTimeout(r, 1000));
             waitCount++;
-            
-            if (waitCount === 5) {
-                 window.updateNellMessage("うーん、まだ確認中だにゃ…もうちょっと待ってにゃ！", "thinking");
-            }
+            if (waitCount === 5) window.updateNellMessage("うーん、まだ確認中だにゃ…もうちょっと待ってにゃ！", "thinking");
         }
     }
 
-    // 3. 緊急生成 (API)
     if (!quizData) {
-        console.log("Queue empty. Fetching directly...");
         window.updateNellMessage("お待たせ！今すぐ持ってくるにゃ！", "excited");
         quizData = await generateValidQuiz(quizState.genre, quizState.level, currentSessionId);
     }
     
-    // 4. それでもダメならエラー or フォールバック（ここでストックを使用）
-    if (!quizData) {
-        console.log("API failed. Trying to fetch from global stock as fallback...");
-        if (typeof fetchQuizFromGlobalStock === 'function') {
-             quizData = await fetchQuizFromGlobalStock(quizState.genre, quizState.level);
-        }
-
-        if (quizData) {
-            quizData.isFallback = true;
-            window.updateNellMessage("電波が悪いから、思い出の中から出すにゃ！", "excited");
-        } else {
-            // ストックも無い場合
-            qText.innerText = "ごめんにゃ、問題が作れなかったにゃ…。";
-            window.updateNellMessage("ごめんにゃ、問題が作れなかったにゃ…。", "sad");
-            
-            const retryBtn = document.createElement('button');
-            retryBtn.className = "main-btn orange-btn";
-            retryBtn.innerText = "もう一度トライ！";
-            retryBtn.onclick = () => {
-                quizState.currentQuestionIndex--; 
-                window.nextQuiz();
-            };
-            optionsContainer.appendChild(retryBtn);
-            
-            const backBtn = document.createElement('button');
-            backBtn.className = "main-btn gray-btn";
-            backBtn.innerText = "あきらめて戻る";
-            backBtn.onclick = window.showQuizGame;
-            optionsContainer.appendChild(backBtn);
-            
-            return;
-        }
-    }
-    
     if (quizState.sessionId !== currentSessionId) return;
 
-    // --- 出題処理 ---
     if (quizData && quizData.question) {
         quizState.history.push(quizData.answer);
         if (quizState.history.length > 10) quizState.history.shift(); 
-        
-        if (!quizData.isFallback) {
-            quizState.sessionQuizzes.push({ ...quizData, shouldSave: true });
-        }
-
+        quizState.sessionQuizzes.push({ ...quizData, shouldSave: true });
         window.currentQuiz = quizData; 
         quizState.currentQuizData = quizData;
-        
         qText.innerText = quizData.question;
-        
-        const authorDiv = document.createElement('div');
-        authorDiv.className = "quiz-author-badge";
-        if (quizData.isFallback && quizData.creator_name) {
-             authorDiv.innerHTML = `<span>✏️ 作：${window.cleanDisplayString(quizData.creator_name)}さん</span>`;
-             optionsContainer.appendChild(authorDiv);
-        }
-
         window.updateNellMessage(quizData.question, "normal", false, true);
         
         if (quizData.options && Array.isArray(quizData.options)) {
@@ -993,66 +694,14 @@ window.nextQuiz = async function() {
                 optionsContainer.appendChild(btn);
             });
         }
-        
-        if (quizData.actual_genre && quizData.actual_genre !== quizState.genre) {
-             const baseLabel = `${quizState.genre} Lv.${quizState.level}`;
-             document.getElementById('quiz-genre-label').innerText = `${baseLabel} (${quizData.actual_genre})`;
-        } else {
-             document.getElementById('quiz-genre-label').innerText = `${quizState.genre} Lv.${quizState.level}`;
-        }
-
         controls.style.display = 'flex';
-        
     } else {
-        qText.innerText = "エラーだにゃ…";
-    }
-};
-
-// 音声回答ボタンの処理
-window.startQuizVoiceInput = function() {
-    const micBtn = document.getElementById('quiz-mic-btn');
-    const status = document.getElementById('quiz-mic-status');
-    
-    if (micBtn) {
-        micBtn.disabled = true;
-        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
-        micBtn.style.background = "#ff5252";
-    }
-    
-    if (status) status.innerText = "お話してにゃ！";
-    
-    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-
-    if (typeof window.startOneShotRecognition === 'function') {
-        window.startOneShotRecognition(
-            (transcript) => {
-                const answered = window.checkQuizAnswer(transcript, false);
-                if (!answered) {
-                    window.stopQuizVoiceInput(true);
-                }
-            },
-            () => {
-                window.stopQuizVoiceInput();
-            }
-        );
-    } else {
-        alert("音声認識が使えないにゃ...");
-        window.stopQuizVoiceInput();
-    }
-};
-
-window.stopQuizVoiceInput = function(keepStatus = false) {
-    const micBtn = document.getElementById('quiz-mic-btn');
-    const status = document.getElementById('quiz-mic-status');
-    
-    if (micBtn) {
-        micBtn.disabled = false;
-        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
-        micBtn.style.background = "#4db6ac";
-    }
-    
-    if (status && !keepStatus) {
-        status.innerText = "";
+        qText.innerText = "問題が作れなかったにゃ…ごめんにゃ。";
+        const backBtn = document.createElement('button');
+        backBtn.className = "main-btn gray-btn";
+        backBtn.innerText = "戻る";
+        backBtn.onclick = window.showQuizGame;
+        optionsContainer.appendChild(backBtn);
     }
 };
 
@@ -1061,7 +710,6 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
     if (!document.getElementById('quiz-answer-display').classList.contains('hidden')) return false;
 
     const correct = window.currentQuiz.answer;
-    
     if (isButton) {
         const buttons = document.querySelectorAll('.quiz-option-btn');
         buttons.forEach(b => b.disabled = true);
@@ -1069,19 +717,12 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
 
     const cleanUserAnswer = userAnswer.trim();
     const cleanCorrect = correct.trim();
-
     let isCorrect = false;
 
     if (isButton) {
-        if (cleanUserAnswer === cleanCorrect) {
-            isCorrect = true;
-        }
+        if (cleanUserAnswer === cleanCorrect) isCorrect = true;
     } else {
-        if (cleanUserAnswer.includes(cleanCorrect)) {
-            isCorrect = true;
-        } else if (fuzzyContains(cleanUserAnswer, cleanCorrect)) {
-            isCorrect = true;
-        }
+        if (cleanUserAnswer.includes(cleanCorrect) || fuzzyContains(cleanUserAnswer, cleanCorrect)) isCorrect = true;
     }
     
     const status = document.getElementById('quiz-mic-status');
@@ -1091,19 +732,14 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
         window.updateNellMessage(`ピンポン！正解だにゃ！答えは「${correct}」！`, "excited", false, true);
         quizState.score += 20; 
-        
         const buttons = document.querySelectorAll('.quiz-option-btn');
-        buttons.forEach(b => {
-            if (b.innerText === correct) b.classList.add('quiz-correct');
-        });
-
+        buttons.forEach(b => { if (b.innerText === correct) b.classList.add('quiz-correct'); });
         window.showQuizResult(true);
         return true; 
     } else {
         if (isButton) {
             if(window.safePlay) window.safePlay(window.sfxBatu);
             window.updateNellMessage(`残念！正解は「${correct}」だったにゃ。`, "gentle", false, true);
-            
             const buttons = document.querySelectorAll('.quiz-option-btn');
             buttons.forEach(b => {
                 if (b.innerText === cleanUserAnswer) b.classList.add('quiz-wrong');
@@ -1111,11 +747,9 @@ window.checkQuizAnswer = function(userAnswer, isButton = false) {
             });
             window.showQuizResult(false);
             return true;
-        } else {
-            return false;
         }
+        return false;
     }
-    return false; 
 };
 
 window.requestQuizHint = function() {
@@ -1148,107 +782,6 @@ window.showQuizResult = function(isWin) {
     if (window.currentQuiz) {
         ansText.innerText = window.currentQuiz.answer;
         ansDisplay.classList.remove('hidden');
-
-        const oldSaveBtn = document.getElementById('quiz-save-toggle-btn');
-        if(oldSaveBtn) oldSaveBtn.remove();
-        
-        const oldReportBtn = document.getElementById('quiz-report-btn');
-        if(oldReportBtn) oldReportBtn.remove();
-        const oldLikeBtn = document.getElementById('quiz-like-btn'); 
-        if(oldLikeBtn) oldLikeBtn.remove();
-
-        const gameArea = document.getElementById('quiz-game-area');
-        const currentSessionQuiz = quizState.sessionQuizzes.find(q => q.question === window.currentQuiz.question);
-        
-        if (currentSessionQuiz) {
-            const saveBtn = document.createElement('button');
-            saveBtn.id = 'quiz-save-toggle-btn';
-            
-            const updateBtnStyle = () => {
-                saveBtn.className = currentSessionQuiz.shouldSave ? "main-btn blue-btn" : "main-btn gray-btn";
-                saveBtn.innerText = currentSessionQuiz.shouldSave ? "💾 この問題を保存する" : "🗑️ 保存しない";
-                saveBtn.style.opacity = currentSessionQuiz.shouldSave ? "1" : "0.7";
-            };
-            
-            updateBtnStyle();
-            saveBtn.style.marginTop = "10px";
-            saveBtn.style.width = "100%"; 
-            
-            saveBtn.onclick = () => {
-                currentSessionQuiz.shouldSave = !currentSessionQuiz.shouldSave;
-                updateBtnStyle();
-            };
-            
-            gameArea.appendChild(saveBtn);
-        }
-
-        if (window.currentQuiz.isFallback && window.currentQuiz.docId) {
-            const actionContainer = document.createElement('div');
-            actionContainer.style.cssText = "display:flex; gap:10px; margin-top:10px;";
-
-            const likeBtn = document.createElement('button');
-            likeBtn.id = 'quiz-like-btn';
-            likeBtn.className = "main-btn like-btn";
-            likeBtn.innerHTML = "❤️ いいね！";
-            likeBtn.onclick = () => { 
-                likeQuiz(window.currentQuiz.docId); 
-                likeBtn.disabled = true; 
-                likeBtn.style.opacity = 0.6; 
-            };
-            
-            const reportBtn = document.createElement('button');
-            reportBtn.id = 'quiz-report-btn';
-            reportBtn.className = "main-btn";
-            reportBtn.innerText = "⚠️ 報告";
-            reportBtn.style.cssText = "background:transparent; border:2px solid #ff5252; color:#ff5252; font-size:0.9rem; flex:1;";
-            reportBtn.onclick = () => { 
-                reportBadQuiz(window.currentQuiz.docId); 
-                reportBtn.disabled = true; 
-                reportBtn.innerText = "報告済"; 
-            };
-            
-            actionContainer.appendChild(likeBtn);
-            actionContainer.appendChild(reportBtn);
-            gameArea.appendChild(actionContainer);
-        }
-    }
-};
-
-window.persistQuizSession = function() {
-    if (currentUser && quizState.sessionQuizzes.length > 0) {
-        if (!currentUser.savedQuizzes) currentUser.savedQuizzes = [];
-        
-        const quizzesToSave = quizState.sessionQuizzes.filter(q => q.shouldSave).map(q => {
-            return {
-                question: q.question,
-                options: q.options,
-                answer: q.answer,
-                explanation: q.explanation,
-                genre: q.actual_genre || quizState.genre,
-                level: quizState.level,
-                date: new Date().toISOString()
-            };
-        });
-        
-        if (quizzesToSave.length > 0) {
-            quizzesToSave.forEach(newQ => {
-                const isDup = currentUser.savedQuizzes.some(oldQ => oldQ.question === newQ.question);
-                if (!isDup) {
-                    currentUser.savedQuizzes.push(newQ);
-                }
-                
-                if (typeof saveQuizToGlobalStock === 'function') {
-                    saveQuizToGlobalStock(newQ);
-                }
-            });
-            
-            if (currentUser.savedQuizzes.length > 100) {
-                currentUser.savedQuizzes = currentUser.savedQuizzes.slice(currentUser.savedQuizzes.length - 100);
-            }
-            if(typeof window.saveAndSync === 'function') window.saveAndSync();
-        }
-        
-        quizState.sessionQuizzes = [];
     }
 };
 
@@ -1256,39 +789,19 @@ window.finishQuizSet = function() {
     quizState.isFinished = true;
     window.currentQuiz = null;
     
-    window.persistQuizSession();
+    // ランキング保存
+    window.saveHighScore(`quiz_${quizState.genre}`, quizState.score);
 
     const correctCount = Math.floor(quizState.score / 20);
     const currentLevel = quizState.level || 1;
-
     let rewardPerCorrect = 50; 
-
-    // STPR特別報酬ロジック
-    if (quizState.genre === 'STPR') {
-        if (currentLevel === 1) rewardPerCorrect = 200;
-        else if (currentLevel === 2) rewardPerCorrect = 500;
-        else if (currentLevel === 3) rewardPerCorrect = 1000;
-        else if (currentLevel === 4) rewardPerCorrect = 2000;
-        else if (currentLevel >= 5) rewardPerCorrect = 3000;
-    } else {
-        if (currentLevel === 1) rewardPerCorrect = 50;
-        else if (currentLevel === 2) rewardPerCorrect = 100;
-        else if (currentLevel === 3) rewardPerCorrect = 150;
-        else if (currentLevel === 4) rewardPerCorrect = 200;
-        else if (currentLevel >= 5) rewardPerCorrect = 300;
-    }
-
     let totalReward = correctCount * rewardPerCorrect;
-
-    if (correctCount === 0) {
-        totalReward = 10;
-    }
-
-    // ★ランキング保存 (ジャンルごとのスコア)
-    window.saveHighScore(`quiz_${quizState.genre}`, quizState.score);
+    if (correctCount === 0) totalReward = 10;
 
     let msg = "";
     let mood = "normal";
+    
+    // レベルアップ判定
     let isLevelUp = false;
     let newLevel = 1;
 
@@ -1296,7 +809,6 @@ window.finishQuizSet = function() {
         if (currentUser) {
             if (!currentUser.quizLevels) currentUser.quizLevels = {};
             const currentMaxLevel = currentUser.quizLevels[quizState.genre] || 1;
-            
             if (quizState.level === currentMaxLevel && currentMaxLevel < 5) {
                 newLevel = currentMaxLevel + 1;
                 currentUser.quizLevels[quizState.genre] = newLevel;
@@ -1304,186 +816,95 @@ window.finishQuizSet = function() {
                 if(typeof window.saveAndSync === 'function') window.saveAndSync();
             }
         }
-
-        if (isLevelUp) {
-            msg = `全問正解！すごいにゃ！${quizState.genre}のレベルが${newLevel}に上がったにゃ！！カリカリ${totalReward}個あげるにゃ！`;
-        } else {
-            msg = `全問正解！天才だにゃ！！カリカリ${totalReward}個あげるにゃ！`;
-        }
+        msg = isLevelUp ? 
+            `全問正解！すごいにゃ！レベル${newLevel}に上がったにゃ！！カリカリ${totalReward}個あげるにゃ！` : 
+            `全問正解！天才だにゃ！！カリカリ${totalReward}個あげるにゃ！`;
         mood = "excited";
     } else if (correctCount >= 3) {
-        msg = `${correctCount}問正解！(${quizState.score}点) よくがんばったにゃ！カリカリ${totalReward}個あげるにゃ！`;
+        msg = `${correctCount}問正解！よくがんばったにゃ！カリカリ${totalReward}個あげるにゃ！`;
         mood = "happy";
     } else {
-        if (correctCount > 0) {
-            msg = `${correctCount}問正解だったにゃ。次はもっとがんばるにゃ！カリカリ${totalReward}個あげるにゃ。`;
-        } else {
-            msg = `難しかったかにゃ？参加賞でカリカリ${totalReward}個あげるにゃ。`;
-        }
+        msg = correctCount > 0 ? `${correctCount}問正解だったにゃ。` : `難しかったかにゃ？参加賞でカリカリ${totalReward}個あげるにゃ。`;
         mood = "gentle";
     }
 
     window.giveGameReward(totalReward);
-
     window.updateNellMessage(msg, mood, false, true);
     alert(msg);
     
-    const oldSaveBtn = document.getElementById('quiz-save-toggle-btn');
-    if(oldSaveBtn) oldSaveBtn.remove();
-    const oldReportBtn = document.getElementById('quiz-report-btn');
-    if(oldReportBtn) oldReportBtn.remove();
-    const oldLikeBtn = document.getElementById('quiz-like-btn');
-    if(oldLikeBtn) oldLikeBtn.remove();
-
     const micArea = document.getElementById('quiz-mic-area');
     if (micArea) micArea.style.display = 'block';
 
     window.showQuizGame();
 };
 
-window.reportQuizError = async function() {
-    if (!window.currentQuiz || window.currentMode !== 'quiz') return;
-
-    const reason = prompt("どこが間違っているか教えてほしいにゃ！（例：正解はBじゃなくてC、キャラの名前が違う、など）");
-    if (!reason) return; 
-
-    window.updateNellMessage("ごめんにゃ！今すぐ調べて作り直すにゃ！！", "sad", false, true);
-    
-    document.getElementById('quiz-question-text').innerText = "修正中...";
-    document.getElementById('quiz-options-container').innerHTML = "";
-
-    try {
-        const res = await fetch('/correct-quiz', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                oldQuiz: window.currentQuiz,
-                reason: reason,
-                genre: quizState.genre 
-            })
-        });
-
-        const newQuiz = await res.json();
-        
-        if (newQuiz && newQuiz.question) {
-            window.currentQuiz = newQuiz;
-            quizState.currentQuizData = newQuiz;
-
-            if (quizState.sessionQuizzes.length > 0) {
-                quizState.sessionQuizzes[quizState.sessionQuizzes.length - 1] = { ...newQuiz, shouldSave: true };
-            }
-
-            document.getElementById('quiz-question-text').innerText = newQuiz.question;
-            window.updateNellMessage(newQuiz.explanation || "作り直したにゃ！これでどうかにゃ？", "excited", false, true);
-
-            const optionsContainer = document.getElementById('quiz-options-container');
-            optionsContainer.innerHTML = "";
-            
-            const shuffledOptions = [...newQuiz.options].sort(() => Math.random() - 0.5);
-            shuffledOptions.forEach(opt => {
-                const btn = document.createElement('button');
-                btn.className = "quiz-option-btn";
-                btn.innerText = opt;
-                btn.onclick = () => window.checkQuizAnswer(opt, true);
-                optionsContainer.appendChild(btn);
-            });
-            
-            document.getElementById('quiz-answer-display').classList.add('hidden');
-            
-            const controls = document.getElementById('quiz-controls');
-            const nextBtn = document.getElementById('next-quiz-btn');
-            const btns = controls.querySelectorAll('button:not(#next-quiz-btn)');
-            btns.forEach(b => b.classList.remove('hidden'));
-            nextBtn.classList.add('hidden');
-            controls.style.display = 'flex';
-            
-            window.showQuizResult(false); 
-             document.getElementById('quiz-answer-display').classList.add('hidden');
-
-        } else {
-            throw new Error("無効なデータ");
-        }
-
-    } catch (e) {
-        console.error(e);
-        window.updateNellMessage("修正に失敗したにゃ…次の問題に行くにゃ。", "sad");
-        setTimeout(window.nextQuiz, 2000);
+window.startQuizVoiceInput = function() {
+    const micBtn = document.getElementById('quiz-mic-btn');
+    const status = document.getElementById('quiz-mic-status');
+    if (micBtn) { micBtn.disabled = true; micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...'; micBtn.style.background = "#ff5252"; }
+    if (status) status.innerText = "お話してにゃ！";
+    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+    if (typeof window.startOneShotRecognition === 'function') {
+        window.startOneShotRecognition(
+            (transcript) => {
+                const answered = window.checkQuizAnswer(transcript, false);
+                if (!answered) window.stopQuizVoiceInput(true);
+            },
+            () => { window.stopQuizVoiceInput(); }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopQuizVoiceInput();
     }
 };
 
-// ==========================================
-// 4. ネル先生のなぞなぞ
-// ==========================================
+window.stopQuizVoiceInput = function(keepStatus = false) {
+    const micBtn = document.getElementById('quiz-mic-btn');
+    const status = document.getElementById('quiz-mic-status');
+    if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
+    if (status && !keepStatus) status.innerText = "";
+};
 
+window.reportQuizError = async function() {
+    alert("機能未実装だにゃ！ごめんにゃ！");
+};
+
+// ==========================================
+// 4. ネル先生のなぞなぞ (showRiddleGame)
+// ==========================================
 let riddleState = {
-    currentRiddle: null,
-    nextRiddle: null,
-    isFinished: false,
-    score: 0,
-    questionCount: 0,
-    maxQuestions: 5
+    currentRiddle: null, nextRiddle: null, isFinished: false, score: 0, questionCount: 0, maxQuestions: 5
 };
 
 async function fetchRiddleData() {
     const res = await fetch('/generate-riddle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            grade: currentUser ? currentUser.grade : "1"
-        })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grade: currentUser ? currentUser.grade : "1" })
     });
     return await res.json();
 }
 
 window.showRiddleGame = function() {
-    if (typeof window.switchScreen === 'function') {
-        window.switchScreen('screen-riddle');
-    } else {
-        document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
-        document.getElementById('screen-riddle').classList.remove('hidden');
-    }
-    
+    if (typeof window.switchScreen === 'function') { window.switchScreen('screen-riddle'); } 
+    else { document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden')); document.getElementById('screen-riddle').classList.remove('hidden'); }
     window.currentMode = 'riddle';
-    
-    const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'chat-free-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
-    ids.forEach(id => { 
-        const el = document.getElementById(id); 
-        if (el) el.classList.add('hidden'); 
-    });
-    const convoLog = document.getElementById('conversation-log');
-    if(convoLog) convoLog.classList.add('hidden');
-    
     document.getElementById('riddle-question-text').innerText = "スタートボタンを押してにゃ！";
     document.getElementById('riddle-controls').style.display = 'none';
     const startBtn = document.getElementById('start-riddle-btn');
     if(startBtn) startBtn.style.display = 'inline-block';
-    
     document.getElementById('riddle-answer-display').classList.add('hidden');
     document.getElementById('riddle-mic-status').innerText = "";
     document.getElementById('riddle-mic-area').style.display = 'none';
     document.getElementById('riddle-progress').innerText = "";
-    
-    if(typeof window.updateNellMessage === 'function') {
-        window.updateNellMessage("なぞなぞで遊ぶにゃ！", "excited", false);
-    }
-    
-    if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
+    window.updateNellMessage("なぞなぞで遊ぶにゃ！", "excited", false);
 };
 
 window.startRiddle = async function() {
-    const startBtn = document.getElementById('start-riddle-btn');
-    startBtn.style.display = 'none';
-    
-    riddleState.score = 0;
-    riddleState.questionCount = 0;
-    
+    document.getElementById('start-riddle-btn').style.display = 'none';
+    riddleState.score = 0; riddleState.questionCount = 0;
     document.getElementById('riddle-controls').style.display = 'flex';
     document.getElementById('riddle-answer-display').classList.add('hidden');
     document.getElementById('riddle-mic-area').style.display = 'block';
-    
-    // ★常時聞き取りは廃止
-    // if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-    
     window.nextRiddle();
 };
 
@@ -1491,147 +912,77 @@ window.nextRiddle = async function() {
     if (riddleState.questionCount >= riddleState.maxQuestions) {
         const reward = riddleState.score * 100;
         let msg = "";
-        if (riddleState.score === 5) {
-            msg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
-        } else if (riddleState.score > 0) {
-            msg = `${riddleState.score}問正解！カリカリ${reward}個あげるにゃ！`;
-        } else {
-            msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
-        }
-        
+        if (riddleState.score === 5) msg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
+        else if (riddleState.score > 0) msg = `${riddleState.score}問正解！カリカリ${reward}個あげるにゃ！`;
+        else msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
         window.giveGameReward(reward);
         window.updateNellMessage(msg, "happy", false, true);
         alert(msg);
         window.showRiddleGame();
         return;
     }
-
     riddleState.questionCount++;
     document.getElementById('riddle-progress').innerText = `${riddleState.questionCount} / ${riddleState.maxQuestions} 問目`;
-
     const qText = document.getElementById('riddle-question-text');
     const controls = document.getElementById('riddle-controls');
     const nextBtn = document.getElementById('next-riddle-btn');
     const ansDisplay = document.getElementById('riddle-answer-display');
     const micStatus = document.getElementById('riddle-mic-status');
     const giveUpBtn = controls.querySelector('button.gray-btn');
-    const micBtn = document.getElementById('riddle-mic-btn');
-
+    
     qText.innerText = "なぞなぞを考えてるにゃ…";
     window.updateNellMessage("なぞなぞを考えてるにゃ…", "thinking");
     micStatus.innerText = "";
     ansDisplay.classList.add('hidden');
     nextBtn.classList.add('hidden');
     if(giveUpBtn) giveUpBtn.classList.remove('hidden');
-    
-    // マイクボタンのリセット
-    if(micBtn) {
-        micBtn.disabled = false;
-        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
-        micBtn.style.background = "#4db6ac";
-    }
-    
+
     let riddleData = null;
     if (riddleState.nextRiddle) {
-        riddleData = riddleState.nextRiddle;
-        riddleState.nextRiddle = null;
+        riddleData = riddleState.nextRiddle; riddleState.nextRiddle = null;
     } else {
-        try {
-            riddleData = await fetchRiddleData();
-        } catch (e) {
-            console.error(e);
-            qText.innerText = "なぞなぞが作れなかったにゃ…";
-            setTimeout(() => {
-                document.getElementById('start-riddle-btn').style.display = 'inline-block';
-                controls.style.display = 'none';
-            }, 2000);
-            return;
+        try { riddleData = await fetchRiddleData(); } catch (e) {
+            console.error(e); qText.innerText = "なぞなぞが作れなかったにゃ…"; return;
         }
     }
-
     if (riddleData && riddleData.question) {
         riddleState.currentRiddle = riddleData;
         window.currentRiddle = riddleData; 
-        
         qText.innerText = riddleData.question;
         window.updateNellMessage(riddleData.question, "normal", false, true);
-        
         fetchRiddleData().then(data => { riddleState.nextRiddle = data; }).catch(err => console.warn("Pre-fetch failed", err));
-    } else {
-        qText.innerText = "エラーだにゃ…";
-    }
+    } else { qText.innerText = "エラーだにゃ…"; }
 };
 
-// ★新規: なぞなぞ用音声入力
 window.startRiddleVoiceInput = function() {
     const micBtn = document.getElementById('riddle-mic-btn');
     const status = document.getElementById('riddle-mic-status');
-    
-    if (micBtn) {
-        micBtn.disabled = true;
-        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
-        micBtn.style.background = "#ff5252";
-    }
-    
+    if (micBtn) { micBtn.disabled = true; micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...'; micBtn.style.background = "#ff5252"; }
     if (status) status.innerText = "お話してにゃ！";
-    
     if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-
     if (typeof window.startOneShotRecognition === 'function') {
-        window.startOneShotRecognition(
-            (transcript) => {
-                const isCorrect = window.checkRiddleAnswer(transcript);
-                // 正解なら即次へボタンなどを出すが、不正解なら再トライ可能にする？
-                // ここでは一発判定としてボタンを戻す
-                window.stopRiddleVoiceInput(true);
-            },
-            () => {
-                window.stopRiddleVoiceInput();
-            }
-        );
-    } else {
-        alert("音声認識が使えないにゃ...");
-        window.stopRiddleVoiceInput();
-    }
+        window.startOneShotRecognition((transcript) => { window.checkRiddleAnswer(transcript); window.stopRiddleVoiceInput(true); }, () => { window.stopRiddleVoiceInput(); });
+    } else { alert("音声認識が使えないにゃ..."); window.stopRiddleVoiceInput(); }
 };
 
 window.stopRiddleVoiceInput = function(keepStatus = false) {
     const micBtn = document.getElementById('riddle-mic-btn');
     const status = document.getElementById('riddle-mic-status');
-    
-    if (micBtn) {
-        micBtn.disabled = false;
-        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
-        micBtn.style.background = "#4db6ac";
-    }
-    
+    if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
     if (status && !keepStatus) status.innerText = "";
 };
 
 window.checkRiddleAnswer = function(userSpeech) {
     if (!riddleState.currentRiddle || window.currentMode !== 'riddle') return false; 
-    
-    // 既に回答済みなら無視
     if (!document.getElementById('riddle-answer-display').classList.contains('hidden')) return false;
-
     const correct = riddleState.currentRiddle.answer;
     const accepted = riddleState.currentRiddle.accepted_answers || [];
     const userAnswer = userSpeech.trim();
-    
     const status = document.getElementById('riddle-mic-status');
     if(status) status.innerText = `「${userAnswer}」？`;
-    
     let isCorrect = false;
     if (fuzzyContains(userAnswer, correct)) isCorrect = true;
-    else {
-        for (const ans of accepted) {
-            if (fuzzyContains(userAnswer, ans)) {
-                isCorrect = true;
-                break;
-            }
-        }
-    }
-    
+    else { for (const ans of accepted) { if (fuzzyContains(userAnswer, ans)) { isCorrect = true; break; } } }
     if (isCorrect) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
         window.updateNellMessage(`大正解だにゃ！答えは「${correct}」！`, "excited", false, true);
@@ -1657,10 +1008,8 @@ window.showRiddleResult = function(isWin) {
     const ansDisplay = document.getElementById('riddle-answer-display');
     const ansText = document.getElementById('riddle-answer-text');
     const giveUpBtn = controls.querySelector('button.gray-btn');
-
     if(giveUpBtn) giveUpBtn.classList.add('hidden');
     nextBtn.classList.remove('hidden');
-
     if (riddleState.currentRiddle) {
         ansText.innerText = riddleState.currentRiddle.answer;
         ansDisplay.classList.remove('hidden');
@@ -1668,7 +1017,7 @@ window.showRiddleResult = function(isWin) {
 };
 
 // ==========================================
-// 5. ネル先生の漢字ドリル
+// 5. ネル先生の漢字ドリル (showKanjiMenu)
 // ==========================================
 let kanjiState = { data: null, canvas: null, ctx: null, isDrawing: false, mode: 'writing', questionCount: 0, maxQuestions: 5, correctCount: 0 };
 
@@ -1695,10 +1044,6 @@ window.startKanjiSet = function(mode) {
     const getPos = (e) => { const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; return { x: clientX - rect.left, y: clientY - rect.top }; };
     canvas.onmousedown = startDraw; canvas.onmousemove = draw; canvas.onmouseup = endDraw;
     canvas.ontouchstart = startDraw; canvas.ontouchmove = draw; canvas.ontouchend = endDraw;
-    
-    // ★常時聞き取りは廃止
-    // if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-    
     window.nextKanjiQuestion();
 };
 
@@ -1706,18 +1051,12 @@ window.nextKanjiQuestion = async function() {
     if (kanjiState.questionCount >= kanjiState.maxQuestions) {
         const reward = kanjiState.correctCount * 100;
         let msg = "";
-        if (kanjiState.correctCount === 5) {
-            msg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
-        } else if (kanjiState.correctCount > 0) {
-            msg = `${kanjiState.correctCount}問正解！カリカリ${reward}個あげるにゃ！`;
-        } else {
-            msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
-        }
-
+        if (kanjiState.correctCount === 5) msg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
+        else if (kanjiState.correctCount > 0) msg = `${kanjiState.correctCount}問正解！カリカリ${reward}個あげるにゃ！`;
+        else msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
         window.giveGameReward(reward);
         window.updateNellMessage(msg, "happy", false, true);
         alert(msg);
-        
         window.showKanjiMenu(); 
         return;
     }
@@ -1727,14 +1066,9 @@ window.nextKanjiQuestion = async function() {
     document.getElementById('next-kanji-btn').style.display = 'none';
     document.getElementById('kanji-answer-display').classList.add('hidden');
     
-    // マイクボタンのリセット
     const micBtn = document.getElementById('kanji-mic-btn');
     const micStatus = document.getElementById('kanji-mic-status');
-    if (micBtn) {
-        micBtn.disabled = false;
-        micBtn.innerHTML = '<span style="font-size:2rem;">🎤</span> 声で答える';
-        micBtn.style.background = "#4db6ac";
-    }
+    if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:2rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
     if(micStatus) micStatus.innerText = "";
 
     const qText = document.getElementById('kanji-question-text');
@@ -1742,15 +1076,13 @@ window.nextKanjiQuestion = async function() {
     window.updateNellMessage("問題を探してるにゃ…", "thinking");
     try {
         const res = await fetch('/generate-kanji', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ grade: currentUser ? currentUser.grade : "1", mode: kanjiState.mode })
         });
         const data = await res.json();
         if (data && data.kanji) {
             kanjiState.data = data;
             window.currentMinitest = data; 
-            
             qText.innerHTML = data.question_display;
             window.updateNellMessage(data.question_speech, "normal", false, true);
             const cvs = document.getElementById('kanji-canvas');
@@ -1764,57 +1096,30 @@ window.nextKanjiQuestion = async function() {
             }
             document.getElementById('kanji-controls').style.display = 'flex';
         } else { throw new Error("Invalid Kanji Data"); }
-    } catch (e) {
-        console.error(e); qText.innerText = "問題が出せないにゃ…"; window.updateNellMessage("ごめん、問題が出せないにゃ…", "sad");
-    }
+    } catch (e) { console.error(e); qText.innerText = "問題が出せないにゃ…"; window.updateNellMessage("ごめん、問題が出せないにゃ…", "sad"); }
 };
 
-// ★新規: 漢字ドリル用音声入力 (読み問題用)
 window.startKanjiVoiceInput = function() {
     const micBtn = document.getElementById('kanji-mic-btn');
     const status = document.getElementById('kanji-mic-status');
-    
-    if (micBtn) {
-        micBtn.disabled = true;
-        micBtn.innerHTML = '<span style="font-size:2rem;">👂</span> 聞いてるにゃ...';
-        micBtn.style.background = "#ff5252";
-    }
-    
+    if (micBtn) { micBtn.disabled = true; micBtn.innerHTML = '<span style="font-size:2rem;">👂</span> 聞いてるにゃ...'; micBtn.style.background = "#ff5252"; }
     if (status) status.innerText = "お話してにゃ！";
-    
     if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
-
     if (typeof window.startOneShotRecognition === 'function') {
-        window.startOneShotRecognition(
-            (transcript) => {
-                window.checkKanjiVoiceAnswer(transcript);
-                window.stopKanjiVoiceInput(true);
-            },
-            () => { window.stopKanjiVoiceInput(); }
-        );
-    } else {
-        alert("音声認識が使えないにゃ...");
-        window.stopKanjiVoiceInput();
-    }
+        window.startOneShotRecognition((transcript) => { window.checkKanjiVoiceAnswer(transcript); window.stopKanjiVoiceInput(true); }, () => { window.stopKanjiVoiceInput(); });
+    } else { alert("音声認識が使えないにゃ..."); window.stopKanjiVoiceInput(); }
 };
 
 window.stopKanjiVoiceInput = function(keepStatus = false) {
     const micBtn = document.getElementById('kanji-mic-btn');
     const status = document.getElementById('kanji-mic-status');
-    
-    if (micBtn) {
-        micBtn.disabled = false;
-        micBtn.innerHTML = '<span style="font-size:2rem;">🎤</span> 声で答える';
-        micBtn.style.background = "#4db6ac";
-    }
-    
+    if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:2rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
     if (status && !keepStatus) status.innerText = "";
 };
 
 window.checkKanjiVoiceAnswer = function(transcript) {
     const status = document.getElementById('kanji-mic-status');
     if(status) status.innerText = `「${transcript}」？`;
-    
     window.checkKanjiReading(transcript);
 };
 
@@ -1860,7 +1165,6 @@ window.checkKanji = async function() {
 
 window.checkKanjiReading = function(text) {
     if (!kanjiState.data || kanjiState.data.type !== 'reading') return false;
-    // 既に回答済みなら無視
     if (!document.getElementById('kanji-answer-display').classList.contains('hidden')) return false;
 
     const correctHiragana = kanjiState.data.reading;
@@ -1869,9 +1173,7 @@ window.checkKanjiReading = function(text) {
     const user = text.trim();
     
     let isCorrect = false;
-    if (fuzzyContains(user, correctHiragana) || fuzzyContains(user, correctKanji) || fuzzyContains(user, correctKatakana)) {
-        isCorrect = true;
-    }
+    if (fuzzyContains(user, correctHiragana) || fuzzyContains(user, correctKanji) || fuzzyContains(user, correctKatakana)) isCorrect = true;
 
     if (isCorrect) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
@@ -1912,17 +1214,10 @@ window.sendHttpTextInternal = function(text) {
 };
 
 // ==========================================
-// 7. お宝神経衰弱 (Memory Game)
+// 6. お宝神経衰弱 (showMemoryGame)
 // ==========================================
-
 let memoryGameState = {
-    cards: [],
-    flippedCards: [],
-    nellMemory: {}, // { index: cardId } - ネル先生が覚えているカード
-    turn: 'player', // 'player' or 'nell'
-    difficulty: 'weak',
-    scores: { player: 0, nell: 0 },
-    isProcessing: false,
+    cards: [], flippedCards: [], nellMemory: {}, turn: 'player', difficulty: 'weak', scores: { player: 0, nell: 0 }, isProcessing: false,
     settings: {
         weak: { memoryRate: 0.1, errorRate: 0.5, reward: 10 },
         normal: { memoryRate: 0.5, errorRate: 0.2, reward: 20 },
@@ -1935,18 +1230,14 @@ window.showMemoryGame = function() {
     document.getElementById('memory-difficulty-select').classList.remove('hidden');
     document.getElementById('memory-game-board').classList.add('hidden');
     window.updateNellMessage("お宝図鑑のカードで神経衰弱勝負にゃ！強さを選んでにゃ！", "excited");
-    
-    // 既存のモーダルを隠す
     document.getElementById('memory-match-modal').classList.add('hidden');
 };
 
 window.startMemoryGame = async function(difficulty) {
     if (!currentUser) return;
-    
-    // プレイヤー名の表示更新 (HTML側IDへ反映)
     const playerName = currentUser.name || "ユーザー";
     const nameEl = document.getElementById('memory-name-player');
-    if(nameEl) nameEl.innerText = `${playerName}さん`; // ★さん付け
+    if(nameEl) nameEl.innerText = `${playerName}さん`;
 
     memoryGameState.difficulty = difficulty;
     memoryGameState.scores = { player: 0, nell: 0 };
@@ -1957,13 +1248,11 @@ window.startMemoryGame = async function(difficulty) {
     
     document.getElementById('memory-difficulty-select').classList.add('hidden');
     document.getElementById('memory-game-board').classList.remove('hidden');
-    
     document.getElementById('memory-score-player').innerText = '0';
     document.getElementById('memory-score-nell').innerText = '0';
-    document.getElementById('memory-turn-indicator').innerText = `${playerName}さんの番だにゃ！`; // ★さん付け
+    document.getElementById('memory-turn-indicator').innerText = `${playerName}さんの番だにゃ！`;
     
     window.updateNellMessage("カードを配るにゃ！", "normal");
-    
     await window.createCardDeck();
 };
 
@@ -1971,120 +1260,62 @@ window.createCardDeck = async function() {
     const grid = document.getElementById('memory-grid');
     grid.innerHTML = '';
     
-    // お宝図鑑からカードを取得（自分の）
     let collection = [];
     if (window.NellMemory) {
         const profile = await window.NellMemory.getUserProfile(currentUser.id);
-        if (profile && profile.collection) {
-            collection = profile.collection;
-        }
+        if (profile && profile.collection) collection = profile.collection;
     }
 
-    // ★追加: 公開図鑑からも取得（最大30件）
     let publicCollection = [];
     if (window.NellMemory && typeof window.NellMemory.getPublicCollection === 'function') {
-        try {
-            publicCollection = await window.NellMemory.getPublicCollection();
-        } catch (e) {
-            console.warn("Failed to fetch public collection for game:", e);
-        }
+        try { publicCollection = await window.NellMemory.getPublicCollection(); } catch (e) {}
     }
     
-    // 自分のコレクションと公開コレクションを結合
-    // 公開コレクションは構造が少し違う場合があるので整形
-    const normalizedPublic = publicCollection.map(p => ({
-        name: p.name,
-        image: p.image,
-        description: p.description
-    }));
-    
-    // ★修正ポイント: 重複排除
+    const normalizedPublic = publicCollection.map(p => ({ name: p.name, image: p.image, description: p.description }));
     let rawCandidates = [...collection, ...normalizedPublic];
     
-    // 画像URLをキーにして重複を排除
     const uniqueMap = new Map();
-    rawCandidates.forEach(item => {
-        if (!item.image) return;
-        if (!uniqueMap.has(item.image)) {
-            uniqueMap.set(item.image, item);
-        }
-    });
-    
+    rawCandidates.forEach(item => { if (!item.image) return; if (!uniqueMap.has(item.image)) uniqueMap.set(item.image, item); });
     let allCandidates = Array.from(uniqueMap.values());
-    
-    // シャッフルして候補を混ぜる
     allCandidates.sort(() => Math.random() - 0.5);
     
     let selectedItems = [];
-    
-    // ★修正: ダミー画像を確実に存在するパスに変更
     const dummyImages = [
-        'assets/images/characters/nell-normal.png',
-        'assets/images/characters/nell-happy.png', // 推測: なければnormalにフォールバック
-        'assets/images/characters/nell-thinking.png',
-        'assets/images/characters/nell-excited.png',
-        'assets/images/items/student-id-base.png',
-        'assets/images/characters/nell-kokugo.png',
-        'assets/images/characters/nell-sansu.png',
-        'assets/images/characters/nell-rika.png',
-        'assets/images/characters/nell-shakai.png'
+        'assets/images/characters/nell-normal.png', 'assets/images/characters/nell-happy.png', 'assets/images/characters/nell-thinking.png',
+        'assets/images/characters/nell-excited.png', 'assets/images/items/student-id-base.png', 'assets/images/characters/nell-kokugo.png',
+        'assets/images/characters/nell-sansu.png', 'assets/images/characters/nell-rika.png', 'assets/images/characters/nell-shakai.png'
     ];
     
     for (let i = 0; i < 8; i++) {
         let item;
         if (i < allCandidates.length) {
-            // ストック（自分or他人）を使用
             item = allCandidates[i];
         } else {
-            // 足りない分はダミー生成
             const dummyIdx = i % dummyImages.length;
-            item = {
-                name: `お宝(仮)${i+1}`,
-                image: dummyImages[dummyIdx],
-                description: "まだ見つけていないお宝だにゃ。",
-                dummy: true
-            };
+            item = { name: `お宝(仮)${i+1}`, image: dummyImages[dummyIdx], description: "まだ見つけていないお宝だにゃ。", dummy: true };
         }
-        // ペアとして2つ追加
         selectedItems.push({ ...item, id: i });
         selectedItems.push({ ...item, id: i });
     }
-    
-    // シャッフル
     selectedItems.sort(() => Math.random() - 0.5);
     
-    memoryGameState.cards = selectedItems.map((item, index) => ({
-        ...item,
-        index: index,
-        matched: false,
-        flipped: false
-    }));
+    memoryGameState.cards = selectedItems.map((item, index) => ({ ...item, index: index, matched: false, flipped: false }));
     
-    // カード描画
     memoryGameState.cards.forEach(card => {
         const cardEl = document.createElement('div');
         cardEl.className = 'memory-card';
         cardEl.id = `memory-card-${card.index}`;
-        
-        // ★修正: onclick属性ではなく、リスナーでバインド (変数のキャプチャミス防止)
-        cardEl.addEventListener('click', () => {
-            window.flipCard(card.index);
-        });
-        
-        // フォールバック付き画像表示
+        cardEl.addEventListener('click', () => { window.flipCard(card.index); });
         const imgSrc = card.image || 'assets/images/characters/nell-normal.png';
         
         cardEl.innerHTML = `
             <div class="memory-card-inner">
                 <div class="memory-card-front">
-                    <div class="memory-card-img-container">
-                        <img src="${imgSrc}" class="memory-card-img" onerror="this.src='assets/images/characters/nell-normal.png'">
-                    </div>
+                    <div class="memory-card-img-container"><img src="${imgSrc}" class="memory-card-img" onerror="this.src='assets/images/characters/nell-normal.png'"></div>
                     <div class="memory-card-name">${card.name}</div>
                 </div>
                 <div class="memory-card-back">🐾</div>
-            </div>
-        `;
+            </div>`;
         grid.appendChild(cardEl);
     });
 };
@@ -2092,47 +1323,30 @@ window.createCardDeck = async function() {
 window.flipCard = function(index) {
     if (memoryGameState.isProcessing) return;
     if (memoryGameState.turn !== 'player') return;
-    
     const card = memoryGameState.cards[index];
     if (card.flipped || card.matched) return;
-    
-    // カードをめくる
     window.performFlip(index);
-    
-    if (memoryGameState.flippedCards.length === 2) {
-        window.checkMatch();
-    }
+    if (memoryGameState.flippedCards.length === 2) window.checkMatch();
 };
 
 window.performFlip = function(index) {
     const card = memoryGameState.cards[index];
     card.flipped = true;
-    
     const el = document.getElementById(`memory-card-${index}`);
     if (el) el.classList.add('flipped');
-    
     memoryGameState.flippedCards.push(card);
-    
     if(window.safePlay) window.safePlay(window.sfxBtn);
-    
-    // ネル先生が覚える (確率判定)
     const settings = memoryGameState.settings[memoryGameState.difficulty];
-    if (Math.random() < settings.memoryRate) {
-        memoryGameState.nellMemory[index] = card.id;
-    }
+    if (Math.random() < settings.memoryRate) memoryGameState.nellMemory[index] = card.id;
 };
 
 window.checkMatch = async function() {
     memoryGameState.isProcessing = true;
-    
     const [card1, card2] = memoryGameState.flippedCards;
     const playerName = currentUser ? currentUser.name : 'ユーザー';
     
     if (card1.id === card2.id) {
-        // 正解！
-        card1.matched = true;
-        card2.matched = true;
-        
+        card1.matched = true; card2.matched = true;
         if (window.safePlay) window.safePlay(window.sfxHirameku);
         
         if (memoryGameState.turn === 'player') {
@@ -2144,55 +1358,36 @@ window.checkMatch = async function() {
             document.getElementById('memory-score-nell').innerText = memoryGameState.scores.nell;
             window.updateNellMessage(`ネル先生が「${card1.name}」をゲットしたにゃ！`, "excited");
         }
-        
-        // ★解説演出
         await window.showMatchModal(card1);
-        
         memoryGameState.flippedCards = [];
         
-        // ゲーム終了判定
         const allMatched = memoryGameState.cards.every(c => c.matched);
         if (allMatched) {
             window.endMemoryGame();
         } else {
-            // 正解した場合は続けてプレイ
             memoryGameState.isProcessing = false;
-            if (memoryGameState.turn === 'nell') {
-                setTimeout(window.nellTurn, 1000);
-            }
+            if (memoryGameState.turn === 'nell') setTimeout(window.nellTurn, 1000);
         }
-        
     } else {
-        // 不正解
         if (window.safePlay) window.safePlay(window.sfxBatu);
-        
-        // ★3秒待つ
         setTimeout(() => {
             const el1 = document.getElementById(`memory-card-${card1.index}`);
             const el2 = document.getElementById(`memory-card-${card2.index}`);
-            if(el1) el1.classList.remove('flipped');
-            if(el2) el2.classList.remove('flipped');
-            
-            card1.flipped = false;
-            card2.flipped = false;
-            
+            if(el1) el1.classList.remove('flipped'); if(el2) el2.classList.remove('flipped');
+            card1.flipped = false; card2.flipped = false;
             memoryGameState.flippedCards = [];
-            
-            // ターン交代
             memoryGameState.turn = (memoryGameState.turn === 'player') ? 'nell' : 'player';
             const indicator = document.getElementById('memory-turn-indicator');
-            
             if (memoryGameState.turn === 'nell') {
                 indicator.innerText = "ネル先生の番だにゃ...";
                 window.updateNellMessage("次はネル先生の番だにゃ。", "normal");
-                memoryGameState.isProcessing = false; // 一旦解除しないとnellTurnが動かないかも？いやnellTurn内でフラグ管理はしていない
+                memoryGameState.isProcessing = false;
                 setTimeout(window.nellTurn, 1000);
             } else {
                 indicator.innerText = `${playerName}さんの番だにゃ！`;
                 window.updateNellMessage(`${playerName}さんの番だにゃ。`, "normal");
                 memoryGameState.isProcessing = false;
             }
-            
         }, 3000);
     }
 };
@@ -2200,74 +1395,49 @@ window.checkMatch = async function() {
 window.nellTurn = function() {
     if (memoryGameState.turn !== 'nell') return;
     memoryGameState.isProcessing = true;
-    
-    // 未マッチのカードを探す
     const availableCards = memoryGameState.cards.filter(c => !c.matched);
     if (availableCards.length === 0) return;
     
     const settings = memoryGameState.settings[memoryGameState.difficulty];
-    
-    // AI思考: ペアを知っているか？
     let pairToFlip = null;
-    
-    // 記憶にあるカードからペアを探す
     const knownIndices = Object.keys(memoryGameState.nellMemory).map(Number).filter(idx => !memoryGameState.cards[idx].matched);
     
-    // ペア探索
     for (let i = 0; i < knownIndices.length; i++) {
         for (let j = i + 1; j < knownIndices.length; j++) {
-            const idx1 = knownIndices[i];
-            const idx2 = knownIndices[j];
+            const idx1 = knownIndices[i]; const idx2 = knownIndices[j];
             if (memoryGameState.cards[idx1].id === memoryGameState.cards[idx2].id) {
-                // ペア発見！ミス確率判定
-                if (Math.random() > settings.errorRate) {
-                    pairToFlip = [idx1, idx2];
-                }
+                if (Math.random() > settings.errorRate) pairToFlip = [idx1, idx2];
                 break;
             }
         }
         if (pairToFlip) break;
     }
     
-    // 1枚目を決定
     let firstIndex;
     if (pairToFlip) {
         firstIndex = pairToFlip[0];
     } else {
-        // ランダム
         const unknownCards = availableCards.filter(c => !knownIndices.includes(c.index));
-        if (unknownCards.length > 0) {
-            firstIndex = unknownCards[Math.floor(Math.random() * unknownCards.length)].index;
-        } else {
-            firstIndex = availableCards[Math.floor(Math.random() * availableCards.length)].index;
-        }
+        firstIndex = (unknownCards.length > 0) ? unknownCards[Math.floor(Math.random() * unknownCards.length)].index : availableCards[Math.floor(Math.random() * availableCards.length)].index;
     }
-    
     window.performFlip(firstIndex);
     
     setTimeout(() => {
-        // 2枚目を決定
         let secondIndex;
         if (pairToFlip) {
             secondIndex = pairToFlip[1];
         } else {
-            // 1枚目と同じIDのカードを記憶しているか？
             const firstCard = memoryGameState.cards[firstIndex];
             const matchInMemory = knownIndices.find(idx => idx !== firstIndex && memoryGameState.cards[idx].id === firstCard.id);
-            
             if (matchInMemory && Math.random() > settings.errorRate) {
                 secondIndex = matchInMemory;
             } else {
-                // ランダム (1枚目以外)
                 const others = availableCards.filter(c => c.index !== firstIndex);
                 secondIndex = others[Math.floor(Math.random() * others.length)].index;
             }
         }
-        
         window.performFlip(secondIndex);
-        
         window.checkMatch();
-        
     }, 1000);
 };
 
@@ -2275,25 +1445,16 @@ window.showMatchModal = function(card) {
     return new Promise((resolve) => {
         const modal = document.getElementById('memory-match-modal');
         const img = document.getElementById('memory-match-img');
-        
         img.src = card.image;
-        
         modal.classList.remove('hidden');
-        
-        // ネル先生が読み上げ
-        // 解説文がなければ名前だけ
         const textToSpeak = `「${card.name}」ゲットだにゃ！ ${card.description}`;
-        
-        // スキップ用関数
         window.skipMemoryExplanation = () => {
             window.cancelNellSpeech();
             modal.classList.add('hidden');
             resolve();
-            window.skipMemoryExplanation = null; // cleanup
+            window.skipMemoryExplanation = null;
         };
-        
         window.updateNellMessage(textToSpeak, "happy", false, true);
-        // Timeout removed. User must click "Next" (skipMemoryExplanation).
     });
 };
 
@@ -2303,11 +1464,11 @@ window.endMemoryGame = function() {
     const settings = memoryGameState.settings[memoryGameState.difficulty];
     const playerName = currentUser ? currentUser.name : 'ユーザー';
     
+    // ★ランキング保存
+    window.saveHighScore('memory_match', pScore);
+
     let msg = "";
     let mood = "normal";
-    
-    // ★ランキング保存 (プレイヤーの獲得ペア数 = スコア)
-    window.saveHighScore('memory_match', pScore);
     
     if (pScore > nScore) {
         const reward = pScore * settings.reward;
@@ -2327,5 +1488,5 @@ window.endMemoryGame = function() {
     
     window.updateNellMessage(msg, mood, false, true);
     alert(msg);
-    window.showMemoryGame(); // メニューに戻る
+    window.showMemoryGame(); 
 };
