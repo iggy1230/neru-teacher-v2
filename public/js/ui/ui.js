@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v440.0: 図鑑グリッド表示完全修正版) ---
+// --- js/ui/ui.js (v441.0: カリカリ常時表示対応版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -100,6 +100,23 @@ window.switchScreen = function(to) {
         if (to === 'screen-playground') {
             window.updateNellMessage("運動の時間だにゃ！", "excited", false);
         }
+
+        // ★追加: カリカリ常時表示ロジック
+        // タイトル、校門、入学手続き以外では常に表示する
+        const miniKarikari = document.getElementById('mini-karikari-display');
+        if (miniKarikari) {
+            const hideList = ['screen-title', 'screen-gate', 'screen-enrollment'];
+            if (hideList.includes(to)) {
+                miniKarikari.classList.add('hidden');
+            } else {
+                miniKarikari.classList.remove('hidden');
+                // 表示時は最新の値に更新
+                if (typeof window.updateMiniKarikari === 'function') {
+                    window.updateMiniKarikari();
+                }
+            }
+        }
+
     } else {
         console.error(`Screen not found: ${to}`);
     }
