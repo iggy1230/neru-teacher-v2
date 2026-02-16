@@ -1,4 +1,6 @@
-// --- js/game-engine.js (v463.0: サーバーJSONパース修正対応版) ---
+--- START OF FILE game-engine.js ---
+
+// --- js/game-engine.js (v463.0: 完全版 + ランキング対応) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -58,6 +60,44 @@ function generateDocIdFromText(text) {
     }
     return "qz_" + Math.abs(hash).toString(16) + text.length;
 }
+
+// ==========================================
+// ★ ランキング保存・管理ヘルパー
+// ==========================================
+window.saveHighScore = async function(gameKey, score) {
+    if (!currentUser || !db) return;
+    
+    const userId = currentUser.id;
+    const storageKey = `nell_highscore_${gameKey}_${userId}`;
+    let currentHigh = parseInt(localStorage.getItem(storageKey) || "0");
+    
+    // スコアが更新されたかチェック (ローカルまたは初回)
+    // ※今回はシンプルに「今回出したスコア」を送信し、サーバー側(Firestore)または取得側でソートする運用も考えられるが、
+    // ここではハイスコア更新時のみ書き込む形にする（書き込み数節約）
+    if (score > currentHigh) {
+        localStorage.setItem(storageKey, score);
+        
+        // Firestoreへ保存
+        try {
+            // ドキュメントIDを「UserID_GameKey」にすることで、1ユーザー1ゲーム1レコードにする
+            const docId = `${userId}_${gameKey}`;
+            await db.collection("highscores").doc(docId).set({
+                gameKey: gameKey,
+                score: score,
+                userId: userId,
+                userName: currentUser.name,
+                userPhoto: currentUser.photo,
+                userGrade: currentUser.grade,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+            console.log(`[Ranking] Highscore saved for ${gameKey}: ${score}`);
+        } catch (e) {
+            console.error("[Ranking] Save failed:", e);
+        }
+    } else if (score === currentHigh) {
+        // 同点でも名前などの情報更新のために保存するケースも考えられるが、今回は省略
+    }
+};
 
 // ==========================================
 // 1. カリカリキャッチ
@@ -152,17 +192,25 @@ window.drawGame = function() {
     window.ball.x += window.ball.dx; window.ball.y += window.ball.dy;
     if(window.ball.x + window.ball.dx > window.gameCanvas.width - window.ball.r || window.ball.x + window.ball.dx < window.ball.r) window.ball.dx = -window.ball.dx;
     if(window.ball.y + window.ball.dy < window.ball.r) window.ball.dy = -window.ball.dy;
+    
+    // 落下判定 (ゲームオーバー)
     if(window.ball.y + window.ball.dy > window.gameCanvas.height - window.ball.r - 30) {
         if(window.ball.x > window.paddle.x && window.ball.x < window.paddle.x + window.paddle.w) {
             window.ball.dy = -window.ball.dy; if(window.safePlay) window.safePlay(window.sfxPaddle);
         } else if(window.ball.y + window.ball.dy > window.gameCanvas.height - window.ball.r) {
             window.gameRunning = false; if(window.safePlay) window.safePlay(window.sfxOver);
             if (window.score > 0) { window.giveGameReward(window.score); if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`あ〜あ、落ちちゃったにゃ…。でも${window.score}個ゲットだにゃ！`, "sad"); } else { if(typeof window.updateNellMessage === 'function') window.updateNellMessage("あ〜あ、落ちちゃったにゃ…", "sad"); }
+            
+            // ★ランキング保存
+            window.saveHighScore('karikari_catch', window.score);
+            
             window.fetchGameComment("end", window.score);
             const startBtn = document.getElementById('start-game-btn'); if(startBtn) { startBtn.disabled = false; startBtn.innerText = "もう一回！"; }
             return;
         }
     }
+    
+    // ブロック判定
     let allCleared = true;
     window.bricks.forEach(b => {
         if(b.status === 1) {
@@ -174,9 +222,15 @@ window.drawGame = function() {
             }
         }
     });
+    
+    // クリア判定
     if (allCleared) {
         window.gameRunning = false; window.giveGameReward(window.score);
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`全部取ったにゃ！すごいにゃ！！${window.score}個ゲットだにゃ！`, "excited");
+        
+        // ★ランキング保存
+        window.saveHighScore('karikari_catch', window.score);
+        
         window.fetchGameComment("end", window.score);
         const startBtn = document.getElementById('start-game-btn'); if(startBtn) { startBtn.disabled = false; startBtn.innerText = "もう一回！"; }
         return;
@@ -426,6 +480,10 @@ function gameOverDanmaku() {
     } else { 
         window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad"); 
     }
+    
+    // ★ランキング保存
+    window.saveHighScore('vs_robot', danmakuState.score);
+    
     const startBtn = document.getElementById('start-danmaku-btn'); 
     startBtn.disabled = false; 
     startBtn.innerText = "もう一回！";
@@ -732,13 +790,16 @@ window.showQuizGame = function() {
     window.updateNellMessage("どのジャンルに挑戦するにゃ？", "normal");
 };
 
+// ★修正: ランキングボタンのイベント設定を含む
 window.showLevelSelection = function(genre) {
     const currentMaxLevel = (currentUser && currentUser.quizLevels && currentUser.quizLevels[genre]) || 1;
     
+    /*
     if (currentMaxLevel === 1) {
         startQuizSet(genre, 1);
         return;
     }
+    */
 
     document.getElementById('quiz-genre-select').classList.add('hidden');
     document.getElementById('quiz-level-select').classList.remove('hidden');
@@ -756,8 +817,14 @@ window.showLevelSelection = function(genre) {
         else if (i === 4) btn.classList.add('pink-btn');
         else btn.classList.add('purple-btn'); 
 
-        btn.onclick = () => startQuizSet(genre, i);
+        btn.onclick = () => window.startQuizSet(genre, i);
         container.appendChild(btn);
+    }
+
+    // ★ランキングボタンの設定
+    const rankBtn = document.getElementById('quiz-ranking-btn');
+    if (rankBtn) {
+        rankBtn.onclick = () => window.showGameRanking(`quiz_${genre}`, `🏆 ${genre} ランキング`);
     }
 };
 
@@ -1216,6 +1283,9 @@ window.finishQuizSet = function() {
     if (correctCount === 0) {
         totalReward = 10;
     }
+
+    // ★ランキング保存 (ジャンルごとのスコア)
+    window.saveHighScore(`quiz_${quizState.genre}`, quizState.score);
 
     let msg = "";
     let mood = "normal";
@@ -2235,6 +2305,9 @@ window.endMemoryGame = function() {
     
     let msg = "";
     let mood = "normal";
+    
+    // ★ランキング保存 (プレイヤーの獲得ペア数 = スコア)
+    window.saveHighScore('memory_match', pScore);
     
     if (pScore > nScore) {
         const reward = pScore * settings.reward;
