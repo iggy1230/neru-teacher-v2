@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v439.0: クイズ報酬レベル別対応版) ---
+// --- js/game-engine.js (v461.0: STPR特別報酬対応版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -1230,12 +1230,24 @@ window.finishQuizSet = function() {
     const correctCount = Math.floor(quizState.score / 20);
     const currentLevel = quizState.level || 1;
 
-    // レベルごとの報酬単価を設定
-    let rewardPerCorrect = 50;
-    if (currentLevel === 2) rewardPerCorrect = 100;
-    else if (currentLevel === 3) rewardPerCorrect = 150;
-    else if (currentLevel === 4) rewardPerCorrect = 200;
-    else if (currentLevel >= 5) rewardPerCorrect = 300;
+    // ★修正: ジャンルごとの報酬単価設定
+    let rewardPerCorrect = 50; // Default Lv1
+
+    if (quizState.genre === 'STPR') {
+        // STPR特別ボーナス
+        if (currentLevel === 1) rewardPerCorrect = 200;
+        else if (currentLevel === 2) rewardPerCorrect = 500;
+        else if (currentLevel === 3) rewardPerCorrect = 1000;
+        else if (currentLevel === 4) rewardPerCorrect = 2000;
+        else if (currentLevel >= 5) rewardPerCorrect = 3000;
+    } else {
+        // 通常ジャンル
+        if (currentLevel === 1) rewardPerCorrect = 50;
+        else if (currentLevel === 2) rewardPerCorrect = 100;
+        else if (currentLevel === 3) rewardPerCorrect = 150;
+        else if (currentLevel === 4) rewardPerCorrect = 200;
+        else if (currentLevel >= 5) rewardPerCorrect = 300;
+    }
 
     // 報酬総額計算
     let totalReward = correctCount * rewardPerCorrect;
