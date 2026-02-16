@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v461.0: STPR特別報酬対応版) ---
+// --- js/game-engine.js (v445.0: ミニテスト音声ボタン対応版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -1315,407 +1315,6 @@ window.finishQuizSet = function() {
     window.showQuizGame();
 };
 
-// --- クイズ間違い報告機能 ---
-window.reportQuizError = async function() {
-    if (!window.currentQuiz || window.currentMode !== 'quiz') return;
-
-    const reason = prompt("どこが間違っているか教えてほしいにゃ！（例：正解はBじゃなくてC、キャラの名前が違う、など）");
-    if (!reason) return; 
-
-    window.updateNellMessage("ごめんにゃ！今すぐ調べて作り直すにゃ！！", "sad", false, true);
-    
-    document.getElementById('quiz-question-text').innerText = "修正中...";
-    document.getElementById('quiz-options-container').innerHTML = "";
-
-    try {
-        const res = await fetch('/correct-quiz', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                oldQuiz: window.currentQuiz,
-                reason: reason,
-                genre: quizState.genre 
-            })
-        });
-
-        const newQuiz = await res.json();
-        
-        if (newQuiz && newQuiz.question) {
-            window.currentQuiz = newQuiz;
-            quizState.currentQuizData = newQuiz;
-
-            if (quizState.sessionQuizzes.length > 0) {
-                quizState.sessionQuizzes[quizState.sessionQuizzes.length - 1] = { ...newQuiz, shouldSave: true };
-            }
-
-            document.getElementById('quiz-question-text').innerText = newQuiz.question;
-            window.updateNellMessage(newQuiz.explanation || "作り直したにゃ！これでどうかにゃ？", "excited", false, true);
-
-            const optionsContainer = document.getElementById('quiz-options-container');
-            optionsContainer.innerHTML = "";
-            
-            const shuffledOptions = [...newQuiz.options].sort(() => Math.random() - 0.5);
-            shuffledOptions.forEach(opt => {
-                const btn = document.createElement('button');
-                btn.className = "quiz-option-btn";
-                btn.innerText = opt;
-                btn.onclick = () => window.checkQuizAnswer(opt, true);
-                optionsContainer.appendChild(btn);
-            });
-            
-            document.getElementById('quiz-answer-display').classList.add('hidden');
-            
-            const controls = document.getElementById('quiz-controls');
-            const nextBtn = document.getElementById('next-quiz-btn');
-            const btns = controls.querySelectorAll('button:not(#next-quiz-btn)');
-            btns.forEach(b => b.classList.remove('hidden'));
-            nextBtn.classList.add('hidden');
-            controls.style.display = 'flex';
-            
-            window.showQuizResult(false); 
-             document.getElementById('quiz-answer-display').classList.add('hidden');
-
-        } else {
-            throw new Error("無効なデータ");
-        }
-
-    } catch (e) {
-        console.error(e);
-        window.updateNellMessage("修正に失敗したにゃ…次の問題に行くにゃ。", "sad");
-        setTimeout(window.nextQuiz, 2000);
-    }
-};
-
-// ==========================================
-// 4. ネル先生のなぞなぞ
-// ==========================================
-
-let riddleState = {
-    currentRiddle: null,
-    nextRiddle: null,
-    isFinished: false
-};
-
-async function fetchRiddleData() {
-    const res = await fetch('/generate-riddle', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            grade: currentUser ? currentUser.grade : "1"
-        })
-    });
-    return await res.json();
-}
-
-window.showRiddleGame = function() {
-    if (typeof window.switchScreen === 'function') {
-        window.switchScreen('screen-riddle');
-    } else {
-        document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
-        document.getElementById('screen-riddle').classList.remove('hidden');
-    }
-    
-    window.currentMode = 'riddle';
-    
-    const ids = ['subject-selection-view', 'upload-controls', 'thinking-view', 'problem-selection-view', 'final-view', 'chalkboard', 'chat-view', 'simple-chat-view', 'chat-free-view', 'lunch-view', 'grade-sheet-container', 'hint-detail-container', 'embedded-chat-section'];
-    ids.forEach(id => { 
-        const el = document.getElementById(id); 
-        if (el) el.classList.add('hidden'); 
-    });
-    const convoLog = document.getElementById('conversation-log');
-    if(convoLog) convoLog.classList.add('hidden');
-    
-    document.getElementById('riddle-question-text').innerText = "スタートボタンを押してにゃ！";
-    document.getElementById('riddle-controls').style.display = 'none';
-    const startBtn = document.getElementById('start-riddle-btn');
-    if(startBtn) startBtn.style.display = 'inline-block';
-    
-    document.getElementById('riddle-answer-display').classList.add('hidden');
-    document.getElementById('riddle-mic-status').innerText = "";
-    
-    if(typeof window.updateNellMessage === 'function') {
-        window.updateNellMessage("なぞなぞで遊ぶにゃ！", "excited", false);
-    }
-    
-    if(typeof window.stopAlwaysOnListening === 'function') window.stopAlwaysOnListening();
-};
-
-window.startRiddle = async function() {
-    const startBtn = document.getElementById('start-riddle-btn');
-    startBtn.style.display = 'none';
-    
-    document.getElementById('riddle-controls').style.display = 'flex';
-    document.getElementById('riddle-answer-display').classList.add('hidden');
-    
-    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-    
-    window.nextRiddle();
-};
-
-window.nextRiddle = async function() {
-    const qText = document.getElementById('riddle-question-text');
-    const controls = document.getElementById('riddle-controls');
-    const nextBtn = document.getElementById('next-riddle-btn');
-    const ansDisplay = document.getElementById('riddle-answer-display');
-    const micStatus = document.getElementById('riddle-mic-status');
-    const giveUpBtn = controls.querySelector('button.gray-btn');
-
-    qText.innerText = "なぞなぞを考えてるにゃ…";
-    window.updateNellMessage("なぞなぞを考えてるにゃ…", "thinking");
-    micStatus.innerText = "";
-    ansDisplay.classList.add('hidden');
-    nextBtn.classList.add('hidden');
-    if(giveUpBtn) giveUpBtn.classList.remove('hidden');
-    
-    let riddleData = null;
-    if (riddleState.nextRiddle) {
-        riddleData = riddleState.nextRiddle;
-        riddleState.nextRiddle = null;
-    } else {
-        try {
-            riddleData = await fetchRiddleData();
-        } catch (e) {
-            console.error(e);
-            qText.innerText = "なぞなぞが作れなかったにゃ…";
-            setTimeout(() => {
-                document.getElementById('start-riddle-btn').style.display = 'inline-block';
-                controls.style.display = 'none';
-            }, 2000);
-            return;
-        }
-    }
-
-    if (riddleData && riddleData.question) {
-        riddleState.currentRiddle = riddleData;
-        window.currentRiddle = riddleData; 
-        
-        qText.innerText = riddleData.question;
-        window.updateNellMessage(riddleData.question, "normal", false, true);
-        
-        fetchRiddleData().then(data => { riddleState.nextRiddle = data; }).catch(err => console.warn("Pre-fetch failed", err));
-    } else {
-        qText.innerText = "エラーだにゃ…";
-    }
-};
-
-window.checkRiddleAnswer = function(userSpeech) {
-    if (!riddleState.currentRiddle || window.currentMode !== 'riddle') return false; 
-    
-    if (!document.getElementById('riddle-answer-display').classList.contains('hidden')) return false;
-
-    const correct = riddleState.currentRiddle.answer;
-    const accepted = riddleState.currentRiddle.accepted_answers || [];
-    const userAnswer = userSpeech.trim();
-    
-    const status = document.getElementById('riddle-mic-status');
-    status.innerText = `「${userAnswer}」？`;
-    
-    let isCorrect = false;
-    if (fuzzyContains(userAnswer, correct)) isCorrect = true;
-    else {
-        for (const ans of accepted) {
-            if (fuzzyContains(userAnswer, ans)) {
-                isCorrect = true;
-                break;
-            }
-        }
-    }
-    
-    if (isCorrect) {
-        if(window.safePlay) window.safePlay(window.sfxMaru);
-        window.updateNellMessage(`大正解だにゃ！答えは「${correct}」！カリカリ20個あげるにゃ！`, "excited", false, true);
-        window.giveGameReward(20);
-        window.showRiddleResult(true);
-        return true; 
-    } 
-    return false; 
-};
-
-window.giveUpRiddle = function() {
-    if (!riddleState.currentRiddle) return;
-    if(window.safePlay) window.safePlay(window.sfxBatu);
-    window.updateNellMessage(`残念だにゃ～。正解は「${riddleState.currentRiddle.answer}」だったにゃ！`, "gentle", false, true);
-    window.showRiddleResult(false);
-};
-
-window.showRiddleResult = function(isWin) {
-    const controls = document.getElementById('riddle-controls');
-    const nextBtn = document.getElementById('next-riddle-btn');
-    const ansDisplay = document.getElementById('riddle-answer-display');
-    const ansText = document.getElementById('riddle-answer-text');
-    const giveUpBtn = controls.querySelector('button.gray-btn');
-
-    if(giveUpBtn) giveUpBtn.classList.add('hidden');
-    nextBtn.classList.remove('hidden');
-
-    if (riddleState.currentRiddle) {
-        ansText.innerText = riddleState.currentRiddle.answer;
-        ansDisplay.classList.remove('hidden');
-    }
-};
-
-// ==========================================
-// 5. ネル先生の漢字ドリル
-// ==========================================
-let kanjiState = { data: null, canvas: null, ctx: null, isDrawing: false, mode: 'writing', questionCount: 0, maxQuestions: 5 };
-
-window.showKanjiMenu = function() {
-    window.switchScreen('screen-kanji');
-    document.getElementById('kanji-menu-container').classList.remove('hidden');
-    document.getElementById('kanji-game-container').classList.add('hidden');
-    document.getElementById('kanji-menu-container').style.display = 'block';
-};
-
-window.startKanjiSet = function(mode) {
-    window.currentMode = 'kanji';
-    kanjiState.mode = mode;
-    kanjiState.questionCount = 0;
-    document.getElementById('kanji-menu-container').style.display = 'none';
-    document.getElementById('kanji-game-container').classList.remove('hidden');
-    const canvas = document.getElementById('kanji-canvas');
-    kanjiState.canvas = canvas; kanjiState.ctx = canvas.getContext('2d');
-    kanjiState.ctx.lineCap = 'round'; kanjiState.ctx.lineJoin = 'round'; kanjiState.ctx.lineWidth = 12; kanjiState.ctx.strokeStyle = '#000000';
-    const startDraw = (e) => { kanjiState.isDrawing = true; const pos = getPos(e); kanjiState.ctx.beginPath(); kanjiState.ctx.moveTo(pos.x, pos.y); e.preventDefault(); };
-    const draw = (e) => { if (!kanjiState.isDrawing) return; const pos = getPos(e); kanjiState.ctx.lineTo(pos.x, pos.y); kanjiState.ctx.stroke(); e.preventDefault(); };
-    const endDraw = () => { kanjiState.isDrawing = false; };
-    const getPos = (e) => { const rect = canvas.getBoundingClientRect(); const clientX = e.touches ? e.touches[0].clientX : e.clientX; const clientY = e.touches ? e.touches[0].clientY : e.clientY; return { x: clientX - rect.left, y: clientY - rect.top }; };
-    canvas.onmousedown = startDraw; canvas.onmousemove = draw; canvas.onmouseup = endDraw;
-    canvas.ontouchstart = startDraw; canvas.ontouchmove = draw; canvas.ontouchend = endDraw;
-    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
-    window.nextKanjiQuestion();
-};
-
-window.nextKanjiQuestion = async function() {
-    if (kanjiState.questionCount >= kanjiState.maxQuestions) {
-        window.updateNellMessage("5問クリア！よくがんばったにゃ！", "excited", false, true);
-        setTimeout(() => { alert("おつかれさま！メニューに戻るにゃ。"); window.showKanjiMenu(); }, 2000);
-        return;
-    }
-    kanjiState.questionCount++;
-    document.getElementById('kanji-progress').innerText = `${kanjiState.questionCount}/${kanjiState.maxQuestions} 問目`;
-    document.getElementById('kanji-controls').style.display = 'none';
-    document.getElementById('next-kanji-btn').style.display = 'none';
-    document.getElementById('kanji-answer-display').classList.add('hidden');
-    const qText = document.getElementById('kanji-question-text');
-    qText.innerText = "問題を探してるにゃ…";
-    window.updateNellMessage("問題を探してるにゃ…", "thinking");
-    try {
-        const res = await fetch('/generate-kanji', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ grade: currentUser ? currentUser.grade : "1", mode: kanjiState.mode })
-        });
-        const data = await res.json();
-        if (data && data.kanji) {
-            kanjiState.data = data;
-            window.currentMinitest = data; 
-            
-            qText.innerHTML = data.question_display;
-            window.updateNellMessage(data.question_speech, "normal", false, true);
-            const cvs = document.getElementById('kanji-canvas');
-            const mic = document.getElementById('kanji-mic-container');
-            const checkBtn = document.getElementById('check-kanji-btn');
-            const clearBtn = document.getElementById('clear-kanji-btn');
-            if (data.type === 'writing') {
-                cvs.classList.remove('hidden'); mic.classList.add('hidden'); checkBtn.style.display = 'inline-block'; clearBtn.style.display = 'inline-block'; window.clearKanjiCanvas();
-            } else {
-                cvs.classList.add('hidden'); mic.classList.remove('hidden'); checkBtn.style.display = 'none'; clearBtn.style.display = 'none';
-            }
-            document.getElementById('kanji-controls').style.display = 'flex';
-        } else { throw new Error("Invalid Kanji Data"); }
-    } catch (e) {
-        console.error(e); qText.innerText = "問題が出せないにゃ…"; window.updateNellMessage("ごめん、問題が出せないにゃ…", "sad");
-    }
-};
-
-window.clearKanjiCanvas = function() {
-    if (!kanjiState.ctx) return;
-    kanjiState.ctx.clearRect(0, 0, kanjiState.canvas.width, kanjiState.canvas.height);
-    kanjiState.ctx.save();
-    kanjiState.ctx.strokeStyle = '#eee'; kanjiState.ctx.lineWidth = 2; kanjiState.ctx.setLineDash([5, 5]);
-    kanjiState.ctx.beginPath(); kanjiState.ctx.moveTo(150, 0); kanjiState.ctx.lineTo(150, 300); kanjiState.ctx.moveTo(0, 150); kanjiState.ctx.lineTo(300, 150); kanjiState.ctx.stroke();
-    kanjiState.ctx.restore();
-};
-
-window.checkKanji = async function() {
-    if (!kanjiState.data || kanjiState.data.type !== 'writing') return;
-    window.updateNellMessage("採点するにゃ…じーっ…", "thinking");
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = kanjiState.canvas.width; tempCanvas.height = kanjiState.canvas.height;
-    const tCtx = tempCanvas.getContext('2d');
-    tCtx.fillStyle = '#ffffff'; tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-    tCtx.drawImage(kanjiState.canvas, 0, 0);
-    const dataUrl = tempCanvas.toDataURL('image/png');
-    const base64 = dataUrl.split(',')[1];
-    try {
-        const res = await fetch('/check-kanji', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: base64, targetKanji: kanjiState.data.kanji })
-        });
-        const data = await res.json();
-        window.updateNellMessage(data.comment, data.is_correct ? "happy" : "gentle", false, true);
-        if (data.is_correct) {
-            if(window.safePlay) window.safePlay(window.sfxMaru);
-            window.giveGameReward(10);
-            document.getElementById('kanji-controls').style.display = 'none';
-            document.getElementById('next-kanji-btn').style.display = 'inline-block';
-            document.getElementById('kanji-answer-display').classList.remove('hidden');
-            document.getElementById('kanji-answer-text').innerText = kanjiState.data.kanji;
-            window.currentMinitest = null; 
-        } else {
-            if(window.safePlay) window.safePlay(window.sfxBatu);
-        }
-    } catch(e) { window.updateNellMessage("よくわからなかったにゃ…", "thinking"); }
-};
-
-window.checkKanjiReading = function(text) {
-    if (!kanjiState.data || kanjiState.data.type !== 'reading') return false;
-    const correctHiragana = kanjiState.data.reading;
-    const correctKanji = kanjiState.data.kanji;
-    const correctKatakana = correctHiragana.replace(/[\u3041-\u3096]/g, ch => String.fromCharCode(ch.charCodeAt(0) + 0x60));
-    const user = text.trim();
-    
-    let isCorrect = false;
-    if (fuzzyContains(user, correctHiragana) || fuzzyContains(user, correctKanji) || fuzzyContains(user, correctKatakana)) {
-        isCorrect = true;
-    }
-
-    if (isCorrect) {
-        if(window.safePlay) window.safePlay(window.sfxMaru);
-        window.updateNellMessage(`正解だにゃ！「${correctHiragana}」だにゃ！カリカリ10個あげるにゃ！`, "excited", false, true);
-        window.giveGameReward(10);
-        document.getElementById('kanji-controls').style.display = 'none';
-        document.getElementById('next-kanji-btn').style.display = 'inline-block';
-        document.getElementById('kanji-answer-display').classList.remove('hidden');
-        document.getElementById('kanji-answer-text').innerText = correctHiragana;
-        window.currentMinitest = null; 
-        return true;
-    }
-    return false;
-};
-
-window.giveUpKanji = function() {
-    if (!kanjiState.data) return;
-    let ans = kanjiState.data.type === 'writing' ? kanjiState.data.kanji : kanjiState.data.reading;
-    window.updateNellMessage(`正解は「${ans}」だにゃ。次は頑張るにゃ！`, "gentle", false, true);
-    if(window.safePlay) window.safePlay(window.sfxBatu);
-    document.getElementById('kanji-controls').style.display = 'none';
-    document.getElementById('next-kanji-btn').style.display = 'inline-block';
-    document.getElementById('kanji-answer-display').classList.remove('hidden');
-    document.getElementById('kanji-answer-text').innerText = ans;
-    window.currentMinitest = null; 
-};
-
-window.sendHttpTextInternal = function(text) {
-    fetch('/chat-dialogue', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text, name: currentUser ? currentUser.name : "生徒", history: window.chatSessionHistory, location: window.currentLocation, currentQuizData: window.currentQuiz })
-    }).then(res => res.json()).then(data => {
-        const speechText = data.speech || data.reply;
-        if(typeof window.updateNellMessage === 'function') { window.updateNellMessage(speechText, "normal", true, true); }
-    });
-};
-
 // ==========================================
 // 6. ネル先生のミニテスト
 // ==========================================
@@ -1745,16 +1344,31 @@ window.startMinitest = function(subject) {
     
     window.updateNellMessage(`${subject}のテストだにゃ！がんばるにゃ！`, "excited");
     
-    if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
+    // ★常時聞き取りは廃止
+    // if(typeof window.startAlwaysOnListening === 'function') window.startAlwaysOnListening();
 
     window.nextMinitestQuestion();
 };
 
 window.nextMinitestQuestion = async function() {
     if (minitestState.currentQuestionIndex >= minitestState.maxQuestions) {
-        const resultMsg = `${minitestState.score}点だったにゃ！おつかれさま！`;
+        // ★修正: 正解数に応じて報酬を計算
+        const correctCount = minitestState.score / 20; // 1問20点
+        const reward = correctCount * 200;
+        
+        let resultMsg = "";
+        if (correctCount === 5) {
+            resultMsg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
+        } else if (correctCount > 0) {
+            resultMsg = `${minitestState.score}点だったにゃ！カリカリ${reward}個あげるにゃ！`;
+        } else {
+            resultMsg = `0点だったにゃ…。次はがんばるにゃ！`;
+        }
+
+        window.giveGameReward(reward);
         window.updateNellMessage(resultMsg, "happy", false, true);
         alert(resultMsg);
+        
         window.currentMinitest = null; 
         window.showMinitestMenu();
         return;
@@ -1767,6 +1381,16 @@ window.nextMinitestQuestion = async function() {
     const optionsDiv = document.getElementById('minitest-options');
     const explanationArea = document.getElementById('minitest-explanation-area');
     
+    // ★マイクボタンのリセット
+    const micBtn = document.getElementById('minitest-mic-btn');
+    const micStatus = document.getElementById('minitest-mic-status');
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
+        micBtn.style.background = "#4db6ac";
+    }
+    if (micStatus) micStatus.innerText = "";
+
     qText.innerText = "問題を作成中にゃ...";
     optionsDiv.innerHTML = "";
     explanationArea.classList.add('hidden');
@@ -1808,6 +1432,75 @@ window.nextMinitestQuestion = async function() {
     }
 };
 
+// ★新規: 音声回答ロジック
+window.startMinitestVoiceInput = function() {
+    const micBtn = document.getElementById('minitest-mic-btn');
+    const status = document.getElementById('minitest-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = true;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">👂</span> 聞いてるにゃ...';
+        micBtn.style.background = "#ff5252";
+    }
+    
+    if (status) status.innerText = "お話してにゃ！";
+    
+    if(typeof window.cancelNellSpeech === 'function') window.cancelNellSpeech();
+
+    if (typeof window.startOneShotRecognition === 'function') {
+        window.startOneShotRecognition(
+            (transcript) => {
+                window.checkMinitestVoiceAnswer(transcript);
+                window.stopMinitestVoiceInput(true);
+            },
+            () => { window.stopMinitestVoiceInput(); }
+        );
+    } else {
+        alert("音声認識が使えないにゃ...");
+        window.stopMinitestVoiceInput();
+    }
+};
+
+window.stopMinitestVoiceInput = function(keepStatus = false) {
+    const micBtn = document.getElementById('minitest-mic-btn');
+    const status = document.getElementById('minitest-mic-status');
+    
+    if (micBtn) {
+        micBtn.disabled = false;
+        micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える';
+        micBtn.style.background = "#4db6ac";
+    }
+    
+    if (status && !keepStatus) status.innerText = "";
+};
+
+window.checkMinitestVoiceAnswer = function(transcript) {
+    const status = document.getElementById('minitest-mic-status');
+    if(status) status.innerText = `「${transcript}」？`;
+
+    // 選択肢の中から一致するものを探す
+    const buttons = document.querySelectorAll('.minitest-option-btn');
+    let matchedBtn = null;
+    let matchedText = null;
+
+    buttons.forEach(btn => {
+        const optText = btn.innerText;
+        // 完全一致 or あいまい一致
+        if (fuzzyContains(transcript, optText)) {
+            matchedBtn = btn;
+            matchedText = optText;
+        }
+    });
+
+    if (matchedBtn) {
+        // ボタンクリックと同じ処理を呼ぶ
+        window.checkMinitestAnswer(matchedText, matchedBtn);
+    } else {
+        // 一致なし
+        window.updateNellMessage("ん？どれのことかにゃ？もう一回言ってにゃ。", "thinking");
+    }
+};
+
 window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
     const buttons = document.querySelectorAll('.minitest-option-btn');
     buttons.forEach(b => b.disabled = true);
@@ -1820,7 +1513,8 @@ window.checkMinitestAnswer = function(selectedAnswer, btnElement) {
         if(window.safePlay) window.safePlay(window.sfxMaru);
         window.updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false, true);
         minitestState.score += 20; 
-        window.giveGameReward(10);
+        // ★ここでの個別報酬は削除し、最後にまとめて付与する方式に変更
+        // window.giveGameReward(10); 
     } else {
         btnElement.classList.add('minitest-wrong');
         buttons.forEach(b => {
