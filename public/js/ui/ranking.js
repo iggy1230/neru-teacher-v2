@@ -1,4 +1,6 @@
-// --- js/ui/ranking.js (v1.0: ランキング機能) ---
+--- START OF FILE ranking.js ---
+
+// --- js/ui/ranking.js (v1.1: エラーハンドリング強化版) ---
 
 window.showRanking = async function(rankingType = 'karikari', title = '🏆 カリカリランキング') {
     window.switchScreen('screen-ranking');
@@ -28,7 +30,6 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
             query = db.collection("users").orderBy("karikari", "desc").limit(30);
         } else {
             // ゲーム別ランキング (highscoresコレクションを使用)
-            // 複合インデックスが必要になる可能性があるため、エラーハンドリングを丁寧に行う
             query = db.collection("highscores")
                       .where("gameKey", "==", rankingType)
                       .orderBy("score", "desc")
@@ -39,8 +40,14 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
             snapshot = await query.get();
         } catch (e) {
             console.error("Firestore Query Error:", e);
+            // 権限エラーの場合
+            if (e.code === 'permission-denied') {
+                throw new Error("PERMISSION_DENIED");
+            }
+            // インデックス未作成エラーの場合
             if (e.code === 'failed-precondition') {
-                container.innerHTML = '<p style="text-align:center; padding:20px;">ランキングの準備中だにゃ...<br>(管理者に伝えてにゃ！)</p>';
+                container.innerHTML = '<p style="text-align:center; padding:20px;">ランキングの準備中だにゃ...<br><span style="font-size:0.8rem;">(管理者がインデックスを作成中かも)</span></p>';
+                // コンソールにインデックス作成リンクが出ているはずなのでreturn
                 return;
             }
             throw e;
@@ -85,11 +92,8 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
             rank++;
         });
 
-        // 自分のランク表示 (ランキング外の場合の補足などはここで行える)
+        // 自分のランク表示
         if (rankingType !== 'karikari' && currentUser && !myRankData) {
-            // Firestoreから自分のハイスコアを取得して表示
-            // ※都度通信が発生するので、簡易的にLocalStorageから取るか、ここでの取得は省略するか。
-            // ここでは簡易的にLocalStorageを確認
             const localScore = localStorage.getItem(`nell_highscore_${rankingType}_${currentUser.id}`);
             if (localScore) {
                 myScoreEl.innerText = `あなたのハイスコア: ${localScore}`;
@@ -102,7 +106,11 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
 
     } catch (e) {
         console.error("Ranking fetch error:", e);
-        container.innerHTML = '<p style="text-align:center; color:red;">ランキングが見れないにゃ...<br>(インターネットの調子が悪いかも？)</p>';
+        if (e.message === "PERMISSION_DENIED" || e.code === 'permission-denied') {
+            container.innerHTML = '<p style="text-align:center; color:#d32f2f; padding:20px;">ランキングが見れないにゃ。<br><span style="font-size:0.8rem;">(Firebaseのルール設定が必要です)</span></p>';
+        } else {
+            container.innerHTML = '<p style="text-align:center; color:red;">ランキングが見れないにゃ...<br>(インターネットの調子が悪いかも？)</p>';
+        }
     }
 };
 
