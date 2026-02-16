@@ -23,7 +23,7 @@ app.use(express.static(publicDir));
 // --- AI Model Constants ---
 const MODEL_HOMEWORK = "gemini-2.0-pro-exp-02-05"; // 視覚認識強化
 const MODEL_FAST = "gemini-2.0-flash"; 
-const MODEL_REALTIME = "gemini-2.0-flash-exp"; // Realtime API用
+const MODEL_REALTIME = "gemini-2.0-flash-exp"; 
 
 // --- Server Log ---
 const MEMORY_FILE = path.join(__dirname, 'server_log.json');
@@ -61,9 +61,8 @@ try {
 // Helper Functions
 // ==========================================
 
-// ★JSON抽出強化関数: 最初の {...} または [...] ブロックを正しく切り出す
+// ★JSON抽出強化関数
 function extractFirstJson(text) {
-    // 最初の '{' または '[' を探す
     const firstBrace = text.indexOf('{');
     const firstBracket = text.indexOf('[');
     
@@ -83,11 +82,9 @@ function extractFirstJson(text) {
     
     for (let i = start; i < text.length; i++) {
         const char = text[i];
-        
         if (char === '"' && !escape) {
             inString = !inString;
         }
-        
         if (!inString) {
             if (char === '{' || char === '[') {
                 depth++;
@@ -98,12 +95,22 @@ function extractFirstJson(text) {
                 }
             }
         }
-        
         if (char === '\\' && !escape) escape = true;
         else escape = false;
     }
-    // 見つからなければ元のテキストを返す
     return text;
+}
+
+// ★追加: ひらがなチェック関数
+function isHiragana(str) {
+    // ひらがな、長音符、空白のみ許可
+    return /^[\u3040-\u309Fー\s]+$/.test(str);
+}
+
+// ★追加: 日本語文字チェック関数 (漢字・ひらがな・カタカナ)
+function isJapanese(str) {
+    // 漢字、ひらがな、カタカナ、長音符、空白、句読点のみ許可
+    return /^[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAFー\s、。]+$/.test(str);
 }
 
 function getSubjectInstructions(subject) {
@@ -116,48 +123,17 @@ function getSubjectInstructions(subject) {
     }
 }
 
-// ジャンルごとの信頼できる参照URLリスト
 const GENRE_REFERENCES = {
-    "魔法陣グルグル": [
-        "https://dic.pixiv.net/a/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB",
-        "https://ja.wikipedia.org/wiki/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB"
-    ],
-    "ジョジョの奇妙な冒険": [
-        "https://dic.pixiv.net/a/%E3%82%B8%E3%83%A7%E3%82%B8%E3%83%A7%E3%81%AE%E5%A5%87%E5%A6%99%E3%81%AA%E5%86%92%E9%99%BA",
-        "https://w.atwiki.jp/jojo-dic/"
-    ],
-    "ポケモン": [
-        "https://dic.pixiv.net/a/%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3",
-        "https://wiki.xn--rckteqa2e.com/wiki/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8"
-    ],
-    "マインクラフト": [
-        "https://minecraft.fandom.com/ja/wiki/Minecraft_Wiki"
-    ],
-    "ロブロックス": [
-        "https://roblox.fandom.com/ja/wiki/Roblox_Wiki"
-    ],
-    "ドラえもん": [
-        "https://dic.pixiv.net/a/%E3%83%89%E3%83%A9%E3%81%88%E3%82%82%E3%83%B3",
-        "https://hanaballoon.com/dorawiki/index.php/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8"
-    ],
-    "歴史・戦国武将": [
-        "https://ja.wikipedia.org/wiki/%E6%88%A6%E5%9B%BD%E6%AD%A6%E5%B0%86",
-        "https://japanknowledge.com/introduction/keyword.html?i=932"
-    ],
-    "一般知識": [
-        "https://ja.wikipedia.org/wiki/%E9%9B%91%E5%AD%A6",
-        "https://r25.jp/article/553641712437603302"
-    ],
-    "STPR": [
-        "https://stpr.com/",
-        "https://dic.pixiv.net/a/%E3%81%99%E3%81%A8%E3%81%B7%E3%82%8A",
-        "https://dic.pixiv.net/a/KnightA",
-        "https://dic.pixiv.net/a/AMPTAKxCOLORS"
-    ],
-    "夏目友人帳": [
-        "https://dic.pixiv.net/a/%E5%A4%8F%E7%9B%AE%E5%8F%8B%E4%BA%BA%E5%B8%B3",
-        "https://ja.wikipedia.org/wiki/%E5%A4%8F%E7%9B%AE%E5%8F%8B%E4%BA%BA%E5%B8%B3"
-    ]
+    "魔法陣グルグル": ["https://dic.pixiv.net/a/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB", "https://ja.wikipedia.org/wiki/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB"],
+    "ジョジョの奇妙な冒険": ["https://dic.pixiv.net/a/%E3%82%B8%E3%83%A7%E3%82%B8%E3%83%A7%E3%81%AE%E5%A5%87%E5%A6%99%E3%81%AA%E5%86%92%E9%99%BA", "https://w.atwiki.jp/jojo-dic/"],
+    "ポケモン": ["https://dic.pixiv.net/a/%E3%83%9D%E3%82%B1%E3%83%A2%E3%83%B3", "https://wiki.xn--rckteqa2e.com/wiki/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8"],
+    "マインクラフト": ["https://minecraft.fandom.com/ja/wiki/Minecraft_Wiki"],
+    "ロブロックス": ["https://roblox.fandom.com/ja/wiki/Roblox_Wiki"],
+    "ドラえもん": ["https://dic.pixiv.net/a/%E3%83%89%E3%83%A9%E3%81%88%E3%82%82%E3%83%B3", "https://hanaballoon.com/dorawiki/index.php/%E3%83%A1%E3%82%A4%E3%83%B3%E3%83%9A%E3%83%BC%E3%82%B8"],
+    "歴史・戦国武将": ["https://ja.wikipedia.org/wiki/%E6%88%A6%E5%9B%BD%E6%AD%A6%E5%B0%86", "https://japanknowledge.com/introduction/keyword.html?i=932"],
+    "一般知識": ["https://ja.wikipedia.org/wiki/%E9%9B%91%E5%AD%A6", "https://r25.jp/article/553641712437603302"],
+    "STPR": ["https://stpr.com/", "https://dic.pixiv.net/a/%E3%81%99%E3%81%A8%E3%81%B7%E3%82%8A", "https://dic.pixiv.net/a/KnightA", "https://dic.pixiv.net/a/AMPTAKxCOLORS"],
+    "夏目友人帳": ["https://dic.pixiv.net/a/%E5%A4%8F%E7%9B%AE%E5%8F%8B%E4%BA%BA%E5%B8%B3", "https://ja.wikipedia.org/wiki/%E5%A4%8F%E7%9B%AE%E5%8F%8B%E4%BA%BA%E5%B8%B3"]
 };
 
 const QUIZ_PERSPECTIVES = [
@@ -175,41 +151,12 @@ const QUIZ_PERSPECTIVES = [
 
 async function verifyQuiz(quizData, genre) {
     try {
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_FAST, 
-            tools: [{ google_search: {} }] 
-        });
-        
-        const verifyPrompt = `
-        あなたは厳しいクイズ校閲者です。
-        生成AIが作成した以下のクイズが、事実に即しているか判定してください。
-        
-        【ジャンル】: ${genre}
-        【問題】: ${quizData.question}
-        【選択肢】: ${quizData.options.join(", ")}
-        【想定正解】: ${quizData.answer}
-        【生成AIが主張する根拠】: ${quizData.fact_basis || "なし"}
-
-        ### 検証手順
-        1. Google検索を使用し、問題文と正解の関係が正しいか確認してください。
-        2. 特に「${genre}」のようなフィクション作品の場合、公式設定やWikiにその記述があるか確認してください。
-        3. **「生成AIが主張する根拠」が、検索結果と一致するか確認してください。**
-
-        ### 判定基準
-        - **PASS**: 検索結果から裏付けが取れた。正解は間違いない。
-        - **FAIL**: 検索しても裏付けが取れない、または間違いである。
-
-        出力は "PASS" または "FAIL" のみとしてください。理由がある場合はFAILの後に続けてください。
-        `;
-
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, tools: [{ google_search: {} }] });
+        const verifyPrompt = `あなたは厳しいクイズ校閲者です。生成AIが作成した以下のクイズが、事実に即しているか判定してください。\n【ジャンル】: ${genre}\n【問題】: ${quizData.question}\n【選択肢】: ${quizData.options.join(", ")}\n【想定正解】: ${quizData.answer}\n【生成AIが主張する根拠】: ${quizData.fact_basis || "なし"}\n### 検証手順\n1. Google検索を使用し、問題文と正解の関係が正しいか確認してください。\n2. 特に「${genre}」のようなフィクション作品の場合、公式設定やWikiにその記述があるか確認してください。\n3. **「生成AIが主張する根拠」が、検索結果と一致するか確認してください。**\n### 判定基準\n- **PASS**: 検索結果から裏付けが取れた。正解は間違いない。\n- **FAIL**: 検索しても裏付けが取れない、または間違いである。\n出力は "PASS" または "FAIL" のみとしてください。理由がある場合はFAILの後に続けてください。`;
         const result = await model.generateContent(verifyPrompt);
         const responseText = result.response.text().trim();
-        
-        console.log(`[Quiz Verification] ${genre}: ${responseText}`);
         return responseText.includes("PASS");
-        
     } catch (e) {
-        console.warn("Verification API Error:", e.message);
         return false;
     }
 }
@@ -222,25 +169,17 @@ async function verifyQuiz(quizData, genre) {
 app.post('/generate-quiz', async (req, res) => {
     const MAX_RETRIES = 3; 
     let attempt = 0;
-
     while (attempt < MAX_RETRIES) {
         attempt++;
         try {
             const { grade, genre, level } = req.body; 
-            
-            const model = genAI.getGenerativeModel({ 
-                model: MODEL_FAST, 
-                tools: [{ google_search: {} }] 
-            });
-            
+            const model = genAI.getGenerativeModel({ model: MODEL_FAST, tools: [{ google_search: {} }] });
             let targetGenre = genre;
             if (!targetGenre || targetGenre === "全ジャンル") {
                 const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
                 targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
             }
-
             const selectedPerspective = QUIZ_PERSPECTIVES[Math.floor(Math.random() * QUIZ_PERSPECTIVES.length)];
-
             const currentLevel = level || 1;
             let difficultyDesc = "";
             switch(parseInt(currentLevel)) {
@@ -251,100 +190,30 @@ app.post('/generate-quiz', async (req, res) => {
                 case 5: difficultyDesc = `Wiki等で検索すれば確実に裏付けが取れる事実`; break;
                 default: difficultyDesc = `標準的な事実`;
             }
-
             let referenceInstructions = "";
             if (GENRE_REFERENCES[targetGenre]) {
                 const urls = GENRE_REFERENCES[targetGenre].join("\n- ");
-                referenceInstructions = `
-                【重要：参考資料 (出典)】
-                このクイズを作成する際は、以下のURLの内容をGoogle検索ツールで優先的に確認し、**公式設定や事実に完全に基づいた**問題を作成してください。
-                - ${urls}
-
-                【情報抽出の指示】
-                - 指定されたURL内にある「登場人物」「用語」「エピソード」「名シーン」の項目を重点的に読み取ってください。
-                - 事実確認（Grounding）を行う際、複数のソースで共通して記述されている内容を「正解」として採用してください。
-                `;
+                referenceInstructions = `【重要：参考資料 (出典)】\nこのクイズを作成する際は、以下のURLの内容をGoogle検索ツールで優先的に確認し、**公式設定や事実に完全に基づいた**問題を作成してください。\n- ${urls}\n【情報抽出の指示】\n- 指定されたURL内にある「登場人物」「用語」「エピソード」「名シーン」の項目を重点的に読み取ってください。\n- 事実確認（Grounding）を行う際、複数のソースで共通して記述されている内容を「正解」として採用してください。`;
             }
-
-            const prompt = `
-            あなたは「${targetGenre}」に詳しいクイズ作家です。
-            以下の手順で、ファンが楽しめる4択クイズを1問作成してください。
-
-            **【今回のクイズのテーマ（切り口）】**
-            **${selectedPerspective}**
-
-            ### 手順（思考プロセス）
-            1. **[検索実行]**: まずGoogle検索を使い、作品の用語、キャラ、エピソードの正確な情報を確認してください。
-               ${referenceInstructions}
-            2. **[事実の抽出]**: 検索結果の中から、**「確実に正しいと断言できる一文」**を引用して、それをクイズの核にしてください。
-               - **【重要: 禁止事項】**:
-                 - 出版年、連載開始日、掲載誌、巻数、作者の経歴などの「作品外データ（メタ情報）」は**出題禁止**です（「作者に関するクイズ」の指示がない限り）。
-                 - あなたの記憶にある「〜だった気がする」という情報は絶対に使わないでください。**検索結果にない情報は存在しないものとして扱ってください。**
-                 - 架空のキャラクター、架空の技名、存在しないエピソードの捏造は厳禁です。
-               - **【推奨事項】**:
-                 - 指定された【今回のクイズのテーマ】に沿った内容を優先してください。
-            3. **[問題作成]**: 抽出した事実を元に、問題文と正解を作成してください。
-
-            ### 難易度: レベル${currentLevel}
-            - ${difficultyDesc}
-            - **挨拶不要。すぐにJSONデータから始めてください。**
-
-            ### 出力フォーマット
-            必ず以下のJSON形式の文字列のみを出力してください。
-            **"fact_basis" フィールドには、問題の元になった検索結果の文章（根拠）をそのままコピペしてください。**
-
-            {
-              "fact_basis": "検索結果で見つけた、クイズの根拠となる正確な一文（コピペ）",
-              "question": "問題文",
-              "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
-              "answer": "正解（optionsのいずれかと完全一致）",
-              "explanation": "解説（出典元を明記すること。例：『ピクシブ百科事典によると～』）",
-              "actual_genre": "${targetGenre}"
-            }
-            `;
-
-            const result = await model.generateContent(prompt);
-            let text = result.response.text();
+            const prompt = `あなたは「${targetGenre}」に詳しいクイズ作家です。\n以下の手順で、ファンが楽しめる4択クイズを1問作成してください。\n**【今回のクイズのテーマ（切り口）】**\n**${selectedPerspective}**\n### 手順（思考プロセス）\n1. **[検索実行]**: まずGoogle検索を使い、作品の用語、キャラ、エピソードの正確な情報を確認してください。\n${referenceInstructions}\n2. **[事実の抽出]**: 検索結果の中から、**「確実に正しいと断言できる一文」**を引用して、それをクイズの核にしてください。\n- **【重要: 禁止事項】**:\n- 出版年、連載開始日、掲載誌、巻数、作者の経歴などの「作品外データ（メタ情報）」は**出題禁止**です（「作者に関するクイズ」の指示がない限り）。\n- あなたの記憶にある「〜だった気がする」という情報は絶対に使わないでください。**検索結果にない情報は存在しないものとして扱ってください。**\n- 架空のキャラクター、架空の技名、存在しないエピソードの捏造は厳禁です。\n- **【推奨事項】**:\n- 指定された【今回のクイズのテーマ】に沿った内容を優先してください。\n3. **[問題作成]**: 抽出した事実を元に、問題文と正解を作成してください。\n### 難易度: レベル${currentLevel}\n- ${difficultyDesc}\n- **挨拶不要。すぐにJSONデータから始めてください。**\n### 出力フォーマット\n必ず以下のJSON形式の文字列のみを出力してください。\n**"fact_basis" フィールドには、問題の元になった検索結果の文章（根拠）をそのままコピペしてください。**\n{\n"fact_basis": "検索結果で見つけた、クイズの根拠となる正確な一文（コピペ）",\n"question": "問題文",\n"options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],\n"answer": "正解（optionsのいずれかと完全一致）",\n"explanation": "解説（出典元を明記すること。例：『ピクシブ百科事典によると～』）",\n"actual_genre": "${targetGenre}"\n}`;
             
-            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const cleanText = extractFirstJson(text); // ★JSON抽出強化
-
+            const result = await model.generateContent(prompt);
+            let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+            const cleanText = extractFirstJson(text); 
+            
             let jsonResponse;
-            try {
-                jsonResponse = JSON.parse(cleanText);
-            } catch (e) {
-                console.error(`JSON Parse Error (Attempt ${attempt}):`, text);
-                throw new Error("JSON Parse Failed");
-            }
-
+            try { jsonResponse = JSON.parse(cleanText); } catch (e) { console.error(`JSON Parse Error (Attempt ${attempt}):`, text); throw new Error("JSON Parse Failed"); }
+            
             const { options, answer, question, fact_basis } = jsonResponse;
             if (!question || !options || !answer) throw new Error("Invalid format: missing fields");
-            if (!options.includes(answer)) {
-                console.warn(`[Quiz Retry ${attempt}] Invalid answer: not in options.`);
-                throw new Error("Invalid format: answer not in options");
-            }
-            if (new Set(options).size !== options.length) {
-                console.warn(`[Quiz Retry ${attempt}] Duplicate options detected.`);
-                throw new Error("Invalid format: duplicate options");
-            }
-
-            console.log(`[Attempt ${attempt}] Verifying quiz... Fact Basis: ${fact_basis}`);
-            const isVerified = await verifyQuiz(jsonResponse, targetGenre);
+            if (!options.includes(answer)) { console.warn(`[Quiz Retry ${attempt}] Invalid answer: not in options.`); throw new Error("Invalid format: answer not in options"); }
+            if (new Set(options).size !== options.length) { console.warn(`[Quiz Retry ${attempt}] Duplicate options detected.`); throw new Error("Invalid format: duplicate options"); }
             
-            if (isVerified) {
-                res.json(jsonResponse);
-                return; 
-            } else {
-                console.warn(`[Attempt ${attempt}] Verification Failed. Retrying...`);
-            }
-
+            const isVerified = await verifyQuiz(jsonResponse, targetGenre);
+            if (isVerified) { res.json(jsonResponse); return; } else { console.warn(`[Attempt ${attempt}] Verification Failed. Retrying...`); }
         } catch (e) {
             console.error(`Quiz Gen Error (Attempt ${attempt}):`, e.message);
-            
-            if (attempt >= MAX_RETRIES) {
-                res.status(500).json({ error: "クイズが作れなかったにゃ…（生成エラー）" });
-                return;
-            }
+            if (attempt >= MAX_RETRIES) { res.status(500).json({ error: "クイズが作れなかったにゃ…（生成エラー）" }); return; }
         }
     }
 });
@@ -353,59 +222,17 @@ app.post('/generate-quiz', async (req, res) => {
 app.post('/correct-quiz', async (req, res) => {
     try {
         const { oldQuiz, reason, genre } = req.body;
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_FAST, 
-            tools: [{ google_search: {} }] 
-        });
-
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, tools: [{ google_search: {} }] });
         let referenceInstructions = "";
-        if (GENRE_REFERENCES[genre]) {
-            referenceInstructions = `
-            【参照すべき信頼できるソース】
-            - ${GENRE_REFERENCES[genre].join("\n- ")}
-            `;
-        }
-
-        const prompt = `
-        あなたはクイズ作家ですが、先ほど作成した以下の問題に「間違いがある」とユーザーから報告を受けました。
-
-        【元の問題】: ${oldQuiz.question}
-        【元の正解】: ${oldQuiz.answer}
-        【ユーザーの指摘】: ${reason}
-
-        ### 指示
-        1. Google検索を使用し、ユーザーの指摘が正しいか、元の問題に誤りがないか徹底的に調査してください。
-           ${referenceInstructions}
-        2. もし元の問題が間違っていた場合、正しい事実に即した**新しいクイズ**を1問作成してください。
-        3. 解説文（explanation）の冒頭には、「教えてくれてありがとうにゃ！修正したにゃ！」と感謝の言葉を入れてください。
-
-        ### 出力形式 (JSON)
-        **JSON以外の文字列は一切含めないでください。**
-        {
-          "fact_basis": "修正の根拠となった検索結果",
-          "question": "修正後の問題文",
-          "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
-          "answer": "正解",
-          "explanation": "感謝の言葉 + 解説",
-          "actual_genre": "${genre}"
-        }
-        `;
-
+        if (GENRE_REFERENCES[genre]) { referenceInstructions = `【参照すべき信頼できるソース】\n- ${GENRE_REFERENCES[genre].join("\n- ")}`; }
+        const prompt = `あなたはクイズ作家ですが、先ほど作成した以下の問題に「間違いがある」とユーザーから報告を受けました。\n【元の問題】: ${oldQuiz.question}\n【元の正解】: ${oldQuiz.answer}\n【ユーザーの指摘】: ${reason}\n### 指示\n1. Google検索を使用し、ユーザーの指摘が正しいか、元の問題に誤りがないか徹底的に調査してください。\n${referenceInstructions}\n2. もし元の問題が間違っていた場合、正しい事実に即した**新しいクイズ**を1問作成してください。\n3. 解説文（explanation）の冒頭には、「教えてくれてありがとうにゃ！修正したにゃ！」と感謝の言葉を入れてください。\n### 出力形式 (JSON)\n**JSON以外の文字列は一切含めないでください。**\n{\n"fact_basis": "修正の根拠となった検索結果",\n"question": "修正後の問題文",\n"options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],\n"answer": "正解",\n"explanation": "感謝の言葉 + 解説",\n"actual_genre": "${genre}"\n}`;
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        const cleanText = extractFirstJson(text); // ★JSON抽出強化
+        const cleanText = extractFirstJson(text);
         const jsonResponse = JSON.parse(cleanText);
-        
-        if (!jsonResponse.options.includes(jsonResponse.answer)) {
-            throw new Error("修正版の生成に失敗しました（正解が選択肢にない）");
-        }
-
+        if (!jsonResponse.options.includes(jsonResponse.answer)) { throw new Error("修正版の生成に失敗しました（正解が選択肢にない）"); }
         res.json(jsonResponse);
-
-    } catch (e) {
-        console.error("Correct Quiz Error:", e);
-        res.status(500).json({ error: "修正できなかったにゃ…ごめんにゃ。" });
-    }
+    } catch (e) { console.error("Correct Quiz Error:", e); res.status(500).json({ error: "修正できなかったにゃ…ごめんにゃ。" }); }
 });
 
 // --- なぞなぞ生成 API ---
@@ -413,46 +240,14 @@ app.post('/generate-riddle', async (req, res) => {
     try {
         const { grade } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-
-        const patterns = [
-            { type: "言葉遊び・ダジャレ", desc: "「パンはパンでも…」や「イスはイスでも…」のような、言葉の響きを使った古典的で面白いなぞなぞ。", example: "「パンはパンでも、食べられないパンはなーんだ？（答え：フライパン）」" },
-            { type: "特徴当て（生き物・モノ）", desc: "「耳が長くて、ぴょんぴょん跳ねる動物は？」のような、特徴をヒントにするクイズ。", example: "「お昼になると、小さくなるものなーんだ？（答え：影）」" },
-            { type: "あるなしクイズ・連想", desc: "「使うと減るけど、使わないと減らないものは？」のような、少し頭を使うトンチ問題。", example: "「使うときは投げるもの、なーんだ？（答え：アンカー・投網・ボールなど）」" },
-            { type: "学校・日常あるある", desc: "学校にあるものや、文房具、家にあるものを題材にしたなぞなぞ。", example: "「黒くて四角くて、先生が字を書くものは？（答え：黒板）」" }
-        ];
-        
+        const patterns = [{type:"言葉遊び・ダジャレ",desc:"「パンはパンでも…」や「イスはイスでも…」のような、言葉の響きを使った古典的で面白いなぞなぞ。",example:"「パンはパンでも、食べられないパンはなーんだ？（答え：フライパン）」"},{type:"特徴当て（生き物・モノ）",desc:"「耳が長くて、ぴょんぴょん跳ねる動物は？」のような、特徴をヒントにするクイズ。",example:"「お昼になると、小さくなるものなーんだ？（答え：影）」"},{type:"あるなしクイズ・連想",desc:"「使うと減るけど、使わないと減らないものは？」のような、少し頭を使うトンチ問題。",example:"「使うときは投げるもの、なーんだ？（答え：アンカー・投網・ボールなど）」"},{type:"学校・日常あるある",desc:"学校にあるものや、文房具、家にあるものを題材にしたなぞなぞ。",example:"「黒くて四角くて、先生が字を書くものは？（答え：黒板）」"}];
         const selectedPattern = patterns[Math.floor(Math.random() * patterns.length)];
-
-        const prompt = `
-        小学${grade}年生向けの「なぞなぞ」を1問作成してください。
-        
-        【今回のテーマ: ${selectedPattern.type}】
-        - ${selectedPattern.desc}
-        - 例: ${selectedPattern.example}
-        
-        【重要ルール】
-        1. **子供が絶対に知っている単語**を答えにしてください。
-        2. 問題文は、リズムよく、子供が聞いてワクワクするような言い回しにしてください。
-        3. 答えは「名詞（モノの名前）」で終わるものに限定してください。
-        4. 難しすぎる知識や、マニアックな単語は禁止です。
-        5. 挨拶不要. すぐに問題文のみを出力してください。
-
-        【出力JSONフォーマット】
-        {
-            "question": "問題文（「問題！〇〇なーんだ？」のように）",
-            "answer": "正解の単語（ひらがな、または一般的な表記）",
-            "accepted_answers": ["正解の別名", "漢字表記", "カタカナ表記", "ひらがな表記"] 
-        }
-        `;
-
+        const prompt = `小学${grade}年生向けの「なぞなぞ」を1問作成してください。\n【今回のテーマ: ${selectedPattern.type}】\n- ${selectedPattern.desc}\n- 例: ${selectedPattern.example}\n【重要ルール】\n1. **子供が絶対に知っている単語**を答えにしてください。\n2. 問題文は、リズムよく、子供が聞いてワクワクするような言い回しにしてください。\n3. 答えは「名詞（モノの名前）」で終わるものに限定してください。\n4. 難しすぎる知識や、マニアックな単語は禁止です。\n5. 挨拶不要. すぐに問題文のみを出力してください。\n【出力JSONフォーマット】\n{\n"question": "問題文（「問題！〇〇なーんだ？」のように）",\n"answer": "正解の単語（ひらがな、または一般的な表記）",\n"accepted_answers": ["正解の別名", "漢字表記", "カタカナ表記", "ひらがな表記"] \n}`;
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
+        text = extractFirstJson(text);
         res.json(JSON.parse(text));
-    } catch (e) {
-        console.error("Riddle Gen Error:", e);
-        res.status(500).json({ error: "なぞなぞが思いつかないにゃ…" });
-    }
+    } catch (e) { console.error("Riddle Gen Error:", e); res.status(500).json({ error: "なぞなぞが思いつかないにゃ…" }); }
 });
 
 // --- ミニテスト生成 API ---
@@ -460,35 +255,14 @@ app.post('/generate-minitest', async (req, res) => {
     try {
         const { grade, subject } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-
-        const prompt = `
-        小学${grade}年生の「${subject}」に関する4択クイズを1問作成してください。
-        
-        【ルール】
-        - 低学年で「理科」「社会」が指定された場合は、「生活科」または一般的な科学・社会常識の問題にしてください。
-        - 問題は簡単すぎず、難しすぎないレベルで。
-        - 選択肢は4つ作成し、そのうち1つが正解です。
-
-        【出力JSONフォーマット】
-        {
-            "question": "問題文",
-            "options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],
-            "answer": "正解の選択肢の文字列（optionsに含まれるものと同じ）",
-            "explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）"
-        }
-        `;
-
+        const prompt = `小学${grade}年生の「${subject}」に関する4択クイズを1問作成してください。\n【ルール】\n- 低学年で「理科」「社会」が指定された場合は、「生活科」または一般的な科学・社会常識の問題にしてください。\n- 問題は簡単すぎず、難しすぎないレベルで。\n- 選択肢は4つ作成し、そのうち1つが正解です。\n【出力JSONフォーマット】\n{\n"question": "問題文",\n"options": ["選択肢1", "選択肢2", "選択肢3", "選択肢4"],\n"answer": "正解の選択肢の文字列（optionsに含まれるものと同じ）",\n"explanation": "正解の解説（子供向けに優しく、語尾は『にゃ』）"\n}`;
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
+        text = extractFirstJson(text);
         res.json(JSON.parse(text));
-    } catch (e) {
-        console.error("MiniTest Gen Error:", e);
-        res.status(500).json({ error: "問題が作れなかったにゃ…" });
-    }
+    } catch (e) { console.error("MiniTest Gen Error:", e); res.status(500).json({ error: "問題が作れなかったにゃ…" }); }
 });
-
-// --- 漢字ドリル生成 API (修正版: リトライ＆JSON抽出強化) ---
+// --- 漢字ドリル生成 API (修正版: リトライ＆言語チェック強化) ---
 app.post('/generate-kanji', async (req, res) => {
     const MAX_RETRIES = 3;
     let attempt = 0;
@@ -504,9 +278,9 @@ app.post('/generate-kanji', async (req, res) => {
             モードは「${mode === 'reading' ? '読み問題' : '書き取り問題'}」です。
 
             【絶対厳守: 言語制限】
-            - **全てのテキスト（問題文、答え、解説、読み上げ）は、完全に「日本語」で記述してください。**
-            - 英語、ロシア語、中国語、その他の外国語は一切禁止です。
-            - **"reading" フィールドは必ず「ひらがな」にしてください。**
+            - **全てのテキストは、完全に「日本語」で記述してください。**
+            - **"reading" (読み仮名) は、絶対に「ひらがな」のみで出力してください。漢字、カタカナ、アルファベット、記号、他言語は禁止です。**
+            - **"kanji" (正解の漢字) は、日本の常用漢字のみを使用してください。**
 
             【必須要件】
             1. 小学${grade}年生で習う漢字を使用すること。
@@ -518,13 +292,11 @@ app.post('/generate-kanji', async (req, res) => {
             - 対象の漢字を含む短い例文を作成してください。
             - **"question_display"**: 対象の漢字を <span style='color:red;'>漢字</span> タグで囲んでください。
             - **"question_speech"**: 例文を読み上げますが、**対象の漢字の部分だけは絶対に読み方を言わず**、「この赤い漢字」や「この字」と言い換えてください。
-              - 良い例: 「『この赤い漢字』はなんて読むかな？ 山へ行きます。」
             ` : `
             【書き取り問題】
             - ひらがなを「漢字」に直させます。
             - 対象の漢字を含む短い例文を作成してください。
             - **"question_display"**: 対象となる部分を**ひらがな**にし、<span style='color:red;'>ひらがな</span> タグで囲んでください。
-              - 例: 「<span style='color:red;'>やま</span>へ行く」
             - **"question_speech"**: 「（例文）。赤いところの『（ひらがな）』を漢字で書いてみてね」という形式にしてください。
             `}
 
@@ -544,7 +316,17 @@ app.post('/generate-kanji', async (req, res) => {
 
             const json = JSON.parse(cleanText);
             
-            // 検証
+            // ★サーバーサイドバリデーション強化: 謎言語フィルタリング
+            if (!isHiragana(json.reading)) {
+                 console.warn(`[Kanji Gen Retry ${attempt}] Invalid reading (not hiragana): ${json.reading}`);
+                 throw new Error("Reading must be Hiragana only");
+            }
+            
+            if (!isJapanese(json.kanji)) {
+                 console.warn(`[Kanji Gen Retry ${attempt}] Invalid kanji (not japanese): ${json.kanji}`);
+                 throw new Error("Kanji must be Japanese characters");
+            }
+
             if (json.kanji && json.reading && json.question_display) {
                  res.json(json);
                  return;
@@ -562,381 +344,100 @@ app.post('/check-kanji', async (req, res) => {
     try {
         const { image, targetKanji } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
-
-        const prompt = `
-        これは子供が学習アプリで書いた手書きの漢字画像です。
-        書かれている文字が、ターゲットの漢字「${targetKanji}」として認識できるか判定してください。
-        【判定ルール】
-        1. **子供の字です**: 多少のバランスの崩れ、線の歪み、太さは許容してください。
-        2. **構成要素**: 漢字を構成するパーツ（偏と旁など）が正しく配置されていれば「正解」としてください。
-
-        【出力JSONフォーマット】
-        {
-            "is_correct": true または false,
-            "comment": "ネル先生としてのコメント。正解なら『すごい！』と褒める。不正解なら『惜しい！〇〇の部分がちょっと違うかも？』と優しく教える。"
-        }
-        `;
-
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { mime_type: "image/png", data: image } }
-        ]);
-        
+        const prompt = `これは子供が学習アプリで書いた手書きの漢字画像です。\n書かれている文字が、ターゲットの漢字「${targetKanji}」として認識できるか判定してください。\n【判定ルール】\n1. **子供の字です**: 多少のバランスの崩れ、線の歪み、太さは許容してください。\n2. **構成要素**: 漢字を構成するパーツ（偏と旁など）が正しく配置されていれば「正解」としてください。\n【出力JSONフォーマット】\n{\n"is_correct": true または false,\n"comment": "ネル先生としてのコメント。正解なら『すごい！』と褒める。不正解なら『惜しい！〇〇の部分がちょっと違うかも？』と優しく教える。"\n}`;
+        const result = await model.generateContent([ prompt, { inlineData: { mime_type: "image/png", data: image } } ]);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
+        text = extractFirstJson(text);
         res.json(JSON.parse(text));
-    } catch (e) {
-        console.error("Kanji Check Error:", e);
-        res.status(500).json({ is_correct: false, comment: "よく見えなかったにゃ…もう一回書いてみてにゃ？" });
-    }
+    } catch (e) { console.error("Kanji Check Error:", e); res.status(500).json({ is_correct: false, comment: "よく見えなかったにゃ…もう一回書いてみてにゃ？" }); }
 });
 
 // --- HTTPチャット会話 ---
 app.post('/chat-dialogue', async (req, res) => {
     try {
         let { text, name, image, history, location, address, missingInfo, memoryContext, currentQuizData, currentRiddleData, currentMinitestData } = req.body;
-        
         const now = new Date();
-        const currentDateTime = now.toLocaleString('ja-JP', { 
-            timeZone: 'Asia/Tokyo', 
-            hour: '2-digit', 
-            minute: '2-digit',
-            hour12: false
-        });
-
-        let systemPrompt = `
-        あなたは猫の「ネル先生」です。相手は「${name}」さん。
-        現在は ${currentDateTime} です。
-        【最重要ルール: 呼び方】
-        **相手を呼ぶときは必ず「${name}さん」と呼んでください。**
-        **絶対に呼び捨てにしてはいけません。**
-        `;
-
+        const currentDateTime = now.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hour12: false });
+        let systemPrompt = `あなたは猫の「ネル先生」です。相手は「${name}」さん。\n現在は ${currentDateTime} です。\n【最重要ルール: 呼び方】\n**相手を呼ぶときは必ず「${name}さん」と呼んでください。**\n**絶対に呼び捨てにしてはいけません。**`;
         let problemContext = null;
         if (currentQuizData) problemContext = { type: "クイズ", ...currentQuizData };
         else if (currentRiddleData) problemContext = { type: "なぞなぞ", ...currentRiddleData };
         else if (currentMinitestData) problemContext = { type: "ミニテスト", ...currentMinitestData };
-
         if (problemContext) {
-             systemPrompt += `
-            【現在、ユーザーは「${problemContext.type}」に挑戦中です】
-            問題: ${problemContext.question}
-            正解: ${problemContext.answer}
-            （選択肢がある場合）: ${JSON.stringify(problemContext.options || [])}
-            
-            ユーザーの発言: 「${text}」
-            
-            【★重要指示: 出題モード (厳守)】
-            - **現在は学習・ゲームモード中です。出題中の問題に関する話題以外には一切反応しないでください。**
-            - ユーザーが雑談や関係ない質問をした場合は、「今は問題に集中するにゃ！」や「それはあとで話すにゃ。答えはなにかな？」と軽くかわして、問題への回答を促してください。
-            - 正解は直接教えず、ヒントを出してください。
-            - ユーザーが答えを言った場合は、正解か不正解かを判定し、褒めるか励ましてください。
-            `;
+             systemPrompt += `\n【現在、ユーザーは「${problemContext.type}」に挑戦中です】\n問題: ${problemContext.question}\n正解: ${problemContext.answer}\n（選択肢がある場合）: ${JSON.stringify(problemContext.options || [])}\nユーザーの発言: 「${text}」\n【★重要指示: 出題モード (厳守)】\n- **現在は学習・ゲームモード中です。出題中の問題に関する話題以外には一切反応しないでください。**\n- ユーザーが雑談や関係ない質問をした場合は、「今は問題に集中するにゃ！」や「それはあとで話すにゃ。答えはなにかな？」と軽くかわして、問題への回答を促してください。\n- 正解は直接教えず、ヒントを出してください。\n- ユーザーが答えを言った場合は、正解か不正解かを判定し、褒めるか励ましてください。`;
         } else {
-            systemPrompt += `
-            【生徒についての記憶】
-            ${memoryContext || "（まだ情報はありません）"}
-            `;
-            if (location) {
-               systemPrompt += `\n現在地座標: ${location.lat}, ${location.lon}`;
-               if(address) systemPrompt += `\n住所: ${address}`;
-            }
+            systemPrompt += `\n【生徒についての記憶】\n${memoryContext || "（まだ情報はありません）"}`;
+            if (location) { systemPrompt += `\n現在地座標: ${location.lat}, ${location.lon}`; if(address) systemPrompt += `\n住所: ${address}`; }
         }
-
         let contextPrompt = "";
-        if (history && history.length > 0) {
-            contextPrompt = "【直近の会話】\n" + history.map(h => `${h.role === 'user' ? name : 'ネル'}: ${h.text}`).join("\n");
-        }
-
-        const prompt = `
-        ${systemPrompt}
-        ${contextPrompt}
-        
-        ユーザー: ${text}
-        ネル先生: 
-        `;
-
+        if (history && history.length > 0) { contextPrompt = "【直近の会話】\n" + history.map(h => `${h.role === 'user' ? name : 'ネル'}: ${h.text}`).join("\n"); }
+        const prompt = `${systemPrompt}\n${contextPrompt}\nユーザー: ${text}\nネル先生: `;
         let result;
         const toolsConfig = image ? undefined : [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, tools: toolsConfig });
-
-        if (image) {
-            result = await model.generateContent([
-                prompt,
-                { inlineData: { mime_type: "image/jpeg", data: image } }
-            ]);
-        } else {
-            result = await model.generateContent(prompt);
-        }
-        
+        if (image) { result = await model.generateContent([ prompt, { inlineData: { mime_type: "image/jpeg", data: image } } ]); } 
+        else { result = await model.generateContent(prompt); }
         const responseText = result.response.text().trim();
         let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
         cleanText = cleanText.split('\n').filter(line => !/^(?:System|User|Model|Assistant|Thinking|Display)[:：]/i.test(line)).join(' ');
-
         res.json({ speech: cleanText });
-
-    } catch (error) {
-        console.error("Chat API Fatal Error:", error);
-        res.status(200).json({ speech: "ごめんにゃ、頭が回らないにゃ…。" });
-    }
+    } catch (error) { console.error("Chat API Fatal Error:", error); res.status(200).json({ speech: "ごめんにゃ、頭が回らないにゃ…。" }); }
 });
 
 // --- Memory Update ---
 app.post('/update-memory', async (req, res) => {
     try {
         const { currentProfile, chatLog } = req.body;
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_FAST,
-            generationConfig: { responseMimeType: "application/json" }
-        });
-
-        const prompt = `
-        あなたは生徒の長期記憶を管理するAIです。
-        以下の「現在のプロフィール」と「直近の会話ログ」を分析し、最新のプロフィールJSONを作成してください。
-
-        【重要指示】
-        1. **情報の抽出**: 会話ログから誕生日、好きなもの、苦手なもの、趣味等の情報を抽出し、プロフィールを更新してください。
-        2. **誕生日**: 会話内で日付（〇月〇日）が言及され、それがユーザーの誕生日であれば、必ず \`birthday\` を更新してください。
-        3. **維持**: 会話ログに新しい情報がない項目は、現在の内容をそのまま維持してください。
-
-        【★重要: 好きなものの判定ルール (厳守)】
-        - **ユーザーが画像を見せただけ、または「これは何？」と質問しただけの対象は、絶対に「好きなもの」に追加しないでください。**
-        - ユーザーが明確に「～が好き」「～にハマっている」「～が気に入っている」と言葉で発言した場合のみ、「好きなもの」に追加してください。
-
-        【タスク2: 会話の要約】
-        今回の会話の内容を、「○○について話した」のように一文で要約し、\`summary_text\` として出力してください。
-
-        【現在のプロフィール】
-        ${JSON.stringify(currentProfile)}
-
-        【直近の会話ログ】
-        ${chatLog}
-
-        【出力フォーマット (JSON)】
-        {
-            "profile": {
-                "nickname": "...",
-                "birthday": "...",
-                "likes": ["..."],
-                "weaknesses": ["..."],
-                "achievements": ["..."],
-                "last_topic": "..."
-            },
-            "summary_text": "会話の要約文"
-        }
-        `;
-
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+        const prompt = `あなたは生徒の長期記憶を管理するAIです。\n以下の「現在のプロフィール」と「直近の会話ログ」を分析し、最新のプロフィールJSONを作成してください。\n【重要指示】\n1. **情報の抽出**: 会話ログから誕生日、好きなもの、苦手なもの、趣味等の情報を抽出し、プロフィールを更新してください。\n2. **誕生日**: 会話内で日付（〇月〇日）が言及され、それがユーザーの誕生日であれば、必ず \`birthday\` を更新してください。\n3. **維持**: 会話ログに新しい情報がない項目は、現在の内容をそのまま維持してください。\n【★重要: 好きなものの判定ルール (厳守)】\n- **ユーザーが画像を見せただけ、または「これは何？」と質問しただけの対象は、絶対に「好きなもの」に追加しないでください。**\n- ユーザーが明確に「～が好き」「～にハマっている」「～が気に入っている」と言葉で発言した場合のみ、「好きなもの」に追加してください。\n【タスク2: 会話の要約】\n今回の会話の内容を、「○○について話した」のように一文で要約し、\`summary_text\` として出力してください。\n【現在のプロフィール】\n${JSON.stringify(currentProfile)}\n【直近の会話ログ】\n${chatLog}\n【出力フォーマット (JSON)】\n{\n"profile": {\n"nickname": "...",\n"birthday": "...",\n"likes": ["..."],\n"weaknesses": ["..."],\n"achievements": ["..."],\n"last_topic": "..."\n},\n"summary_text": "会話の要約文"\n}`;
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
-        
+        text = extractFirstJson(text);
         let output;
-        try {
-            output = JSON.parse(text);
-        } catch (e) {
-            console.warn("Memory JSON Parse Error. Using fallback.");
-            return res.json({ profile: currentProfile, summary_text: "（更新なし）" });
-        }
-
+        try { output = JSON.parse(text); } 
+        catch (e) { console.warn("Memory JSON Parse Error. Using fallback."); return res.json({ profile: currentProfile, summary_text: "（更新なし）" }); }
         if (Array.isArray(output)) output = output[0];
-        if (!output.profile) {
-            output = { profile: output, summary_text: "（会話終了）" };
-        }
-
+        if (!output.profile) { output = { profile: output, summary_text: "（会話終了）" }; }
         res.json(output);
-
-    } catch (error) {
-        res.status(200).json({ profile: req.body.currentProfile || {}, summary_text: "" });
-    }
+    } catch (error) { res.status(200).json({ profile: req.body.currentProfile || {}, summary_text: "" }); }
 });
 
 // --- Analyze (宿題分析) ---
 app.post('/analyze', async (req, res) => {
     try {
         const { image, mode, grade, subject, name } = req.body;
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_HOMEWORK, 
-            generationConfig: { responseMimeType: "application/json", temperature: 0.0 }
-        });
-
+        const model = genAI.getGenerativeModel({ model: MODEL_HOMEWORK, generationConfig: { responseMimeType: "application/json", temperature: 0.0 } });
         const subjectSpecificInstructions = getSubjectInstructions(subject);
-
-        const prompt = `
-        あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。
-        提供された画像（生徒のノートやドリル）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。
-
-        【重要：宿題判定】
-        - **is_homework**: 解析した画像が、学習に関連する「宿題」「問題」「ノート」「ドリル」「教科書」などである場合は true を、それ以外（花の写真、ペットの写真、おもちゃ、関係ない風景など）の場合は false にしてください。
-
-        【重要: 教科別の解析ルール (${subject})】
-        ${subjectSpecificInstructions}
-        - **表記ルール**: 解説文の中に読み間違いやすい人名、地名、難読漢字が出てくる場合は、『漢字(ふりがな)』の形式で記述してください（例: 筑後市(ちくごし)）。**一般的な簡単な漢字にはふりがなを振らないでください。**
-
-        【重要: 子供向け解説】
-        - **解説やヒントは、必ず小学${grade}年生が理解できる言葉遣い、漢字（習っていない漢字はひらがなにする）、概念で記述してください。**
-        - 専門用語は使わず、噛み砕いて説明してください。
-        - 難しい言い回しは禁止です。優しく語りかけてください。
-
-        【タスク1: 問題文の書き起こし】
-        - 設問文、選択肢を正確に書き起こす。
-
-        【タスク2: 正解データの作成 (配列形式)】
-        - 答えは必ず「文字列のリスト（配列）」にする。
-
-        【タスク3: 採点 & ヒント】
-        - 手書きの答え(student_answer)を読み取り、正誤判定(is_correct)を行う。
-        - student_answer が空文字 "" の場合は、is_correct は false にする。
-        - 3段階のヒント(hints)を作成する。ヒントも小学${grade}年生向けに平易にすること。
-
-        【出力JSONフォーマット】
-        [
-          {
-            "id": 1,
-            "is_homework": true または false,
-            "label": "①",
-            "question": "問題文",
-            "correct_answer": ["正解"], 
-            "student_answer": ["手書きの答え"],
-            "is_correct": true,
-            "hints": ["ヒント1", "ヒント2", "ヒント3"]
-          }
-        ]
-        `;
-
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { mime_type: "image/jpeg", data: image } }
-        ]);
-
-        const responseText = result.response.text();
+        const prompt = `あなたは小学${grade}年生の${name}さんの${subject}担当の教育AI「ネル先生」です。\n提供された画像（生徒のノートやドリル）を解析し、以下の厳格なJSONフォーマットでデータを出力してください。\n【重要：宿題判定】\n- **is_homework**: 解析した画像が、学習に関連する「宿題」「問題」「ノート」「ドリル」「教科書」などである場合は true を、それ以外（花の写真、ペットの写真、おもちゃ、関係ない風景など）の場合は false にしてください。\n【重要: 教科別の解析ルール (${subject})】\n${subjectSpecificInstructions}\n- **表記ルール**: 解説文の中に読み間違いやすい人名、地名、難読漢字が出てくる場合は、『漢字(ふりがな)』の形式で記述してください（例: 筑後市(ちくごし)）。**一般的な簡単な漢字にはふりがなを振らないでください。**\n【重要: 子供向け解説】\n- **解説やヒントは、必ず小学${grade}年生が理解できる言葉遣い、漢字（習っていない漢字はひらがなにする）、概念で記述してください。**\n- 専門用語は使わず、噛み砕いて説明してください。\n- 難しい言い回しは禁止です。優しく語りかけてください。\n【タスク1: 問題文の書き起こし】\n- 設問文、選択肢を正確に書き起こす。\n【タスク2: 正解データの作成 (配列形式)】\n- 答えは必ず「文字列のリスト（配列）」にする。\n【タスク3: 採点 & ヒント】\n- 手書きの答え(student_answer)を読み取り、正誤判定(is_correct)を行う。\n- student_answer が空文字 "" の場合は、is_correct は false にする。\n- 3段階のヒント(hints)を作成する。ヒントも小学${grade}年生向けに平易にすること。\n【出力JSONフォーマット】\n[\n{\n"id": 1,\n"is_homework": true または false,\n"label": "①",\n"question": "問題文",\n"correct_answer": ["正解"], \n"student_answer": ["手書きの答え"],\n"is_correct": true,\n"hints": ["ヒント1", "ヒント2", "ヒント3"]\n}\n]`;
+        const result = await model.generateContent([ prompt, { inlineData: { mime_type: "image/jpeg", data: image } } ]);
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        text = extractFirstJson(text);
         let problems = [];
-        try {
-            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
-            
-            // 配列の場合は別途対応が必要だが、extractFirstJsonは配列も対応済み
-            problems = JSON.parse(cleanText);
-        } catch (e) {
-            console.error("JSON Parse Error:", responseText);
-            throw new Error("AIからの応答を読み取れませんでした。");
-        }
-
+        try { problems = JSON.parse(text); } 
+        catch (e) { console.error("JSON Parse Error:", text); throw new Error("AIからの応答を読み取れませんでした。"); }
         res.json(problems);
-
-    } catch (error) {
-        console.error("解析エラー:", error);
-        res.status(500).json({ error: "解析に失敗したにゃ: " + error.message });
-    }
+    } catch (error) { console.error("解析エラー:", error); res.status(500).json({ error: "解析に失敗したにゃ: " + error.message }); }
 });
 
 // --- お宝図鑑用 画像解析 ---
 app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location, address } = req.body;
-        
         const tools = [{ google_search: {} }];
-        const model = genAI.getGenerativeModel({ 
-            model: MODEL_FAST,
-            tools: tools
-        });
-
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, tools: tools });
         let locationInfo = "";
-        
-        // ★修正: 住所情報がある場合、それを絶対視する指示を追加
-        if (address) {
-            locationInfo = `
-            【★最優先：場所の特定情報】
-            クライアントから提供された**確定住所**: 「${address}」
-            
-            **【★絶対厳守：場所の特定手順】**
-            1. **提供された住所「${address}」を絶対的な正解として扱ってください。**
-            2. たとえ画像の見た目が、有名な観光地（例：熊本城、東京タワー）や別の場所に似ていても、**住所「${address}」と異なる場合は、視覚情報を無視してください。**
-            3. 画像に写っている物体や施設は、**必ず住所「${address}」の中に実在するもの**として特定してください。
-            4. Google検索を行う際も、「${address} 観光」「${address} 公園」「${address} 店」などのキーワードを使って、その住所内での候補を探してください。
-            `;
-        } else if (location && location.lat && location.lon) {
-             // 住所文字列がなく、座標のみの場合 (基本的にはありえないが念のため)
-            locationInfo = `
-            【位置情報】
-            GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
-            指示: まずこの座標の住所をGoogle検索で特定し、その場所にあるものとして回答してください。
-            `;
-        } else {
-            locationInfo = `【場所情報なし】`;
-        }
-
-        const prompt = `
-        あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。
-        送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。
-        
-        ${locationInfo}
-
-        【★最重要ルール: 呼び方】
-        **相手を呼ぶときは必ず「${name}さん」と呼んでください。絶対に呼び捨てにしてはいけません。**
-
-        【特定と命名のルール】
-        1. **店舗・建物の場合**: 画像が「お店の外観」「看板」「建物」で、位置情報が利用可能な場合は、Google検索を駆使して**必ず「チェーン名 + 支店名」まで特定して** \`itemName\` に設定してください。
-        2. **商品・小物の場合**: 画像が「商品」「植物」「生き物」などの場合は、撮影場所の店名は含めず、その**モノの正式名称**を \`itemName\` にしてください。
-        3. **観光地・公共施設**: その場所の正式名称を特定してください。
-
-        【★レアリティ判定基準 (肉球ランク 1〜5)】
-        - **1 (★)**: どこでも買える市販の商品、雑草、日常的な風景。
-        - **2 (★★)**: ちょっとだけ珍しいもの。建物・建造物は「2」以上。
-        - **3 (★★★)**: その場所に行かないと見られないもの。動物や入手困難な商品は「3」以上。
-        - **4 (★★★★)**: かなり珍しいもの。歴史的建造物や有名なテーマパークは「4」以上。
-        - **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。
-
-        【解説のルール】
-        1. **ネル先生の解説**: 猫視点でのクスッと笑えるユーモラスな解説。語尾は「にゃ」。**文字数は150文字程度（140文字から160文字の間）で詳しく書いてください。**
-        2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。**文字数は150文字程度（140文字から160文字の間）で詳しく書いてください。**
-        3. **ふりがな**: 読み間違いやすい語句のみ『漢字(ふりがな)』の形式で。
-        4. **場所の言及ルール**: 
-           - **住所が特定されている場合**: 特定された場所（市町村名＋スポット名）を正確に伝えてください（例: 「ここは〇〇市の××公園だにゃ！」）。
-           - **商品・小物の場合**: 詳細な住所への言及は避けてください。
-
-        【出力フォーマット (JSON)】
-        \`\`\`json
-        {
-            "itemName": "正式名称",
-            "rarity": 1, 
-            "description": "ネル先生の面白い解説",
-            "realDescription": "本当の解説",
-            "speechText": "『これは（itemName）だにゃ！（description）』"
-        }
-        \`\`\`
-        `;
-
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { mime_type: "image/jpeg", data: image } }
-        ]);
-
-        const responseText = result.response.text();
-        console.log("Raw AI Response:", responseText); // ログ出力
-
+        if (address) { locationInfo = `【★最優先：場所の特定情報】\nクライアントから提供された**確定住所**: 「${address}」\n**【★絶対厳守：場所の特定手順】**\n1. **提供された住所「${address}」を絶対的な正解として扱ってください。**\n2. たとえ画像の見た目が、有名な観光地（例：熊本城、東京タワー）や別の場所に似ていても、**住所「${address}」と異なる場合は、視覚情報を無視してください。**\n3. 画像に写っている物体や施設は、**必ず住所「${address}」の中に実在するもの**として特定してください。\n4. Google検索を行う際も、「${address} 観光」「${address} 公園」「${address} 店」などのキーワードを使って、その住所内での候補を探してください。`; } 
+        else if (location && location.lat && location.lon) { locationInfo = `【位置情報】\nGPS座標: 緯度 ${location.lat}, 経度 ${location.lon}\n指示: まずこの座標の住所をGoogle検索で特定し、その場所にあるものとして回答してください。`; } 
+        else { locationInfo = `【場所情報なし】`; }
+        const prompt = `あなたは猫の教育AI「ネル先生」です。相手は「${name || '生徒'}」さん。\n送られてきた画像を解析し、以下の厳格なJSON形式で応答してください。\n${locationInfo}\n【★最重要ルール: 呼び方】\n**相手を呼ぶときは必ず「${name}さん」と呼んでください。絶対に呼び捨てにしてはいけません。**\n【特定と命名のルール】\n1. **店舗・建物の場合**: 画像が「お店の外観」「看板」「建物」で、位置情報が利用可能な場合は、Google検索を駆使して**必ず「チェーン名 + 支店名」まで特定して** \`itemName\` に設定してください。\n2. **商品・小物の場合**: 画像が「商品」「植物」「生き物」などの場合は、撮影場所の店名は含めず、その**モノの正式名称**を \`itemName\` にしてください。\n3. **観光地・公共施設**: その場所の正式名称を特定してください。\n【★レアリティ判定基準 (肉球ランク 1〜5)】\n- **1 (★)**: どこでも買える市販の商品、雑草、日常的な風景。\n- **2 (★★)**: ちょっとだけ珍しいもの。建物・建造物は「2」以上。\n- **3 (★★★)**: その場所に行かないと見られないもの。動物や入手困難な商品は「3」以上。\n- **4 (★★★★)**: かなり珍しいもの。歴史的建造物や有名なテーマパークは「4」以上。\n- **5 (★★★★★)**: 奇跡レベル・超レア（世界遺産、四つ葉のクローバー、虹）。\n【解説のルール】\n1. **ネル先生の解説**: 猫視点でのクスッと笑えるユーモラスな解説。語尾は「にゃ」。**文字数は150文字程度（140文字から160文字の間）で詳しく書いてください。**\n2. **本当の解説**: 子供向けの学習図鑑のような、正確でためになる豆知識や説明。です・ます調。**文字数は150文字程度（140文字から160文字の間）で詳しく書いてください。**\n3. **ふりがな**: 読み間違いやすい語句のみ『漢字(ふりがな)』の形式で。\n4. **場所の言及ルール**: \n- **住所が特定されている場合**: 特定された場所（市町村名＋スポット名）を正確に伝えてください（例: 「ここは〇〇市の××公園だにゃ！」）。\n- **商品・小物の場合**: 詳細な住所への言及は避けてください。\n【出力フォーマット (JSON)】\n\`\`\`json\n{\n"itemName": "正式名称",\n"rarity": 1, \n"description": "ネル先生の面白い解説",\n"realDescription": "本当の解説",\n"speechText": "『これは（itemName）だにゃ！（description）』"\n}\n\`\`\``;
+        const result = await model.generateContent([ prompt, { inlineData: { mime_type: "image/jpeg", data: image } } ]);
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        text = extractFirstJson(text);
         let json;
-        try {
-            let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
-            json = JSON.parse(cleanText);
-        } catch (e) {
-            console.error("JSON Parse Error in identify-item:", e);
-            // フォールバック: エラーでクライアントを落とさない
-            json = {
-                itemName: "なぞの物体",
-                rarity: 1, 
-                description: "よくわからなかったにゃ…",
-                realDescription: "AIの解析に失敗しました。",
-                speechText: "よくわからなかったにゃ…"
-            };
-        }
-        
+        try { json = JSON.parse(text); } 
+        catch (e) { console.error("JSON Parse Error in identify-item:", e); json = { itemName: "なぞの物体", rarity: 1, description: "よくわからなかったにゃ…", realDescription: "AIの解析に失敗しました。", speechText: "よくわからなかったにゃ…" }; }
         res.json(json);
-
-    } catch (error) {
-        console.error("Identify Error:", error);
-        res.status(500).json({ error: "解析失敗", speechText: "よく見えなかったにゃ…もう一回見せてにゃ？", itemName: null });
-    }
+    } catch (error) { console.error("Identify Error:", error); res.status(500).json({ error: "解析失敗", speechText: "よく見えなかったにゃ…もう一回見せてにゃ？", itemName: null }); }
 });
 
 // --- 反応系 ---
@@ -945,7 +446,6 @@ app.post('/lunch-reaction', async (req, res) => {
         const { count, name } = req.body;
         await appendToServerLog(name, `給食をくれた(${count}個目)。`);
         const isSpecial = (count % 10 === 0);
-        
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             safetySettings: [
@@ -955,19 +455,9 @@ app.post('/lunch-reaction', async (req, res) => {
                 { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
             ]
         });
-        
         let prompt = isSpecial 
-            ? `あなたは猫の「ネル先生」。生徒の「${name}さん」から記念すべき${count}個目の給食（カリカリ）をもらいました！
-               【ルール】
-               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
-               2. テンションMAXで、思わず笑ってしまうような大げさな感謝と喜びを50文字以内で叫んでください。
-               3. 語尾は「にゃ」。`
-            : `あなたは猫の「ネル先生」。生徒の「${name}さん」から給食（カリカリ）をもらって食べました。
-               【ルール】
-               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。
-               2. 思わずクスッと笑ってしまうような、独特な食レポや、猫ならではの感想を30文字以内で言ってください。
-               3. 語尾は「にゃ」。`;
-
+            ? `あなたは猫の「ネル先生」。生徒の「${name}さん」から記念すべき${count}個目の給食（カリカリ）をもらいました！【ルール】1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。2. テンションMAXで、思わず笑ってしまうような大げさな感謝と喜びを50文字以内で叫んでください。3. 語尾は「にゃ」。`
+            : `あなたは猫の「ネル先生」。生徒の「${name}さん」から給食（カリカリ）をもらって食べました。【ルール】1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。呼び捨て厳禁。2. 思わずクスッと笑ってしまうような、独特な食レポや、猫ならではの感想を30文字以内で言ってください。3. 語尾は「にゃ」。`;
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), isSpecial });
     } catch (error) { 
@@ -984,15 +474,11 @@ app.post('/game-reaction', async (req, res) => {
         const model = genAI.getGenerativeModel({ model: MODEL_FAST });
         let prompt = "";
         let mood = "excited";
-
         if (type === 'start') {
             prompt = `あなたはネル先生。「${name}さん」がゲーム開始。短く応援して. 必ず「${name}さん」と呼ぶこと。呼び捨て禁止。語尾は「にゃ」。`;
         } else if (type === 'end') {
             prompt = `あなたはネル先生。ゲーム終了。「${name}さん」のスコアは${score}点。20文字以内でコメントして。必ず「${name}さん」と呼ぶこと。呼び捨て禁止。語尾は「にゃ」。`;
-        } else {
-            return res.json({ reply: "ナイスにゃ！", mood: "excited" });
-        }
-
+        } else { return res.json({ reply: "ナイスにゃ！", mood: "excited" }); }
         const result = await model.generateContent(prompt);
         res.json({ reply: result.response.text().trim(), mood });
     } catch { res.json({ reply: "おつかれさまにゃ！", mood: "happy" }); }
@@ -1012,10 +498,7 @@ wss.on('connection', async (clientWs, req) => {
     let name = decodeURIComponent(params.name || "生徒");
     let mode = params.mode || "simple-chat";
 
-    if (mode === 'chat') { 
-        clientWs.close();
-        return;
-    }
+    if (mode === 'chat') { clientWs.close(); return; }
 
     let geminiWs = null;
 
@@ -1025,19 +508,14 @@ wss.on('connection', async (clientWs, req) => {
         const timeOptions = { timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit' };
         const todayStr = now.toLocaleDateString('ja-JP', dateOptions);
         const timeStr = now.toLocaleTimeString('ja-JP', timeOptions);
-        
         const GEMINI_URL = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${process.env.GEMINI_API_KEY}`;
         
         try {
             geminiWs = new WebSocket(GEMINI_URL);
-            
             geminiWs.on('open', () => {
                 let systemInstructionText = `
                 あなたは「ねこご市立、ねこづか小学校」のネル先生だにゃ。相手は小学${grade}年生の${name}さん。
-
-                【重要：現在の時刻設定】
-                **現在は ${todayStr} ${timeStr} です。**
-
+                【重要：現在の時刻設定】 **現在は ${todayStr} ${timeStr} です。**
                 【話し方のルール】
                 1. 語尾は必ず「〜にゃ」「〜だにゃ」にするにゃ。
                 2. 親しみやすい日本の小学校の先生として、一文字一文字をはっきりと、丁寧に発音してにゃ。
@@ -1045,7 +523,6 @@ wss.on('connection', async (clientWs, req) => {
                 4. 給食(餌)のカリカリが大好物にゃ。
                 5. とにかく何でも知っているにゃ。
                 6. **呼び方ルール**: **相手を呼ぶときは必ず「${name}さん」と呼んでください。絶対に呼び捨てにしないでください。**
-
                 【最重要：位置情報の取り扱い】
                 ユーザーから「現在地」や「座標」が提供された場合：
                 1. **絶対に**その数値だけを見て場所を推測してはいけません。
@@ -1054,116 +531,57 @@ wss.on('connection', async (clientWs, req) => {
                 4. 近隣に有名な観光地があっても、検索結果の住所と異なる場合は絶対に言及しないでください。
                 5. 「場所がわからない」と答えることは禁止です。座標があれば必ず検索で特定できます。
                 6. **2段階特定**: まず「市町村」を特定し、次にその中の「詳細スポット（公園、店など）」を特定してください。
-
                 【最重要: 画像への対応ルール】
                 ユーザーから画像が送信された場合：
                 1. それは「勉強の問題」や「教えてほしい画像」です。
                 2. 画像の内容を詳しく解析し、子供にもわかるように優しく、丁寧に教えてください。
                 3. **重要: 一般的なカテゴリ名ではなく、具体的な商品名や固有名詞を特定して答えてください。**
                 4. 図鑑登録ツールは使用しないでください。
-
-                【生徒についての記憶】
-                ${statusContext}
-                
+                【生徒についての記憶】 ${statusContext}
                 【重要: 会話スタイルの指示】
                 - **回答は必ず一文か二文で短くすること。** 長々とした説明は禁止です。
                 - 子供と会話のキャッチボールをすることを最優先してください。
                 - 相手の反応を待ってから次の発言をしてください。
                 - 楽しそうに、親しみやすく振る舞ってください。
                 `;
-
                 const tools = [
                     { google_search: {} },
-                    {
-                        function_declarations: [
-                            {
-                                name: "show_kanji",
-                                description: "Display a Kanji, word, or math formula on the whiteboard.",
-                                parameters: {
-                                    type: "OBJECT",
-                                    properties: { content: { type: "STRING" } },
-                                    required: ["content"]
-                                }
-                            }
-                        ]
-                    }
+                    { function_declarations: [{ name: "show_kanji", description: "Display a Kanji, word, or math formula on the whiteboard.", parameters: { type: "OBJECT", properties: { content: { type: "STRING" } }, required: ["content"] } }] }
                 ];
-
                 geminiWs.send(JSON.stringify({
                     setup: {
-                        // MODEL_REALTIME を使用
                         model: `models/${MODEL_REALTIME}`,
-                        generationConfig: { 
-                            responseModalities: ["AUDIO"],
-                            speech_config: { 
-                                voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, 
-                                language_code: "ja-JP" 
-                            } 
-                        }, 
+                        generationConfig: { responseModalities: ["AUDIO"], speech_config: { voice_config: { prebuilt_voice_config: { voice_name: "Aoede" } }, language_code: "ja-JP" } }, 
                         tools: tools,
                         systemInstruction: { parts: [{ text: systemInstructionText }] }
                     }
                 }));
-
-                if (clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(JSON.stringify({ type: "server_ready" }));
-                }
+                if (clientWs.readyState === WebSocket.OPEN) { clientWs.send(JSON.stringify({ type: "server_ready" })); }
             });
-
             geminiWs.on('message', (data) => {
                 try {
                     const response = JSON.parse(data);
-                    
                     if (response.serverContent?.modelTurn?.parts) {
                         const parts = response.serverContent.modelTurn.parts;
                         parts.forEach(part => {
-                            if (part.functionCall) {
-                                if (part.functionCall.name === "show_kanji") {
-                                    geminiWs.send(JSON.stringify({
-                                        toolResponse: {
-                                            functionResponses: [{
-                                                name: "show_kanji",
-                                                response: { result: "displayed" },
-                                                id: part.functionCall.id
-                                            }]
-                                        }
-                                    }));
-                                }
+                            if (part.functionCall && part.functionCall.name === "show_kanji") {
+                                geminiWs.send(JSON.stringify({ toolResponse: { functionResponses: [{ name: "show_kanji", response: { result: "displayed" }, id: part.functionCall.id }] } }));
                             }
                         });
                     }
-                    
                     if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
-                    
-                } catch (e) {
-                    console.error("Gemini WS Handling Error:", e);
-                    if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
-                }
+                } catch (e) { console.error("Gemini WS Handling Error:", e); if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data); }
             });
-
             geminiWs.on('error', (e) => console.error("Gemini WS Error:", e));
-            
-            // Gemini側からの切断を検知
             geminiWs.on('close', (code, reason) => {
                 console.log(`Gemini WS Closed: ${code} ${reason}`);
-                if (clientWs.readyState === WebSocket.OPEN) {
-                    try {
-                        clientWs.send(JSON.stringify({ type: "gemini_closed" }));
-                    } catch(e) {}
-                    clientWs.close();
-                }
+                if (clientWs.readyState === WebSocket.OPEN) { try { clientWs.send(JSON.stringify({ type: "gemini_closed" })); } catch(e) {} clientWs.close(); }
             });
-
-        } catch(e) { 
-            console.error("Gemini Connection Error:", e);
-            clientWs.close(); 
-        }
+        } catch(e) { console.error("Gemini Connection Error:", e); clientWs.close(); }
     };
-
     clientWs.on('message', (data) => {
         try {
             const msg = JSON.parse(data);
-
             if (msg.type === 'init') {
                 const context = msg.context || "";
                 name = msg.name || name;
@@ -1172,28 +590,12 @@ wss.on('connection', async (clientWs, req) => {
                 connectToGemini(context);
                 return;
             }
-
-            if (!geminiWs || geminiWs.readyState !== WebSocket.OPEN) {
-                return;
-            }
-
-            if (msg.toolResponse) {
-                geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse }));
-                return;
-            }
-            if (msg.clientContent) {
-                geminiWs.send(JSON.stringify({ client_content: msg.clientContent }));
-            }
-            if (msg.base64Audio) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } }));
-            }
-            if (msg.base64Image) {
-                geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } }));
-            }
+            if (!geminiWs || geminiWs.readyState !== WebSocket.OPEN) return;
+            if (msg.toolResponse) { geminiWs.send(JSON.stringify({ clientContent: msg.toolResponse })); return; }
+            if (msg.clientContent) { geminiWs.send(JSON.stringify({ client_content: msg.clientContent })); }
+            if (msg.base64Audio) { geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "audio/pcm;rate=16000", data: msg.base64Audio }] } })); }
+            if (msg.base64Image) { geminiWs.send(JSON.stringify({ realtimeInput: { mediaChunks: [{ mimeType: "image/jpeg", data: msg.base64Image }] } })); }
         } catch(e) { console.error("Client WS Handling Error:", e); }
     });
-
-    clientWs.on('close', () => {
-        if (geminiWs) geminiWs.close();
-    });
+    clientWs.on('close', () => { if (geminiWs) geminiWs.close(); });
 });
