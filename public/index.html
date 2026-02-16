@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v466.0: スクリプト読み込み順修正版) -->
+<!-- index.html (完全版 v467.0: ランキング関数名修正版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -40,7 +40,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v466.0-FixLoadOrder</div>
+            <div class="version-tag">Build: v467.0-FixRankingCall</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -278,8 +278,11 @@
         <section id="screen-game" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-game"></div><div class="chat-bubble"><p id="nell-text-game">カリカリキャッチで遊ぶにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px;">🍖 カリカリ・キャッチ</h2>
-            <div class="game-container"><canvas id="game-canvas" width="320" height="400"></canvas><div class="game-ui"><p>スコア: <span id="game-score">0</span></p><button id="start-game-btn" class="main-btn pink-btn" style="width: auto;">スタート！</button></div>
-            <button onclick="showGameRanking('karikari_catch', '🏆 カリカリキャッチ ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button>
+            <div class="game-container">
+                <canvas id="game-canvas" width="320" height="400"></canvas>
+                <div class="game-ui"><p>スコア: <span id="game-score">0</span></p><button id="start-game-btn" class="main-btn pink-btn" style="width: auto;">スタート！</button></div>
+                <!-- ★修正: 関数名を showRanking に変更 -->
+                <button onclick="window.showRanking('karikari_catch', '🏆 カリカリキャッチ ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button>
             </div>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
@@ -294,7 +297,8 @@
                     <p>スコア: <span id="danmaku-score">0</span></p>
                     <button id="start-danmaku-btn" onclick="startDanmakuGame()" class="main-btn red-btn" style="width: auto;">スタート！</button>
                 </div>
-                <button onclick="showGameRanking('vs_robot', '🏆 VS掃除機 ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button>
+                 <!-- ★修正: 関数名を showRanking に変更 -->
+                <button onclick="window.showRanking('vs_robot', '🏆 VS掃除機 ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button>
             </div>
             <p style="font-size:0.8rem; color:white; text-align:center; margin-top:5px;">※茶色のカリカリだけ取ってね！他はダメ！<br>画面をドラッグして移動</p>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
@@ -314,7 +318,8 @@
                 <button onclick="startMemoryGame('normal')" class="main-btn orange-btn">中 (x20倍)</button>
                 <button onclick="startMemoryGame('strong')" class="main-btn red-btn">強 (x50倍)</button>
                 
-                <button onclick="showGameRanking('memory_match', '🏆 神経衰弱 ランキング')" class="main-btn blue-btn" style="margin-top:20px;">🏆 ランキングを見る</button>
+                 <!-- ★修正: 関数名を showRanking に変更 -->
+                <button onclick="window.showRanking('memory_match', '🏆 神経衰弱 ランキング')" class="main-btn blue-btn" style="margin-top:20px;">🏆 ランキングを見る</button>
             </div>
 
             <div id="memory-game-board" class="hidden">
