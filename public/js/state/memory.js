@@ -1,4 +1,4 @@
-// --- js/state/memory.js (v455.0: ローカルユーザーデータ消失バグ完全修正版) ---
+// --- js/state/memory.js (v456.0: データ消失修正+リネーム機能統合版) ---
 
 (function(global) {
     const Memory = {};
@@ -209,6 +209,56 @@
             console.error("[Memory] Add Collection Error:", e);
         }
     };
+
+    // ★新規: コレクションのリネーム機能
+    Memory.renameCollectionItem = async function(userId, index, newName) {
+        if (!newName || newName.trim() === "") return;
+        
+        try {
+            const profile = await Memory.getUserProfile(userId);
+            if (!profile.collection || !profile.collection[index]) throw new Error("Item not found");
+            
+            const item = profile.collection[index];
+            // 名前更新
+            item.name = newName; 
+            
+            // 公開されている場合、公開データも更新する
+            if (item.isShared && db) {
+                try {
+                    const snapshot = await db.collection("public_collection")
+                        .where("discovererId", "==", String(userId))
+                        .where("image", "==", item.image)
+                        .get();
+                    
+                    if (!snapshot.empty) {
+                        const batch = db.batch();
+                        snapshot.docs.forEach(doc => {
+                            batch.update(doc.ref, { name: newName });
+                        });
+                        await batch.commit();
+                        console.log("Renamed public item as well.");
+                    }
+                } catch(e) {
+                    console.warn("Failed to rename public item:", e);
+                }
+            }
+
+            // メモリ同期
+            if (window.currentUser && String(window.currentUser.id) === String(userId)) {
+                if (window.currentUser.profile) {
+                    window.currentUser.profile.collection = profile.collection;
+                }
+            }
+
+            // 保存（saveUserProfile内でリスト更新も行われる）
+            await Memory.saveUserProfile(userId, profile);
+            
+            return true;
+        } catch(e) {
+            console.error("[Memory] Rename Error:", e);
+            throw e;
+        }
+    };
     
     Memory.deleteFromCollection = async function(userId, index) {
         try {
@@ -224,13 +274,15 @@
                     await deleteImageFromStorage(item.image);
                 }
                 profile.collection.splice(index, 1);
-                await Memory.saveUserProfile(userId, profile);
-
+                
+                // メモリ同期
                 if (window.currentUser && String(window.currentUser.id) === String(userId)) {
                     if (window.currentUser.profile) {
                         window.currentUser.profile.collection = profile.collection;
                     }
                 }
+
+                await Memory.saveUserProfile(userId, profile);
             }
         } catch(e) { console.error("[Memory] Delete Error:", e); }
     };
@@ -257,13 +309,14 @@
         });
 
         item.isShared = true;
-        await Memory.saveUserProfile(userId, profile);
         
         if (window.currentUser && String(window.currentUser.id) === String(userId)) {
             if (window.currentUser.profile) {
                 window.currentUser.profile.collection = profile.collection;
             }
         }
+
+        await Memory.saveUserProfile(userId, profile);
 
         return "SUCCESS";
     };
@@ -290,13 +343,14 @@
             await batch.commit();
 
             item.isShared = false;
-            await Memory.saveUserProfile(userId, profile);
-
+            
             if (window.currentUser && String(window.currentUser.id) === String(userId)) {
                 if (window.currentUser.profile) {
                     window.currentUser.profile.collection = profile.collection;
                 }
             }
+
+            await Memory.saveUserProfile(userId, profile);
             
             return "SUCCESS";
         } catch (e) {
