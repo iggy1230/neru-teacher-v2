@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v462.2: 完全版 Part 1/2) ---
+// --- js/game-engine.js (v463.0: サーバーJSONパース修正対応版) ---
 
 // ==========================================
 // 共通ヘルパー: レーベンシュタイン距離 (編集距離)
@@ -1340,7 +1340,6 @@ window.reportQuizError = async function() {
         setTimeout(window.nextQuiz, 2000);
     }
 };
-// --- js/game-engine.js (v462.2: 完全版 Part 2/2) ---
 
 // ==========================================
 // 4. ネル先生のなぞなぞ
