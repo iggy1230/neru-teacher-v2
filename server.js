@@ -480,39 +480,44 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API ---
+// --- 漢字ドリル生成 API (修正版) ---
 app.post('/generate-kanji', async (req, res) => {
     try {
         const { grade, mode } = req.body; 
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
         
-        let typeInstruction = "";
-        if (mode === 'reading') {
-            typeInstruction = `
-            「読み（漢字の読み仮名を答える）」問題を作成してください。
-            **重要: 単体の漢字ではなく、短い文章やフレーズの中で使われている漢字の読みを問う形式にしてください。**
-            例: 「山へ行く」の「山」の読み方は？
-            **★重要: 画面表示用テキスト(question_display)では、出題対象の漢字を <span style='color:red;'>漢字</span> タグで囲んでください。**
-            `;
-        } else {
-            typeInstruction = "「書き取り（文章の穴埋めで漢字を書く）」問題を作成してください。";
-        }
-
         const prompt = `
-        小学${grade}年生で習う漢字の問題をランダムに1問作成してください。
-        ${typeInstruction}
+        あなたは日本の小学校教師です。小学${grade}年生向けの漢字ドリルを作成してください。
+        モードは「${mode === 'reading' ? '読み問題' : '書き取り問題'}」です。
+        
+        【共通ルール】
+        - 必ず小学${grade}年生の学習指導要領で習う範囲の漢字を選んでください。
+        - 難しい熟語は避け、学年に適した一般的な単語や短い文を選んでください。
+        
+        ${mode === 'reading' ? `
+        【読み問題のルール】
+        - 漢字の「読み方」を答えさせます。
+        - 対象の漢字を含む短い例文を作成してください。
+        - **JSON出力の "question_display"**: 対象の漢字を <span style='color:red;'>漢字</span> タグで囲んでください。
+        - **JSON出力の "question_speech"**: 例文を読み上げますが、**対象の漢字の部分だけは絶対に読み方を言わず**、「この赤い漢字」や「この字」と言い換えてください。
+          - 良い例: 「『この赤い漢字』はなんて読むかな？ 山へ行きます。」
+          - 悪い例: 「『やま』はなんて読むかな？」
+        ` : `
+        【書き取り問題のルール】
+        - ひらがなを「漢字」に直させます。
+        - 対象の漢字を含む短い例文を作成してください。
+        - **JSON出力の "question_display"**: 対象となる部分を**ひらがな**にし、<span style='color:red;'>ひらがな</span> タグで囲んでください。
+          - 例: 「<span style='color:red;'>やま</span>へ行く」
+        - **JSON出力の "question_speech"**: 「（例文）。赤いところの『（ひらがな）』を漢字で書いてみてね」という形式にしてください。
+        `}
 
-        【最重要：読み上げテキスト(question_speech)のルール】
-        - **「読み問題」の場合、出題対象の漢字そのものを絶対に発音してはいけません。**
-        - **必ず「『画面의赤くなっている漢字』の読み方は？」や「『この漢字』の読み方はなにかな？」のように、指示語を使って漢字を指し示し、音読み・訓読みを含め一切の読み方を言わないでください。**
-
-        【出力JSONフォーマット】
+        【出力フォーマット (JSONのみ)】
         {
             "type": "${mode}",
-            "kanji": "正解となる漢字",
-            "reading": "正解となる読み仮名（ひらがな）",
-            "question_display": "画面に表示する問題文（例: 『<span style='color:red;'>山</span>へ行く』 または 『□□(しょうぶ)をする』）",
-            "question_speech": "ネル先生が読み上げる問題文（答えを含まないこと！）"
+            "kanji": "正解の漢字",
+            "reading": "正解の読み仮名（ひらがな）",
+            "question_display": "画面表示用HTML文字列",
+            "question_speech": "読み上げ用テキスト"
         }
         `;
 
