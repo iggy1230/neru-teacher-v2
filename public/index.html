@@ -1,11 +1,14 @@
-<!-- index.html (完全版 v467.0: ランキング関数名修正版) -->
+--- START OF FILE index.html ---
+
+<!-- index.html (完全版 v468.1: キャッシュ対策強化版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
-    <link rel="stylesheet" href="style.css?v=465.0">
+    <!-- CSSにもバージョン付与 -->
+    <link rel="stylesheet" href="style.css?v=468.1">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
     
     <!-- Leaflet (Map Library) -->
@@ -40,7 +43,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v467.0-FixRankingCall</div>
+            <div class="version-tag">Build: v468.1-RankingFix</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -278,11 +281,9 @@
         <section id="screen-game" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-game"></div><div class="chat-bubble"><p id="nell-text-game">カリカリキャッチで遊ぶにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px;">🍖 カリカリ・キャッチ</h2>
-            <div class="game-container">
-                <canvas id="game-canvas" width="320" height="400"></canvas>
-                <div class="game-ui"><p>スコア: <span id="game-score">0</span></p><button id="start-game-btn" class="main-btn pink-btn" style="width: auto;">スタート！</button></div>
-                <!-- ★修正: 関数名を showRanking に変更 -->
-                <button onclick="window.showRanking('karikari_catch', '🏆 カリカリキャッチ ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button>
+            <div class="game-container"><canvas id="game-canvas" width="320" height="400"></canvas><div class="game-ui"><p>スコア: <span id="game-score">0</span></p><button id="start-game-btn" class="main-btn pink-btn" style="width: auto;">スタート！</button></div>
+            <!-- ★修正: showRanking を直接呼び出す -->
+            <button onclick="window.showRanking('karikari_catch', '🏆 カリカリキャッチ ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button>
             </div>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
@@ -297,7 +298,7 @@
                     <p>スコア: <span id="danmaku-score">0</span></p>
                     <button id="start-danmaku-btn" onclick="startDanmakuGame()" class="main-btn red-btn" style="width: auto;">スタート！</button>
                 </div>
-                 <!-- ★修正: 関数名を showRanking に変更 -->
+                <!-- ★修正: showRanking を直接呼び出す -->
                 <button onclick="window.showRanking('vs_robot', '🏆 VS掃除機 ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button>
             </div>
             <p style="font-size:0.8rem; color:white; text-align:center; margin-top:5px;">※茶色のカリカリだけ取ってね！他はダメ！<br>画面をドラッグして移動</p>
@@ -318,7 +319,7 @@
                 <button onclick="startMemoryGame('normal')" class="main-btn orange-btn">中 (x20倍)</button>
                 <button onclick="startMemoryGame('strong')" class="main-btn red-btn">強 (x50倍)</button>
                 
-                 <!-- ★修正: 関数名を showRanking に変更 -->
+                <!-- ★修正: showRanking を直接呼び出す -->
                 <button onclick="window.showRanking('memory_match', '🏆 神経衰弱 ランキング')" class="main-btn blue-btn" style="margin-top:20px;">🏆 ランキングを見る</button>
             </div>
 
@@ -385,7 +386,7 @@
 
                 <!-- 音声回答ボタン -->
                 <div id="quiz-mic-area" style="margin-top:15px;">
-                    <button id="quiz-mic-btn" class="main-btn" style="background:#4db6ac; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startQuizVoiceInput()">
+                    <button id="quiz-mic-btn" class="main-btn" style="background:#4db6ac !important; width:auto; padding:10px 20px; display:inline-flex; align-items:center; gap:8px; border-radius:30px;" onclick="window.startQuizVoiceInput()">
                         <span style="font-size:1.5rem;">🎤</span> 声で答える
                     </button>
                     <div id="quiz-mic-status" style="margin-top:5px; font-weight:bold; color:#e91e63; min-height:1.5em;"></div>
@@ -500,7 +501,7 @@
         <section id="screen-map" class="screen hidden" style="padding-top: 60px;">
             <h2 class="section-title" style="text-shadow: 2px 2px 0 #000; color:white; margin-bottom:10px;">🗺️ 足あとマップ</h2>
             <div id="map-container" style="width:100%; height:70vh; border-radius:15px; border:4px solid #fff; box-shadow:0 4px 10px rgba(0,0,0,0.3);"></div>
-            <button onclick="showCollection()" class="main-btn" style="margin-top:10px; background:#00bcd4; box-shadow: 0 4px 0 #0097a7;">📖 お宝図鑑を見る</button>
+            <button onclick="showCollection()" class="main-btn" style="margin-top:10px; background:#00bcd4; box-shadow: 0 4px 0 #0288d1;">📖 お宝図鑑を見る</button>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:10px;">廊下（ロビー）に戻る</button>
         </section>
     </div>
@@ -509,7 +510,7 @@
     <div id="inline-whiteboard" class="hidden whiteboard-overlay"><div class="whiteboard-board"><p style="margin:0 0 10px 0; color:#8d6e63; font-weight:bold;">ネル先生のメモ</p><div id="whiteboard-content" class="whiteboard-text"></div><button onclick="document.getElementById('inline-whiteboard').classList.add('hidden')" class="close-board-btn">✖ 閉じる</button></div></div>
     <div id="camera-modal" class="camera-modal hidden"><div class="camera-container"><video id="camera-video" autoplay playsinline></video><div class="camera-guide-box"><p>枠に合わせてにゃ</p></div></div><div class="camera-controls"><button id="camera-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="camera-shutter-btn" class="camera-shutter-btn"></button></div><canvas id="camera-canvas" style="display:none;"></canvas></div>
     <div id="cropper-modal" class="camera-modal hidden"><div class="cropper-wrapper"><canvas id="crop-canvas"></canvas><svg id="crop-lines" style="position:absolute; top:0; left:0; pointer-events:none; width:100%; height:100%;"></svg><div id="handle-tl" class="crop-handle" style="top:0; left:0;"></div><div id="handle-tr" class="crop-handle" style="top:0; right:0;"></div><div id="handle-br" class="crop-handle" style="bottom:0; right:0;"></div><div id="handle-bl" class="crop-handle" style="bottom:0; left:0;"></div></div><div class="camera-controls"><button id="cropper-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="cropper-ok-btn" class="main-btn pink-btn" style="width:120px;">決定！</button></div></div>
-    <div id="memory-manager-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content"><h3 style="text-align:center; margin:0 0 10px 0; flex-shrink: 0; color:#5c6bc0;">📝 プロフィール</h3><div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:2px solid #eee; padding-bottom:5px; flex-shrink: 0;"><button class="memory-tab active" onclick="switchMemoryTab('profile')" id="tab-profile">ネル先生のメモ</button><button class="memory-tab" onclick="switchMemoryTab('logs')" id="tab-logs">会話ログ</button></div><div id="memory-view-profile" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;"><p style="font-size:0.8rem; color:#666; flex-shrink: 0; text-align:center;">ネル先生が覚えているキミのことだにゃ。</p><div id="profile-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div></div><div id="memory-view-logs" class="hidden" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;"><p style="font-size:0.8rem; color:#666; flex-shrink: 0; text-align:center;">直近の会話ログだにゃ。</p><div id="memory-list-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div></div><button onclick="closeMemoryManager()" class="main-btn gray-btn" style="margin-top:10px; flex-shrink: 0;">閉じる</button></div></div>
+    <div id="memory-manager-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content"><h3 style="text-align:center; margin:0 0 10px 0; color:#5c6bc0;">📝 プロフィール</h3><div style="display:flex; gap:10px; margin-bottom:15px; border-bottom:2px solid #eee; padding-bottom:5px; flex-shrink: 0;"><button class="memory-tab active" onclick="switchMemoryTab('profile')" id="tab-profile">ネル先生のメモ</button><button class="memory-tab" onclick="switchMemoryTab('logs')" id="tab-logs">会話ログ</button></div><div id="memory-view-profile" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;"><p style="font-size:0.8rem; color:#666; flex-shrink: 0; text-align:center;">ネル先生が覚えているキミのことだにゃ。</p><div id="profile-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div></div><div id="memory-view-logs" class="hidden" style="flex: 1; overflow: hidden; display: flex; flex-direction: column;"><p style="font-size:0.8rem; color:#666; flex-shrink: 0; text-align:center;">直近の会話ログだにゃ。</p><div id="memory-list-container" class="memory-list" style="flex: 1; overflow-y: auto;"></div></div><button onclick="closeMemoryManager()" class="main-btn gray-btn" style="margin-top:10px; flex-shrink: 0;">閉じる</button></div></div>
     <div id="collection-modal" class="memory-modal-overlay hidden"><div class="memory-modal-content" style="max-width: 600px; background:#fff9c4;"><h3 style="text-align:center; margin:0 0 15px 0; color:#f57f17; flex-shrink: 0;">📖 お宝図鑑</h3>
     <button onclick="closeCollection(); showMap();" class="main-btn" style="margin-bottom:10px; background:#29b6f6; box-shadow: 0 4px 0 #0288d1; padding:10px; font-size:0.9rem;">🗺️ 足あとマップを見る</button>
     <div id="collection-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:12px; flex: 1; overflow-y:auto; padding:5px;"></div><div style="text-align:center; margin-top:15px; flex-shrink: 0;"><button onclick="closeCollection()" class="main-btn gray-btn" style="width:auto; padding:10px 30px;">閉じる</button></div></div></div>
@@ -540,12 +541,12 @@
     <script src="js/card-generator.js"></script>
     <script src="js/audio/audio.js"></script>
     <!-- ★★★ 修正点: ranking.js を ui.js の前に移動 ★★★ -->
-    <script src="js/ui/ranking.js"></script> 
-    <script src="js/ui/ui.js"></script>
-    <script src="js/state/user.js"></script>
-    <script src="js/voice-service.js"></script>
-    <script src="js/camera-service.js"></script>
-    <script src="js/game-engine.js"></script>
-    <script src="js/analyze.js"></script>
+    <script src="js/ui/ranking.js?v=468.1"></script> 
+    <script src="js/ui/ui.js?v=468.1"></script>
+    <script src="js/state/user.js?v=468.1"></script>
+    <script src="js/voice-service.js?v=468.1"></script>
+    <script src="js/camera-service.js?v=468.1"></script>
+    <script src="js/game-engine.js?v=468.1"></script>
+    <script src="js/analyze.js?v=468.1"></script>
 </body>
 </html>
