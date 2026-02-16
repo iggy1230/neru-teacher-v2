@@ -63,6 +63,7 @@ try {
 
 // ★JSON抽出強化関数: 最初の {...} または [...] ブロックを正しく切り出す
 function extractFirstJson(text) {
+    // 最初の '{' または '[' を探す
     const firstBrace = text.indexOf('{');
     const firstBracket = text.indexOf('[');
     
@@ -101,6 +102,7 @@ function extractFirstJson(text) {
         if (char === '\\' && !escape) escape = true;
         else escape = false;
     }
+    // 見つからなければ元のテキストを返す
     return text;
 }
 
@@ -208,7 +210,6 @@ async function verifyQuiz(quizData, genre) {
         
     } catch (e) {
         console.warn("Verification API Error:", e.message);
-        // エラー時は安全のためリトライ扱いにする
         return false;
     }
 }
@@ -304,6 +305,7 @@ app.post('/generate-quiz', async (req, res) => {
 
             const result = await model.generateContent(prompt);
             let text = result.response.text();
+            
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const cleanText = extractFirstJson(text); // ★JSON抽出強化
 
@@ -445,7 +447,7 @@ app.post('/generate-riddle', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text);
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Riddle Gen Error:", e);
@@ -478,7 +480,7 @@ app.post('/generate-minitest', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text);
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("MiniTest Gen Error:", e);
@@ -500,6 +502,11 @@ app.post('/generate-kanji', async (req, res) => {
             const prompt = `
             あなたは日本の小学校教師です。小学${grade}年生向けの漢字ドリルを1問作成してください。
             モードは「${mode === 'reading' ? '読み問題' : '書き取り問題'}」です。
+
+            【絶対厳守: 言語制限】
+            - **全てのテキスト（問題文、答え、解説、読み上げ）は、完全に「日本語」で記述してください。**
+            - 英語、ロシア語、中国語、その他の外国語は一切禁止です。
+            - **"reading" フィールドは必ず「ひらがな」にしてください。**
 
             【必須要件】
             1. 小学${grade}年生で習う漢字を使用すること。
@@ -806,6 +813,8 @@ app.post('/analyze', async (req, res) => {
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
+            
+            // 配列の場合は別途対応が必要だが、extractFirstJsonは配列も対応済み
             problems = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
