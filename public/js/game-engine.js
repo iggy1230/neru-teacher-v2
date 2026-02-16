@@ -1,4 +1,4 @@
-// --- js/game-engine.js (Part 1/2: Helper, HighScore, Catch, Robot) ---
+// --- js/game-engine.js (v467.0: ランキング関数名修正・完全版) ---
 
 console.log("Game Engine Loading...");
 
@@ -70,7 +70,6 @@ window.saveHighScore = async function(gameKey, score) {
     const storageKey = `nell_highscore_${gameKey}_${userId}`;
     let currentHigh = parseInt(localStorage.getItem(storageKey) || "0");
     
-    // スコア更新時のみ保存
     if (score > currentHigh) {
         localStorage.setItem(storageKey, score);
         try {
@@ -97,9 +96,6 @@ window.saveHighScore = async function(gameKey, score) {
 window.showGame = function() { 
     if (typeof window.switchScreen === 'function') {
         window.switchScreen('screen-game'); 
-    } else {
-        document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
-        document.getElementById('screen-game').classList.remove('hidden');
     }
     document.getElementById('mini-karikari-display').classList.remove('hidden'); 
     if(typeof window.updateMiniKarikari === 'function') window.updateMiniKarikari(); 
@@ -109,7 +105,6 @@ window.showGame = function() {
     
     const startBtn = document.getElementById('start-game-btn'); 
     if (startBtn) { 
-        // イベントリスナーの重複を防ぐため再生成
         const newBtn = startBtn.cloneNode(true); 
         startBtn.parentNode.replaceChild(newBtn, startBtn); 
         newBtn.onclick = () => { 
@@ -180,15 +175,12 @@ window.drawGame = function() {
     if(!window.gameRunning) return;
     window.ctx.clearRect(0, 0, window.gameCanvas.width, window.gameCanvas.height);
     
-    // Ball
     window.ctx.beginPath(); window.ctx.arc(window.ball.x, window.ball.y, window.ball.r, 0, Math.PI*2); 
     window.ctx.fillStyle = "#ff5722"; window.ctx.fill(); window.ctx.closePath();
     
-    // Paddle
     window.ctx.beginPath(); window.ctx.rect(window.paddle.x, window.paddle.y, window.paddle.w, window.paddle.h); 
     window.ctx.fillStyle = "#8d6e63"; window.ctx.fill(); window.ctx.closePath();
     
-    // Bricks
     window.bricks.forEach(b => {
         if(b.status === 1) {
             window.ctx.beginPath(); window.ctx.font = "20px sans-serif"; window.ctx.textAlign = "center"; 
@@ -201,16 +193,14 @@ window.drawGame = function() {
     if(window.ball.x + window.ball.dx > window.gameCanvas.width - window.ball.r || window.ball.x + window.ball.dx < window.ball.r) window.ball.dx = -window.ball.dx;
     if(window.ball.y + window.ball.dy < window.ball.r) window.ball.dy = -window.ball.dy;
     
-    // 落下判定
     if(window.ball.y + window.ball.dy > window.gameCanvas.height - window.ball.r - 30) {
         if(window.ball.x > window.paddle.x && window.ball.x < window.paddle.x + window.paddle.w) {
             window.ball.dy = -window.ball.dy; if(window.safePlay) window.safePlay(window.sfxPaddle);
         } else if(window.ball.y + window.ball.dy > window.gameCanvas.height - window.ball.r) {
-            // Game Over
             window.gameRunning = false; if(window.safePlay) window.safePlay(window.sfxOver);
             if (window.score > 0) { 
                 window.giveGameReward(window.score); 
-                window.saveHighScore('karikari_catch', window.score); // Ranking Save
+                window.saveHighScore('karikari_catch', window.score);
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`あ〜あ、落ちちゃったにゃ…。でも${window.score}個ゲットだにゃ！`, "sad"); 
             } else { 
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage("あ〜あ、落ちちゃったにゃ…", "sad"); 
@@ -221,7 +211,6 @@ window.drawGame = function() {
         }
     }
     
-    // クリア判定
     let allCleared = true;
     window.bricks.forEach(b => {
         if(b.status === 1) {
@@ -237,7 +226,7 @@ window.drawGame = function() {
     if (allCleared) {
         window.gameRunning = false; 
         window.giveGameReward(window.score);
-        window.saveHighScore('karikari_catch', window.score); // Ranking Save
+        window.saveHighScore('karikari_catch', window.score);
         
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`全部取ったにゃ！すごいにゃ！！${window.score}個ゲットだにゃ！`, "excited");
         window.fetchGameComment("end", window.score);
@@ -253,12 +242,7 @@ window.drawGame = function() {
 // ==========================================
 const DANMAKU_ASSETS_PATH = '/assets/images/game/souji/';
 
-const danmakuImages = {
-    player: new Image(),
-    boss: new Image(),
-    goods: [],
-    bads: []
-};
+const danmakuImages = { player: new Image(), boss: new Image(), goods: [], bads: [] };
 
 const goodItemsDef = [
     { file: 'kari1_dot.png', score: 10, weight: 60 },
@@ -562,7 +546,8 @@ window.showLevelSelection = function(genre) {
     // ★ランキングボタン
     const rankBtn = document.getElementById('quiz-ranking-btn');
     if (rankBtn) {
-        rankBtn.onclick = () => window.showGameRanking(`quiz_${genre}`, `🏆 ${genre} ランキング`);
+        // ★修正: 関数名を showRanking に統一
+        rankBtn.onclick = () => window.showRanking(`quiz_${genre}`, `🏆 ${genre} ランキング`);
     }
 };
 
