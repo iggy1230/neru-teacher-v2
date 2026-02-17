@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v442.0: リネームUI追加版) ---
+// --- js/ui/ui.js (v468.2: 図鑑削除バグ修正版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -6,6 +6,8 @@ let currentCalendarDate = new Date();
 window.collectionSortMode = 'desc'; 
 // ★図鑑のタブモード (mine / public)
 window.collectionTabMode = 'mine';
+// ★図鑑描画ループのID管理
+window.collectionRenderId = null;
 
 // ==========================================
 // 音量管理 (直接操作)
@@ -320,7 +322,7 @@ window.changeCollectionSort = function(select) {
     window.renderCollectionList(); 
 };
 
-window.showCollection = async function() {
+window.showCollection = async function(keepTab = false) {
     if (!currentUser) return;
     const modal = document.getElementById('collection-modal');
     if (!modal) return;
@@ -360,11 +362,25 @@ window.showCollection = async function() {
     `;
     modal.classList.remove('hidden');
 
-    window.collectionTabMode = 'mine'; // 初期は自分
+    // 引数 keepTab が true なら現在のタブモードを維持、それ以外は 'mine' にリセット
+    if (!keepTab) {
+        window.collectionTabMode = 'mine';
+    } else {
+        // UI上のタブのアクティブ状態を復元
+        window.switchCollectionTab(window.collectionTabMode);
+        return; // switchCollectionTab内でrenderCollectionListが呼ばれるのでここで終了
+    }
+
     window.renderCollectionList();
 };
 
 window.renderCollectionList = async function() {
+    // ★重要: 前回の描画ループがあればキャンセル
+    if (window.collectionRenderId) {
+        cancelAnimationFrame(window.collectionRenderId);
+        window.collectionRenderId = null;
+    }
+
     const grid = document.getElementById('collection-grid');
     const countBadge = document.getElementById('collection-count-badge');
     const sortArea = document.getElementById('collection-sort-area');
@@ -478,7 +494,9 @@ window.renderCollectionList = async function() {
         currentIndex += CHUNK_SIZE;
 
         if (currentIndex < items.length) {
-            requestAnimationFrame(renderChunk);
+            window.collectionRenderId = requestAnimationFrame(renderChunk);
+        } else {
+            window.collectionRenderId = null;
         }
     }
 
@@ -565,7 +583,7 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
         <div class="memory-modal-content" style="max-width: 600px; background:#fff9c4; height: 90vh; display: flex; flex-direction: column;">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
                 <div style="display:flex; gap:5px; align-items:center;">
-                    <button onclick="showCollection()" class="mini-teach-btn" style="background:#8d6e63;">← 一覧</button>
+                    <button onclick="showCollection(true)" class="mini-teach-btn" style="background:#8d6e63;">← 一覧</button>
                     ${mapBtnHtml}
                 </div>
                 ${deleteBtnHtml}
@@ -645,7 +663,8 @@ window.deleteCollectionItem = async function(index) {
     if (!confirm("本当にこのお宝を削除するにゃ？")) return;
     if (window.NellMemory && currentUser) {
         await window.NellMemory.deleteFromCollection(currentUser.id, index);
-        window.showCollection(); 
+        // ★修正: 削除後にタブ状態を維持して一覧に戻る
+        window.showCollection(true); 
     }
 };
 
