@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v468.4: ランキング保存値をカリカリ数に変更版) ---
+// --- js/game-engine.js (v468.5: VSロボット掃除機スコア調整版) ---
 
 console.log("Game Engine Loading...");
 
@@ -433,27 +433,25 @@ function spawnBullet() {
 }
 
 function gameOverDanmaku() {
-    danmakuState.running = false; 
-    if(window.safePlay) window.safePlay(window.sfxOver);
-    
-    // ★報酬計算 (スコアの1/10)
-    let reward = 0;
-    if (danmakuState.score > 0) { 
-        reward = Math.floor(danmakuState.score / 10);
-    }
+    danmakuState.running = false;
+    if (window.safePlay) window.safePlay(window.sfxOver);
+
+    // ★修正: 報酬はゲームスコアそのものにする
+    const reward = danmakuState.score;
 
     // ★修正: ランキングには「獲得カリカリ数(reward)」を保存
     window.saveHighScore('vs_robot', reward);
 
-    if (reward > 0) { 
-        window.giveGameReward(reward); 
-        window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${reward}個ゲットだにゃ！`, "sad"); 
-    } else { 
-        window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad"); 
+    if (reward > 0) {
+        window.giveGameReward(reward);
+        window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${reward}個ゲットだにゃ！`, "sad");
+    } else {
+        window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad");
     }
-    
-    const startBtn = document.getElementById('start-danmaku-btn'); 
-    startBtn.disabled = false; startBtn.innerText = "もう一回！";
+
+    const startBtn = document.getElementById('start-danmaku-btn');
+    startBtn.disabled = false;
+    startBtn.innerText = "もう一回！";
 }
 
 function drawDanmakuFrame() {
