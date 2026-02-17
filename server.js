@@ -1,4 +1,4 @@
-// --- server.js (v470.4: 漢字ドリル読み仮名修正 & 完全版) ---
+// --- server.js (v470.5: APIリトライ強化 & ハイライト修正版) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -47,6 +47,9 @@ async function appendToServerLog(name, text) {
         await fs.writeFile(MEMORY_FILE, JSON.stringify(data, null, 2));
     } catch (e) { console.error("Server Log Error:", e); }
 }
+
+// --- Helper: Sleep ---
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 // --- AI Initialization ---
 let genAI;
@@ -585,7 +588,7 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API (精度向上版) ---
+// --- 漢字ドリル生成 API (精度向上版 & リトライ待機強化) ---
 app.post('/generate-kanji', async (req, res) => {
     const MAX_RETRIES = 3;
     let attempt = 0;
@@ -672,6 +675,12 @@ app.post('/generate-kanji', async (req, res) => {
             }
         } catch (e) {
             console.error(`Kanji Gen Error (Attempt ${attempt}):`, e.message);
+            // ★リトライ待機: 429エラー等に備えて待機時間を設ける
+            if (attempt < MAX_RETRIES) {
+                const waitTime = attempt * 2000; // 2秒, 4秒待機
+                console.log(`Waiting ${waitTime}ms before retry...`);
+                await sleep(waitTime);
+            }
         }
     }
     // リトライ失敗
