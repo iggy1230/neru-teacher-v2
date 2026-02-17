@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v468.5: VSロボット掃除機スコア調整版) ---
+// --- js/game-engine.js (v469.1: 漢字ドリル表示バグ修正版) ---
 
 console.log("Game Engine Loading...");
 
@@ -436,10 +436,10 @@ function gameOverDanmaku() {
     danmakuState.running = false;
     if (window.safePlay) window.safePlay(window.sfxOver);
 
-    // ★修正: 報酬はゲームスコアそのものにする
+    // ★報酬はゲームスコアそのものにする
     const reward = danmakuState.score;
 
-    // ★修正: ランキングには「獲得カリカリ数(reward)」を保存
+    // ★ランキングには「獲得カリカリ数(reward)」を保存
     window.saveHighScore('vs_robot', reward);
 
     if (reward > 0) {
@@ -1021,20 +1021,34 @@ window.showRiddleResult = function(isWin) {
 // ==========================================
 let kanjiState = { data: null, canvas: null, ctx: null, isDrawing: false, mode: 'writing', questionCount: 0, maxQuestions: 5, correctCount: 0 };
 
+// ★修正: メニュー表示関数
 window.showKanjiMenu = function() {
     window.switchScreen('screen-kanji');
-    document.getElementById('kanji-menu-container').classList.remove('hidden');
-    document.getElementById('kanji-game-container').classList.add('hidden');
-    document.getElementById('kanji-menu-container').style.display = 'block';
+    // メニューを表示
+    const menu = document.getElementById('kanji-menu-container');
+    if(menu) {
+        menu.classList.remove('hidden');
+        menu.style.display = 'block';
+    }
+    // ゲームコンテンツを隠す (親コンテナ kanji-game-container は隠さない！)
+    const content = document.getElementById('kanji-game-content');
+    if(content) content.classList.add('hidden');
 };
 
+// ★修正: ゲーム開始関数
 window.startKanjiSet = function(mode) {
     window.currentMode = 'kanji';
     kanjiState.mode = mode;
     kanjiState.questionCount = 0;
     kanjiState.correctCount = 0;
+    
+    // メニューを隠す
     document.getElementById('kanji-menu-container').style.display = 'none';
-    document.getElementById('kanji-game-container').classList.remove('hidden');
+    
+    // ゲームコンテンツを表示
+    const content = document.getElementById('kanji-game-content');
+    if(content) content.classList.remove('hidden');
+    
     const canvas = document.getElementById('kanji-canvas');
     kanjiState.canvas = canvas; kanjiState.ctx = canvas.getContext('2d');
     kanjiState.ctx.lineCap = 'round'; kanjiState.ctx.lineJoin = 'round'; kanjiState.ctx.lineWidth = 12; kanjiState.ctx.strokeStyle = '#000000';
@@ -1074,10 +1088,28 @@ window.nextKanjiQuestion = async function() {
     const qText = document.getElementById('kanji-question-text');
     qText.innerText = "問題を探してるにゃ…";
     window.updateNellMessage("問題を探してるにゃ…", "thinking");
+
+    // ★修正: KANJI_DATA からランダムに選定
+    let targetKanji = null;
+    const grade = currentUser ? currentUser.grade : "1";
+    
+    if (window.KANJI_DATA && window.KANJI_DATA[grade]) {
+        const list = window.KANJI_DATA[grade];
+        if (list && list.length > 0) {
+            targetKanji = list[Math.floor(Math.random() * list.length)];
+            console.log(`[Kanji] Selected Target: ${targetKanji} (Grade ${grade})`);
+        }
+    }
+
     try {
         const res = await fetch('/generate-kanji', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ grade: currentUser ? currentUser.grade : "1", mode: kanjiState.mode })
+            // ★ targetKanji を送信
+            body: JSON.stringify({ 
+                grade: grade, 
+                mode: kanjiState.mode,
+                targetKanji: targetKanji 
+            })
         });
         const data = await res.json();
         if (data && data.kanji) {
