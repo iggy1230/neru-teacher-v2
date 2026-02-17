@@ -1,4 +1,4 @@
-// --- js/ui/ranking.js (v468.0: 単位表示対応・完全版) ---
+// --- js/ui/ranking.js (v468.3: ランキング単位統一版) ---
 
 window.showRanking = async function(rankingType = 'karikari', title = '🏆 カリカリランキング') {
     window.switchScreen('screen-ranking');
@@ -92,13 +92,14 @@ window.showRanking = async function(rankingType = 'karikari', title = '🏆 カ�
         if (rankingType !== 'karikari' && currentUser && !myRankData) {
             const localScore = localStorage.getItem(`nell_highscore_${rankingType}_${currentUser.id}`);
             if (localScore) {
-                myScoreEl.innerText = `あなたのハイスコア: ${localScore} 点`;
+                // ★修正: 単位をカリカリ(🍖)に変更
+                myScoreEl.innerText = `あなたのハイスコア: 🍖 ${localScore}`;
             } else {
                 myScoreEl.innerText = "まだ記録がないにゃ。";
             }
         } else if (myRankData) {
-            const unit = (rankingType === 'karikari') ? '' : ' 点';
-            myScoreEl.innerText = `あなたは ${myRankData.rank}位 (${myRankData.score}${unit}) だにゃ！`;
+            // ★修正: 単位をカリカリ(🍖)に統一
+            myScoreEl.innerText = `あなたは ${myRankData.rank}位 (🍖 ${myRankData.score}) だにゃ！`;
         }
 
     } catch (e) {
@@ -141,13 +142,9 @@ window.createRankingItem = function(rank, user, rankingType) {
 
     // 数値フォーマットと単位
     const formattedScore = score.toLocaleString();
-    let scoreDisplay = "";
     
-    if (rankingType === 'karikari') {
-        scoreDisplay = `🍖 ${formattedScore}`;
-    } else {
-        scoreDisplay = `${formattedScore} <span style="font-size:0.8rem;">点</span>`;
-    }
+    // ★修正: 常に「🍖」を表示するように変更（点数表記を廃止）
+    const scoreDisplay = `🍖 ${formattedScore}`;
 
     div.innerHTML = `
         <div class="rank-left">
