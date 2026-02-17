@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v468.1: キャッシュ対策・完全版 Part 1) ---
+// --- js/game-engine.js (v468.4: ランキング保存値をカリカリ数に変更版) ---
 
 console.log("Game Engine Loading...");
 
@@ -204,6 +204,7 @@ window.drawGame = function() {
             window.gameRunning = false; if(window.safePlay) window.safePlay(window.sfxOver);
             if (window.score > 0) { 
                 window.giveGameReward(window.score); 
+                // カリカリキャッチは「スコア＝カリカリ」なのでそのまま
                 window.saveHighScore('karikari_catch', window.score);
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`あ〜あ、落ちちゃったにゃ…。でも${window.score}個ゲットだにゃ！`, "sad"); 
             } else { 
@@ -230,6 +231,7 @@ window.drawGame = function() {
     if (allCleared) {
         window.gameRunning = false; 
         window.giveGameReward(window.score);
+        // カリカリキャッチは「スコア＝カリカリ」
         window.saveHighScore('karikari_catch', window.score);
         
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`全部取ったにゃ！すごいにゃ！！${window.score}個ゲットだにゃ！`, "excited");
@@ -434,12 +436,16 @@ function gameOverDanmaku() {
     danmakuState.running = false; 
     if(window.safePlay) window.safePlay(window.sfxOver);
     
-    // ★ランキングには元のスコアを保存
-    window.saveHighScore('vs_robot', danmakuState.score);
-
+    // ★報酬計算 (スコアの1/10)
+    let reward = 0;
     if (danmakuState.score > 0) { 
-        // ★報酬はスコアの1/10
-        const reward = Math.floor(danmakuState.score / 10);
+        reward = Math.floor(danmakuState.score / 10);
+    }
+
+    // ★修正: ランキングには「獲得カリカリ数(reward)」を保存
+    window.saveHighScore('vs_robot', reward);
+
+    if (reward > 0) { 
         window.giveGameReward(reward); 
         window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${reward}個ゲットだにゃ！`, "sad"); 
     } else { 
@@ -493,7 +499,6 @@ function drawDanmakuFrame() {
     let lifeStr = "❤️".repeat(Math.max(0, danmakuState.life));
     ctx.fillText("LIFE: " + lifeStr, 10, 10);
 }
-// --- js/game-engine.js (Part 2/2: Quiz, Riddle, Kanji, Memory + Compatibility) ---
 
 // ==========================================
 // 3. ウルトラクイズ (showQuizGame)
@@ -782,14 +787,14 @@ window.finishQuizSet = function() {
     quizState.isFinished = true;
     window.currentQuiz = null;
     
-    // ランキング保存
-    window.saveHighScore(`quiz_${quizState.genre}`, quizState.score);
-
     const correctCount = Math.floor(quizState.score / 20);
     const currentLevel = quizState.level || 1;
     let rewardPerCorrect = 50; 
     let totalReward = correctCount * rewardPerCorrect;
     if (correctCount === 0) totalReward = 10;
+
+    // ★修正: ランキングには「獲得カリカリ数(totalReward)」を保存
+    window.saveHighScore(`quiz_${quizState.genre}`, totalReward);
 
     let msg = "";
     let mood = "normal";
@@ -908,6 +913,10 @@ window.nextRiddle = async function() {
         if (riddleState.score === 5) msg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
         else if (riddleState.score > 0) msg = `${riddleState.score}問正解！カリカリ${reward}個あげるにゃ！`;
         else msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
+        
+        // ★修正: なぞなぞにもランキングがあればここで reward を保存する
+        // window.saveHighScore('riddle', reward); 
+        
         window.giveGameReward(reward);
         window.updateNellMessage(msg, "happy", false, true);
         alert(msg);
@@ -1457,23 +1466,31 @@ window.endMemoryGame = function() {
     const settings = memoryGameState.settings[memoryGameState.difficulty];
     const playerName = currentUser ? currentUser.name : 'ユーザー';
     
-    // ★ランキング保存
-    window.saveHighScore('memory_match', pScore);
-
     let msg = "";
     let mood = "normal";
     
+    // 報酬計算（先に計算）
+    let reward = 0;
     if (pScore > nScore) {
-        const reward = pScore * settings.reward;
+        reward = pScore * settings.reward;
+    } else {
+        // 負け・引き分け時の参加賞
+        reward = 10;
+        if (pScore === nScore) reward = pScore * settings.reward; // 引き分けでもスコア分あげる
+    }
+
+    // ★修正: ランキングには「獲得カリカリ数(reward)」を保存
+    window.saveHighScore('memory_match', reward);
+
+    if (pScore > nScore) {
         msg = `${playerName}さんの勝ちだにゃ！すごいにゃ！報酬としてカリカリ${reward}個あげるにゃ！`;
         mood = "excited";
         window.giveGameReward(reward);
     } else if (pScore < nScore) {
-        msg = `ネル先生の勝ちだにゃ！まだまだだにゃ〜。参加賞でカリカリ10個あげるにゃ。`;
+        msg = `ネル先生の勝ちだにゃ！まだまだだにゃ〜。参加賞でカリカリ${reward}個あげるにゃ。`;
         mood = "happy";
-        window.giveGameReward(10);
+        window.giveGameReward(reward);
     } else {
-        const reward = pScore * settings.reward;
         msg = `引き分けだにゃ！いい勝負だったにゃ！カリカリ${reward}個あげるにゃ！`;
         mood = "happy";
         window.giveGameReward(reward);
