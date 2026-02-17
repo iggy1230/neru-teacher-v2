@@ -1,4 +1,4 @@
-// --- js/analyze.js (v450.2: スクロール位置復元 & ハイライト機能完全版) ---
+// --- js/analyze.js (v450.3: ハイライトタイミング完全修正版) ---
 
 // グローバル変数
 window.currentLocation = null;
@@ -645,7 +645,7 @@ window.updateGradingMessage = function() {
     }
 };
 
-// ★修正: リスト画面に戻った際にスクロール位置を復元し、ハイライトする
+// ★修正: リスト画面に戻った際にスクロール位置を復元し、ハイライトする（待機時間を調整）
 window.backToProblemSelection = function() { 
     document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); 
     
@@ -658,19 +658,23 @@ window.backToProblemSelection = function() {
     
     // スクロール位置復元 & ハイライト処理
     if (window.lastSelectedProblemId) {
+        // ★描画完了を待つために時間を延ばす (100ms -> 300ms)
         setTimeout(() => {
             const target = document.getElementById(`grade-item-${window.lastSelectedProblemId}`);
             if (target) {
                 target.scrollIntoView({ behavior: 'auto', block: 'center' });
-                // ★追加: ハイライトクラスを付与
+                // 一旦クラスを削除してリフローさせてから再付与
+                target.classList.remove('highlight-flash');
+                void target.offsetWidth; 
                 target.classList.add('highlight-flash');
+                
                 // アニメーション終了後にクラス削除
                 setTimeout(() => {
                     target.classList.remove('highlight-flash');
                 }, 2000); 
             }
             window.lastSelectedProblemId = null; // リセット
-        }, 100);
+        }, 300);
     }
 
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; } 
