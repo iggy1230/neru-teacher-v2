@@ -1,5 +1,3 @@
-// --- server.js ---
-
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
 import cors from 'cors';
@@ -585,7 +583,7 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API (修正版: リトライ＆JSON抽出強化) ---
+// --- 漢字ドリル生成 API (修正版: リトライ＆ターゲット漢字指定対応) ---
 app.post('/generate-kanji', async (req, res) => {
     const MAX_RETRIES = 3;
     let attempt = 0;
@@ -593,12 +591,28 @@ app.post('/generate-kanji', async (req, res) => {
     while (attempt < MAX_RETRIES) {
         attempt++;
         try {
-            const { grade, mode } = req.body; 
+            // targetKanji を受け取る
+            const { grade, mode, targetKanji } = req.body; 
             const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
             
+            // ターゲット指定の有無でプロンプトを分岐
+            let instruction = "";
+            if (targetKanji) {
+                instruction = `
+                【重要: 出題漢字の指定】
+                小学${grade}年生で習う漢字「${targetKanji}」を使用した問題を作成してください。
+                `;
+            } else {
+                instruction = `
+                小学${grade}年生で習う漢字の中からランダムに1つ選んで問題を作成してください。
+                `;
+            }
+
             const prompt = `
             あなたは日本の小学校教師です。小学${grade}年生向けの漢字ドリルを1問作成してください。
             モードは「${mode === 'reading' ? '読み問題' : '書き取り問題'}」です。
+            
+            ${instruction}
 
             【絶対厳守: 言語制限】
             - **全てのテキスト（問題文、答え、解説、読み上げ）は、完全に「日本語」で記述してください。**
@@ -606,20 +620,19 @@ app.post('/generate-kanji', async (req, res) => {
             - **"reading" フィールドは必ず「ひらがな」にしてください。**
 
             【必須要件】
-            1. 小学${grade}年生で習う漢字を使用すること。
-            2. 出力は以下のJSON形式のみとすること。余計な解説は不要。
+            1. 出力は以下のJSON形式のみとすること。余計な解説は不要。
             
             ${mode === 'reading' ? `
             【読み問題】
             - 漢字の「読み方」を答えさせます。
-            - 対象の漢字を含む短い例文を作成してください。
+            - 対象の漢字（${targetKanji || "選んだ漢字"}）を含む短い例文を作成してください。
             - **"question_display"**: 対象の漢字を <span style='color:red;'>漢字</span> タグで囲んでください。
             - **"question_speech"**: 例文を読み上げますが、**対象の漢字の部分だけは絶対に読み方を言わず**、「この赤い漢字」や「この字」と言い換えてください。
               - 良い例: 「『この赤い漢字』はなんて読むかな？ 山へ行きます。」
             ` : `
             【書き取り問題】
             - ひらがなを「漢字」に直させます。
-            - 対象の漢字を含む短い例文を作成してください。
+            - 対象の漢字（${targetKanji || "選んだ漢字"}）を含む短い例文を作成してください。
             - **"question_display"**: 対象となる部分を**ひらがな**にし、<span style='color:red;'>ひらがな</span> タグで囲んでください。
               - 例: 「<span style='color:red;'>やま</span>へ行く」
             - **"question_speech"**: 「（例文）。赤いところの『（ひらがな）』を漢字で書いてみてね」という形式にしてください。
@@ -628,7 +641,7 @@ app.post('/generate-kanji', async (req, res) => {
             【出力JSONフォーマット】
             {
                 "type": "${mode}",
-                "kanji": "正解の漢字",
+                "kanji": "${targetKanji || "正解の漢字"}",
                 "reading": "正解の読み仮名（ひらがな）",
                 "question_display": "画面表示用HTML",
                 "question_speech": "読み上げ用テキスト"
@@ -637,12 +650,17 @@ app.post('/generate-kanji', async (req, res) => {
 
             const result = await model.generateContent(prompt);
             let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-            const cleanText = extractFirstJson(text); // ★JSON抽出強化
+            const cleanText = extractFirstJson(text); 
 
             const json = JSON.parse(cleanText);
             
-            // 検証
+            // 検証: 指定された漢字がちゃんと答えになっているか
             if (json.kanji && json.reading && json.question_display) {
+                 // ターゲット指定があった場合、答えが一致しているか緩くチェック
+                 if (targetKanji && json.kanji !== targetKanji) {
+                     console.warn(`[Kanji Gen] Mismatch! Requested: ${targetKanji}, Got: ${json.kanji}. Retrying...`);
+                     continue; // リトライ
+                 }
                  res.json(json);
                  return;
             }
