@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.3: ボタン呼び出し完全修正 & 赤丸対応版) ---
+// --- js/game-engine.js (v470.4: 漢字ドリル正解表示 & ギブアップ対応版) ---
 
 console.log("Game Engine Loading...");
 
@@ -1070,7 +1070,6 @@ window.nextKanjiQuestion = async function() {
     kanjiState.questionCount++;
     
     kanjiState.guideVisible = false;
-    // ★修正: はなまる（赤丸）を隠すときは中身を空にして非表示
     const hanamaru = document.getElementById('kanji-hanamaru');
     if(hanamaru) { hanamaru.innerText = ""; hanamaru.style.display = 'none'; }
 
@@ -1234,11 +1233,10 @@ window.checkKanji = async function() {
         const data = await res.json();
         window.updateNellMessage(data.comment, data.is_correct ? "happy" : "gentle", false, true);
         if (data.is_correct) {
-            // ★修正: 赤丸（○）の表示ロジック
             const hanamaru = document.getElementById('kanji-hanamaru');
             if (hanamaru) {
-                hanamaru.innerText = "○"; // テキストを設定
-                hanamaru.style.display = 'flex'; // 表示
+                hanamaru.innerText = "○";
+                hanamaru.style.display = 'flex';
             }
             if(window.safePlay) window.safePlay(window.sfxMaru);
             kanjiState.correctCount++;
@@ -1248,6 +1246,13 @@ window.checkKanji = async function() {
             
             const hintDiv = document.getElementById('kanji-hint-readings');
             if (hintDiv) hintDiv.style.display = 'block';
+
+            // ★新規: 正解の漢字と詳細情報を表示
+            document.getElementById('kanji-answer-display').classList.remove('hidden');
+            document.getElementById('kanji-answer-text').innerText = kanjiState.data.kanji;
+            const detailText = document.getElementById('kanji-answer-detail');
+            if(detailText) detailText.innerHTML = `音読み: ${kanjiState.data.onyomi || "-"} / 訓読み: ${kanjiState.data.kunyomi || "-"} / 画数: ${kanjiState.data.kakusu || "-"}画`;
+
         } else {
             if(window.safePlay) window.safePlay(window.sfxBatu);
         }

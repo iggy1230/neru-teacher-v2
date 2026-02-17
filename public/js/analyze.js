@@ -1,4 +1,4 @@
-// --- js/analyze.js (v450.1: スクロール位置復元機能追加版) ---
+// --- js/analyze.js (v450.2: スクロール位置復元 & ハイライト機能完全版) ---
 
 // グローバル変数
 window.currentLocation = null;
@@ -645,7 +645,7 @@ window.updateGradingMessage = function() {
     }
 };
 
-// ★修正: リスト画面に戻った際にスクロール位置を復元
+// ★修正: リスト画面に戻った際にスクロール位置を復元し、ハイライトする
 window.backToProblemSelection = function() { 
     document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); 
     
@@ -656,12 +656,18 @@ window.backToProblemSelection = function() {
         window.updateNellMessage("他も見るにゃ？", "normal", false); 
     } 
     
-    // スクロール位置復元処理
+    // スクロール位置復元 & ハイライト処理
     if (window.lastSelectedProblemId) {
         setTimeout(() => {
             const target = document.getElementById(`grade-item-${window.lastSelectedProblemId}`);
             if (target) {
                 target.scrollIntoView({ behavior: 'auto', block: 'center' });
+                // ★追加: ハイライトクラスを付与
+                target.classList.add('highlight-flash');
+                // アニメーション終了後にクラス削除
+                setTimeout(() => {
+                    target.classList.remove('highlight-flash');
+                }, 2000); 
             }
             window.lastSelectedProblemId = null; // リセット
         }, 100);
