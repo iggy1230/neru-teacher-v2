@@ -1,3 +1,5 @@
+// --- server.js (v470.1: 完全版) ---
+
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
 import cors from 'cors';
@@ -21,7 +23,7 @@ const publicDir = path.join(__dirname, 'public');
 app.use(express.static(publicDir));
 
 // --- AI Model Constants ---
-const MODEL_HOMEWORK = "gemini-2.0-pro-exp-02-05"; // 視覚認識強化
+const MODEL_HOMEWORK = "gemini-2.5-pro"; // 視覚認識強化
 const MODEL_FAST = "gemini-2.0-flash"; 
 const MODEL_REALTIME = "gemini-2.0-flash-exp"; // Realtime API用
 
@@ -622,6 +624,16 @@ app.post('/generate-kanji', async (req, res) => {
             - 「手短（てみじか）」の「短」を「簡」とするような間違いは厳禁です。
             - 書き取り問題の場合、対象の漢字1文字だけを答える形式にしてください。
 
+            ${mode === 'writing' ? `
+            【書き取り問題の超重要ルール】
+            1. **文章の一部をひらがなにして、そこを漢字で書かせる問題を作成します。**
+            2. **対象の漢字1文字だけをひらがなにし、<span style='color:red;'>ひらがな</span> タグで囲んでください。**
+               - 例: 「き」則を守る → 「<span style='color:red;'>き</span>則を守る」
+               - 例: お金が「ほ」しい → 「お金が<span style='color:red;'>ほ</span>しくてたまらない。」
+            3. **2文字以上の熟語全体をひらがなにしないでください。**
+               - 悪い例: 「<span style='color:red;'>きそく</span>を守る」
+            ` : ''}
+
             【出力JSONフォーマット】
             {
                 "type": "${mode}",
@@ -658,6 +670,7 @@ app.post('/generate-kanji', async (req, res) => {
     // リトライ失敗
     res.status(500).json({ error: "漢字が見つからないにゃ…" });
 });
+
 
 // --- 漢字採点 API ---
 app.post('/check-kanji', async (req, res) => {
