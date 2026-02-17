@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v464.0: ボタン表示・機能修復＆ランキング対応) --- */
+/* --- style.css (完全版 v469.0: 漢字ドリルデザイン対応版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -159,10 +159,6 @@ button { font-family: inherit; }
     text-align: center;
     text-decoration: none;
     text-shadow: 1px 1px 0 rgba(0,0,0,0.1);
-    /* ★重要修正: ボタンが表示されない問題を解消 */
-    position: relative;
-    z-index: 10;
-    background-color: var(--primary-gray); /* デフォルト色 */
 }
 
 .main-btn:active { transform: translateY(2px); box-shadow: none; }
@@ -806,7 +802,7 @@ button { font-family: inherit; }
     stroke-dasharray: 5;
 }
 
-/* 記憶管理モーダル */
+/* 記憶管理モーダル & Flexbox修正 */
 .memory-modal-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0,0,0,0.6); z-index: 9999;
@@ -901,7 +897,7 @@ button { font-family: inherit; }
     box-shadow: 0 2px 0 #2a609e; 
 }
 
-/* Live Chat Video */
+/* ★修正: クラス化してスタイルを統一 */
 #live-chat-video-container,
 .live-chat-video-wrapper {
     width: 100%; 
@@ -1124,45 +1120,54 @@ button { font-family: inherit; }
     animation: bounce 1s infinite alternate;
 }
 
-/* カメラ起動時の軽量化モード */
+/* 
+   ★追加: カメラ起動時の軽量化モード 
+   iPhone等の描画負荷を軽減するため、重いエフェクトを無効化
+*/
 .camera-active .volume-controls-fixed,
 .camera-active .glass-card,
 .camera-active .whiteboard-overlay,
 .camera-active .memory-modal-overlay {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    background: rgba(255, 255, 255, 0.95);
+    background: rgba(255, 255, 255, 0.95); /* ぼかしの代わりにベタ塗り(少し透過) */
 }
 
+/* カメラ起動中は背景画像を非表示にして描画負荷を下げる */
 .camera-active body::before {
     display: none !important;
 }
 
+/* 背景画像の代わりに単色背景 */
 .camera-active body {
     background-color: #fff9f0;
 }
 
-/* お宝神経衰弱用スタイル */
+/*
+   ★新規: お宝神経衰弱用スタイル (グリッド制御強化版)
+*/
 .memory-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    grid-template-rows: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr); /* 4行に固定 */
     gap: 4px;
     margin-top: 5px;
     padding: 5px;
     perspective: 1000px;
+    /* 画面高さの60% -> 70% に拡張してカードを縦長にする */
     height: 70vh;
-    max-height: 500px;
+    max-height: 500px; /* PCなど大画面対策 */
 }
 
 .memory-card {
     width: 100%;
     height: 100%;
-    background-color: transparent;
+    background-color: transparent; /* ここは透明にする */
     cursor: pointer;
     position: relative;
     user-select: none;
     border-radius: 5px;
+    /* 親要素にperspectiveがある場合でも、子要素の3D変換を有効にする */
     transform-style: preserve-3d; 
     -webkit-transform-style: preserve-3d;
 }
@@ -1174,9 +1179,10 @@ button { font-family: inherit; }
     text-align: center;
     transition: transform 0.6s;
     transform-style: preserve-3d;
-    -webkit-transform-style: preserve-3d;
+    -webkit-transform-style: preserve-3d; /* iOS Safari fix */
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
     border-radius: 5px;
+    /* iOSでのレンダリングバグ対策: GPUレイヤー分離 */
     transform: translateZ(0); 
     -webkit-transform: translateZ(0);
 }
@@ -1190,10 +1196,11 @@ button { font-family: inherit; }
     position: absolute;
     width: 100%;
     height: 100%;
-    -webkit-backface-visibility: hidden;
+    -webkit-backface-visibility: hidden; /* Safari */
     backface-visibility: hidden;
     border-radius: 5px;
     background-color: #fff;
+    /* チラつき防止 */
     transform: translate3d(0,0,0); 
     -webkit-transform: translate3d(0,0,0);
 }
@@ -1206,7 +1213,8 @@ button { font-family: inherit; }
     justify-content: center;
     font-size: 2rem;
     border: 2px solid #fff;
-    z-index: 2;
+    z-index: 2; /* デフォルトで手前 */
+    /* 裏面であることを明示 */
     transform: rotateY(0deg); 
     -webkit-transform: rotateY(0deg);
 }
@@ -1222,9 +1230,10 @@ button { font-family: inherit; }
     z-index: 1;
 }
 
+/* 写真部分のズーム表示設定 (画像のみ見せる調整) */
 .memory-card-img-container {
     width: 100%;
-    height: 75%;
+    height: 75%; /* 75%に調整して名称エリアを確保 */
     overflow: hidden; 
     position: relative;
     background: #f0f0f0;
@@ -1237,13 +1246,14 @@ button { font-family: inherit; }
     width: 100%;
     height: 100%;
     object-fit: cover;
+    /* 画像を下に移動させるために object-position を 5% に変更（上端基準に近づける） */
     object-position: center 5%; 
     transform: scale(1.6);
     transform-origin: center center;
 }
 
 .memory-card-name {
-    height: 25%;
+    height: 25%; /* 名称エリア */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1266,14 +1276,15 @@ button { font-family: inherit; }
     border: 2px solid #ddd; border-radius: 10px; background: white;
     font-size: 1rem; font-weight: bold; color: #333; cursor: pointer;
     box-shadow: 0 2px 0 #ccc; text-align: left;
-    position: relative;
-    z-index: 10;
 }
 .minitest-option-btn:active, .quiz-option-btn:active { transform: translateY(2px); box-shadow: none; }
 .minitest-correct, .quiz-correct { background: #e8f5e9 !important; border-color: #4caf50 !important; color: #2e7d32 !important; }
 .minitest-wrong, .quiz-wrong { background: #ffebee !important; border-color: #ef5350 !important; color: #c62828 !important; }
 
-/* お宝図鑑のカードアイテム */
+/* 
+   ★重要: お宝図鑑のカードアイテム用（JSからクラス付与）
+   強制的にマージンとトランスフォームをリセットし、重なりを防ぐ
+*/
 .collection-grid-item {
     background: white;
     border-radius: 8px;
@@ -1290,6 +1301,8 @@ button { font-family: inherit; }
     aspect-ratio: 0.68;
     overflow: hidden;
     z-index: 1;
+    
+    /* 古いJSのインラインスタイルを強制上書き */
     margin: 0 !important; 
     transform: none !important;
 }
@@ -1321,7 +1334,7 @@ button { font-family: inherit; }
     text-overflow: ellipsis;
 }
 
-/* ランキング掲示板用スタイル */
+/* ★ランキング掲示板用スタイル (v416.0追加) */
 .ranking-item {
     display: flex;
     justify-content: space-between;
@@ -1350,7 +1363,7 @@ button { font-family: inherit; }
     align-items: center;
     gap: 10px;
     flex: 1;
-    min-width: 0;
+    min-width: 0; /* flex内で省略させるために必要 */
 }
 
 .rank-position {
@@ -1405,4 +1418,34 @@ button { font-family: inherit; }
 
 .memory-tab.active-tab {
     font-weight: bold;
+}
+
+/* ★追加: 漢字ドリル画面のデザイン強化 */
+#kanji-game-container {
+    background-color: #fffbf0; /* わら半紙っぽい色 */
+    background-image: radial-gradient(#d7ccc8 1px, transparent 1px);
+    background-size: 20px 20px;
+    padding: 20px;
+    border-radius: 15px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.05);
+}
+
+#kanji-canvas {
+    border: 4px solid #5d4037;
+    background-color: #fff;
+    /* 十字リーダー（田の字グリッド） */
+    background-image: 
+        linear-gradient(to right, transparent 49.5%, #ddd 50%, transparent 50.5%),
+        linear-gradient(to bottom, transparent 49.5%, #ddd 50%, transparent 50.5%);
+    background-size: 100% 100%;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    cursor: crosshair;
+    display: block;
+    margin: 0 auto;
+    border-radius: 4px;
+}
+
+#kanji-controls {
+    justify-content: center;
+    gap: 15px !important;
 }

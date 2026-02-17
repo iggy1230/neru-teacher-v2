@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v468.1: キャッシュ対策強化版) -->
+<!-- index.html (完全版 v469.0: 漢字ドリルデータ対応版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
     <!-- CSSにもバージョン付与 -->
-    <link rel="stylesheet" href="style.css?v=468.1">
+    <link rel="stylesheet" href="style.css?v=469.0">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
     
     <!-- Leaflet (Map Library) -->
@@ -41,7 +41,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v468.1-RankingFix</div>
+            <div class="version-tag">Build: v469.0-KanjiUpdate</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -449,7 +449,7 @@
         <section id="screen-kanji" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-kanji"></div><div class="chat-bubble"><p id="nell-text-kanji">漢字の練習だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#ab47bc;">✍️ 漢字ドリル</h2>
-            <div class="glass-card" style="text-align:center; padding:15px;">
+            <div class="glass-card" id="kanji-game-container" style="text-align:center; padding:15px;">
                 <!-- モード選択メニュー -->
                 <div id="kanji-menu-container">
                     <p style="font-weight:bold; margin-bottom:15px;">どの練習をする？</p>
@@ -458,7 +458,7 @@
                 </div>
 
                 <!-- ゲームエリア -->
-                <div id="kanji-game-container" class="hidden">
+                <div id="kanji-game-content" class="hidden">
                     <p id="kanji-progress" style="font-size:0.9rem; color:#888; text-align:right;">1/5問目</p>
                     <p id="kanji-question-text" style="font-size:1.5rem; font-weight:900; color:#4a148c; margin-bottom:10px;">読み込み中...</p>
                     
@@ -538,13 +538,16 @@
     <script src="js/state/memory.js"></script> 
     <script src="js/card-generator.js"></script>
     <script src="js/audio/audio.js"></script>
-    <!-- ★★★ 修正点: ranking.js を ui.js の前に移動 ★★★ -->
-    <script src="js/ui/ranking.js?v=468.1"></script> 
-    <script src="js/ui/ui.js?v=468.1"></script>
-    <script src="js/state/user.js?v=468.1"></script>
-    <script src="js/voice-service.js?v=468.1"></script>
-    <script src="js/camera-service.js?v=468.1"></script>
-    <script src="js/game-engine.js?v=468.1"></script>
-    <script src="js/analyze.js?v=468.1"></script>
+    
+    <!-- ★ここに追加: 漢字データ -->
+    <script src="js/config/kanji-data.js?v=1.0"></script>
+    
+    <script src="js/ui/ranking.js?v=468.3"></script> 
+    <script src="js/ui/ui.js?v=468.3"></script>
+    <script src="js/state/user.js?v=452.0"></script>
+    <script src="js/voice-service.js?v=428.0"></script>
+    <script src="js/camera-service.js?v=432.0"></script>
+    <script src="js/game-engine.js?v=468.5"></script>
+    <script src="js/analyze.js?v=450.0"></script>
 </body>
 </html>
