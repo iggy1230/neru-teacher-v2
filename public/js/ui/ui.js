@@ -1,4 +1,4 @@
-// --- js/ui/ui.js (v468.2: 図鑑削除バグ修正版) ---
+// --- js/ui/ui.js (v468.3: みんなの図鑑お掃除機能追加版) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -529,8 +529,14 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
                 </div>`;
         }
     } else {
-        // 他人のアイテム
-        shareBtnHtml = `<span style="font-size:0.8rem; color:#666;">発見者: <strong>${window.cleanDisplayString(item.discovererName || "誰か")}さん</strong></span>`;
+        // 他人のアイテム: 「みんなの」タブで見ている場合、不備データのお掃除機能を追加
+        shareBtnHtml = `
+            <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                <span style="font-size:0.8rem; color:#666;">発見者: <strong>${window.cleanDisplayString(item.discovererName || "誰か")}さん</strong></span>
+                <button onclick="window.cleanPublicItem('${item.id || ""}')" class="mini-teach-btn" style="background:transparent; border:1px solid #ccc; color:#888; font-size:0.7rem; width:auto; padding:2px 8px; box-shadow:none; margin-top:5px;">
+                    ⚠️ データがない場合は削除
+                </button>
+            </div>`;
     }
 
     // 削除ボタン (自分のみ)
@@ -604,6 +610,22 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
             </div>
         </div>
     `;
+};
+
+// ★追加: 不備のある公開アイテムを削除する機能
+window.cleanPublicItem = async function(docId) {
+    if (!docId) return;
+    if (!db) return;
+    if (!confirm("画像が表示されないなどの問題がある場合、この公開データを削除できるにゃ。\n実行するにゃ？")) return;
+
+    try {
+        await db.collection("public_collection").doc(docId).delete();
+        alert("公開データを削除したにゃ！スッキリしたにゃ！");
+        window.showCollection(true); // リストを更新
+    } catch(e) {
+        console.error("Public Clean Error:", e);
+        alert("削除に失敗したにゃ。");
+    }
 };
 
 // ★追加: リネーム処理
