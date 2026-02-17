@@ -1,4 +1,4 @@
-// --- server.js (v470.5: APIリトライ強化 & ハイライト修正版) ---
+// --- server.js (v470.6: 漢字ドリル読み上げ修正 & 完全版) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -588,7 +588,7 @@ app.post('/generate-minitest', async (req, res) => {
     }
 });
 
-// --- 漢字ドリル生成 API (精度向上版 & リトライ待機強化) ---
+// --- 漢字ドリル生成 API (精度向上版 & リトライ待機強化 & 読み上げ修正) ---
 app.post('/generate-kanji', async (req, res) => {
     const MAX_RETRIES = 3;
     let attempt = 0;
@@ -638,10 +638,14 @@ app.post('/generate-kanji', async (req, res) => {
             3. **重要**: 「私（わたし）」のように読みが複数文字の場合、**「わた」ではなく「わたし」全体**を赤字にしてください。送り仮名がある場合（例：強（つよ）い）は、漢字部分（つよ）のみを赤字にしてください。
             4. 例: 「私」が出題の場合 → 「これは<span style='color:red;'>わたし</span>の宝物です。」
             5. 例: 「犬」が出題の場合 → 「かわいい<span style='color:red;'>いぬ</span>が走る。」
+            6. **音声読み上げ**: 書き取り問題の場合は、答えとなる言葉（ひらがな）を含めて例文全体を普通に読み上げてください。
             ` : `
             【読み問題の作成ルール】
             1. ターゲットの漢字「${targetKanji}」を含む短い例文を作成してください。
             2. ターゲットの漢字部分を \`<span style='color:red;'>${targetKanji}</span>\` タグで囲んで強調してください。
+            3. **音声読み上げ (重要)**: 読み問題なので、**正解の読み方を絶対に読み上げないでください**。
+               - 例文を読み上げる際は、ターゲットの漢字部分を「赤色の漢字」や「なになに」と言い換えてください。
+               - 例: 「この<span style='color:red;'>泉</span>の水は...」 → 読み上げ: 「この『赤色の漢字』の水は、とても冷たい。」
             `}
 
             【出力JSONフォーマット】
@@ -653,7 +657,7 @@ app.post('/generate-kanji', async (req, res) => {
                 "kunyomi": "訓読み（ひらがな、なければ空文字）",
                 "kakusu": "画数（数字のみ）",
                 "question_display": "画面表示用のHTML（上記のルールに従った例文）",
-                "question_speech": "読み上げ用テキスト（『次は「${targetKanji}」の読み問題です。』や『「〇〇」を漢字で書きましょう。』など）"
+                "question_speech": "読み上げ用テキスト（上記のルールに従って作成）"
             }
             `;
 
