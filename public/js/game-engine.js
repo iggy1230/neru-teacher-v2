@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v468.2: ボタン呼び出し完全修正版) ---
+// --- js/game-engine.js (v470.3: ボタン呼び出し完全修正 & 赤丸対応版) ---
 
 console.log("Game Engine Loading...");
 
@@ -1017,34 +1017,28 @@ let kanjiState = {
     data: null, canvas: null, ctx: null, 
     isDrawing: false, mode: 'writing', 
     questionCount: 0, maxQuestions: 5, correctCount: 0,
-    guideVisible: false // お手本表示フラグ
+    guideVisible: false 
 };
 
-// ★修正: メニュー表示関数
 window.showKanjiMenu = function() {
     window.switchScreen('screen-kanji');
-    // メニューを表示
     const menu = document.getElementById('kanji-menu-container');
     if(menu) {
         menu.classList.remove('hidden');
         menu.style.display = 'block';
     }
-    // ゲームコンテンツを隠す (親コンテナ kanji-game-container は隠さない！)
     const content = document.getElementById('kanji-game-content');
     if(content) content.classList.add('hidden');
 };
 
-// ★修正: ゲーム開始関数
 window.startKanjiSet = function(mode) {
     window.currentMode = 'kanji';
     kanjiState.mode = mode;
     kanjiState.questionCount = 0;
     kanjiState.correctCount = 0;
     
-    // メニューを隠す
     document.getElementById('kanji-menu-container').style.display = 'none';
     
-    // ゲームコンテンツを表示
     const content = document.getElementById('kanji-game-content');
     if(content) content.classList.remove('hidden');
     
@@ -1075,9 +1069,11 @@ window.nextKanjiQuestion = async function() {
     }
     kanjiState.questionCount++;
     
-    // UI初期化
     kanjiState.guideVisible = false;
-    document.getElementById('kanji-hanamaru').style.display = 'none';
+    // ★修正: はなまる（赤丸）を隠すときは中身を空にして非表示
+    const hanamaru = document.getElementById('kanji-hanamaru');
+    if(hanamaru) { hanamaru.innerText = ""; hanamaru.style.display = 'none'; }
+
     document.getElementById('kanji-hint-readings').style.display = 'none';
     document.getElementById('guide-kanji-btn').innerText = "うすく表示";
     document.getElementById('kanji-progress').innerText = `${kanjiState.questionCount}/${kanjiState.maxQuestions} 問目`;
@@ -1094,7 +1090,6 @@ window.nextKanjiQuestion = async function() {
     qText.innerText = "問題を探してるにゃ…";
     window.updateNellMessage("問題を探してるにゃ…", "thinking");
 
-    // KANJI_DATA からランダムに選定
     let targetKanji = null;
     const grade = currentUser ? currentUser.grade : "1";
     
@@ -1119,10 +1114,8 @@ window.nextKanjiQuestion = async function() {
         if (data && data.kanji) {
             kanjiState.data = data;
             
-            // 問題文表示
             qText.innerHTML = data.question_display;
             
-            // 付帯情報の表示
             const strokesEl = document.getElementById('kanji-hint-strokes');
             if(strokesEl) strokesEl.innerText = data.kakusu ? `画数: ${data.kakusu}` : "";
             
@@ -1241,8 +1234,12 @@ window.checkKanji = async function() {
         const data = await res.json();
         window.updateNellMessage(data.comment, data.is_correct ? "happy" : "gentle", false, true);
         if (data.is_correct) {
+            // ★修正: 赤丸（○）の表示ロジック
             const hanamaru = document.getElementById('kanji-hanamaru');
-            hanamaru.style.display = 'block';
+            if (hanamaru) {
+                hanamaru.innerText = "○"; // テキストを設定
+                hanamaru.style.display = 'flex'; // 表示
+            }
             if(window.safePlay) window.safePlay(window.sfxMaru);
             kanjiState.correctCount++;
             
