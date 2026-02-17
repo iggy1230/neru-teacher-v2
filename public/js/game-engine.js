@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v469.1: 漢字ドリル表示バグ修正版) ---
+// --- js/game-engine.js (v469.1: 完全統合版) ---
 
 console.log("Game Engine Loading...");
 
