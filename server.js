@@ -1,4 +1,4 @@
-// --- server.js (v470.6: 漢字ドリル読み上げ修正 & 完全版) ---
+// --- server.js (v470.7: 漢字読み音声判定AI導入版) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -66,9 +66,8 @@ try {
 // Helper Functions
 // ==========================================
 
-// ★JSON抽出強化関数: 最初の {...} または [...] ブロックを正しく切り出す
+// ★JSON抽出強化関数
 function extractFirstJson(text) {
-    // 最初の '{' または '[' を探す
     const firstBrace = text.indexOf('{');
     const firstBracket = text.indexOf('[');
     
@@ -107,7 +106,6 @@ function extractFirstJson(text) {
         if (char === '\\' && !escape) escape = true;
         else escape = false;
     }
-    // 見つからなければ元のテキストを返す
     return text;
 }
 
@@ -165,7 +163,7 @@ const GENRE_REFERENCES = {
     ]
 };
 
-// ストック問題リスト (生成失敗時のフォールバック用)
+// ストック問題リスト
 const FALLBACK_QUIZZES = {
     "一般知識": [
         {
@@ -183,55 +181,6 @@ const FALLBACK_QUIZZES = {
             "fact_basis": "平年は365日、閏年は366日。"
         }
     ],
-    "雑学": [
-        {
-            "question": "パンダの好物と言えば何ですか？",
-            "options": ["笹（ササ）", "バナナ", "お肉", "魚"],
-            "answer": "笹（ササ）",
-            "explanation": "パンダは竹や笹を主食としています。",
-            "fact_basis": "ジャイアントパンダの主食は竹や笹。"
-        },
-        {
-            "question": "信号機の「進め」の色は何色ですか？",
-            "options": ["青", "赤", "黄色", "紫"],
-            "answer": "青",
-            "explanation": "正式には「青信号」と呼ばれていますが、実際の色は緑色に近いこともあります。",
-            "fact_basis": "道路交通法では青色灯火。"
-        }
-    ],
-    "ポケモン": [
-        {
-            "question": "ピカチュウの進化前のポケモンはどれですか？",
-            "options": ["ピチュー", "ライチュウ", "ミミッキュ", "プラスル"],
-            "answer": "ピチュー",
-            "explanation": "ピチューがなつくとピカチュウに進化します。",
-            "fact_basis": "ピチュー -> ピカチュウ -> ライチュウ"
-        },
-        {
-            "question": "最初の3匹のうち、炎タイプのポケモンはどれ？（カントー地方）",
-            "options": ["ヒトカゲ", "ゼニガメ", "フシギダネ", "ピカチュウ"],
-            "answer": "ヒトカゲ",
-            "explanation": "ヒトカゲは炎タイプ、ゼニガメは水タイプ、フシギダネは草タイプです。",
-            "fact_basis": "初代御三家はフシギダネ、ヒトカゲ、ゼニガメ。"
-        }
-    ],
-    "マインクラフト": [
-        {
-            "question": "クリーパーを倒すと手に入るアイテムはどれですか？",
-            "options": ["火薬", "骨", "腐った肉", "糸"],
-            "answer": "火薬",
-            "explanation": "クリーパーは爆発するモンスターなので、倒すと火薬を落とします。",
-            "fact_basis": "クリーパーのドロップアイテムは火薬。"
-        },
-        {
-            "question": "ネザーに行くために必要なゲートを作る材料は？",
-            "options": ["黒曜石", "ダイヤモンド", "鉄ブロック", "土"],
-            "answer": "黒曜石",
-            "explanation": "黒曜石を四角く並べて火をつけるとネザーゲートが開きます。",
-            "fact_basis": "ネザーポータルは黒曜石で枠を作る。"
-        }
-    ],
-    // デフォルト用
     "default": [
         {
             "question": "空が青いのはなぜですか？",
@@ -389,7 +338,7 @@ app.post('/generate-quiz', async (req, res) => {
             let text = result.response.text();
             
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const cleanText = extractFirstJson(text); // ★JSON抽出強化
+            const cleanText = extractFirstJson(text);
 
             let jsonResponse;
             try {
@@ -428,20 +377,16 @@ app.post('/generate-quiz', async (req, res) => {
             if (attempt >= MAX_RETRIES) {
                 console.log(`[Quiz Fallback] Switching to Stock Quiz for genre: ${genre}`);
                 
-                // ストック問題から選択
                 let stockList = FALLBACK_QUIZZES[genre];
-                
-                // 指定ジャンルがない、またはストックが空の場合はデフォルトを使用
                 if (!stockList || stockList.length === 0) {
                     stockList = FALLBACK_QUIZZES["default"];
                 }
-                
                 const fallbackQuiz = stockList[Math.floor(Math.random() * stockList.length)];
                 
                 res.json({
                     ...fallbackQuiz,
                     actual_genre: genre || "雑学",
-                    fallback: true // デバッグ用
+                    fallback: true 
                 });
                 return;
             }
@@ -493,7 +438,7 @@ app.post('/correct-quiz', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        const cleanText = extractFirstJson(text); // ★JSON抽出強化
+        const cleanText = extractFirstJson(text); 
         const jsonResponse = JSON.parse(cleanText);
         
         if (!jsonResponse.options.includes(jsonResponse.answer)) {
@@ -547,7 +492,7 @@ app.post('/generate-riddle', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
+        text = extractFirstJson(text); 
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Riddle Gen Error:", e);
@@ -580,7 +525,7 @@ app.post('/generate-minitest', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
+        text = extractFirstJson(text); 
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("MiniTest Gen Error:", e);
@@ -598,7 +543,6 @@ app.post('/generate-kanji', async (req, res) => {
         try {
             const { grade, mode, targetKanji } = req.body; 
             
-            // ★精度向上のため temperature を下げる
             const model = genAI.getGenerativeModel({ 
                 model: MODEL_FAST, 
                 generationConfig: { 
@@ -669,60 +613,74 @@ app.post('/generate-kanji', async (req, res) => {
             
             // 検証
             if (json.kanji && json.reading && json.question_display) {
-                 // ターゲット指定があった場合、答えが一致しているかチェック
                  if (targetKanji && json.kanji !== targetKanji) {
                      console.warn(`[Kanji Gen] Mismatch! Requested: ${targetKanji}, Got: ${json.kanji}. Retrying...`);
-                     continue; // リトライ
+                     continue; 
                  }
                  res.json(json);
                  return;
             }
         } catch (e) {
             console.error(`Kanji Gen Error (Attempt ${attempt}):`, e.message);
-            // ★リトライ待機: 429エラー等に備えて待機時間を設ける
             if (attempt < MAX_RETRIES) {
-                const waitTime = attempt * 2000; // 2秒, 4秒待機
+                const waitTime = attempt * 2000; 
                 console.log(`Waiting ${waitTime}ms before retry...`);
                 await sleep(waitTime);
             }
         }
     }
-    // リトライ失敗
     res.status(500).json({ error: "漢字が見つからないにゃ…" });
 });
 
 
-// --- 漢字採点 API ---
+// --- 漢字・読み採点 API (★機能拡張: テキスト判定追加) ---
 app.post('/check-kanji', async (req, res) => {
     try {
-        const { image, targetKanji } = req.body;
+        // userTextがあれば「読み判定モード」、imageがあれば「書き取り判定モード」
+        const { image, targetKanji, userText, targetReading } = req.body;
         const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
 
-        const prompt = `
-        これは子供が学習アプリで書いた手書きの漢字画像です。
-        書かれている文字が、ターゲットの漢字「${targetKanji}」として認識できるか判定してください。
-        【判定ルール】
-        1. **子供の字です**: 多少のバランスの崩れ、線の歪み、太さは許容してください。
-        2. **構成要素**: 漢字を構成するパーツ（偏と旁など）が正しく配置されていれば「正解」としてください。
+        if (userText && targetReading) {
+            // ★読み問題の音声回答判定（AI判定導入）
+            const prompt = `
+            あなたは国語の先生です。子供が漢字の読み問題を音声で答えました。
+            正誤判定を行ってください。
 
-        【出力JSONフォーマット】
-        {
-            "is_correct": true または false,
-            "comment": "ネル先生としてのコメント。正解なら『すごい！』と褒める。不正解なら『惜しい！〇〇の部分がちょっと違うかも？』と優しく教える。"
+            【問題】漢字: 「${targetKanji}」, 正解の読み: 「${targetReading}」
+            【子供の回答(音声認識結果)】: 「${userText}」
+
+            【判定ルール】
+            1. 音声認識の結果なので、漢字変換されてしまっている場合があります（例: 正解「こう」→ 回答「高」）。
+            2. 回答の読みが、正解の読みと一致していれば「正解」としてください。
+            3. 明らかに違う読みや、全く関係ない言葉なら「不正解」です。
+            4. 多少の言い回し（「答えは〇〇」など）が含まれていても、核心部分が合っていれば正解です。
+
+            出力JSON: { "is_correct": boolean, "comment": "ネル先生としての優しいコメント" }
+            `;
+            const result = await model.generateContent(prompt);
+            let text = extractFirstJson(result.response.text());
+            res.json(JSON.parse(text));
+
+        } else if (image) {
+            // 書き取り問題の画像判定
+            const prompt = `
+            これは子供が手書きした漢字の画像です。
+            ターゲット: 「${targetKanji}」
+            判定: 正しく書けているか（多少のバランス崩れは許容）
+            出力JSON: { "is_correct": boolean, "comment": "ネル先生としてのコメント" }
+            `;
+            const result = await model.generateContent([
+                prompt,
+                { inlineData: { mime_type: "image/png", data: image } }
+            ]);
+            let text = extractFirstJson(result.response.text());
+            res.json(JSON.parse(text));
+        } else {
+            res.status(400).json({ error: "Invalid request" });
         }
-        `;
-
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { mime_type: "image/png", data: image } }
-        ]);
-        
-        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
-        res.json(JSON.parse(text));
     } catch (e) {
-        console.error("Kanji Check Error:", e);
-        res.status(500).json({ is_correct: false, comment: "よく見えなかったにゃ…もう一回書いてみてにゃ？" });
+        console.error("Check Error:", e);
+        res.status(500).json({ is_correct: false, comment: "よくわからなかったにゃ…" });
     }
 });
 
@@ -947,9 +905,8 @@ app.post('/analyze', async (req, res) => {
         let problems = [];
         try {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-            cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
+            cleanText = extractFirstJson(cleanText); 
             
-            // 配列の場合は別途対応が必要だが、extractFirstJsonは配列も対応済み
             problems = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
@@ -977,7 +934,6 @@ app.post('/identify-item', async (req, res) => {
 
         let locationInfo = "";
         
-        // ★修正: 住所情報がある場合、それを絶対視する指示を追加
         if (address) {
             locationInfo = `
             【★最優先：場所の特定情報】
@@ -990,7 +946,6 @@ app.post('/identify-item', async (req, res) => {
             4. Google検索を行う際も、「${address} 観光」「${address} 公園」「${address} 店」などのキーワードを使って、その住所内での候補を探してください。
             `;
         } else if (location && location.lat && location.lon) {
-             // 住所文字列がなく、座標のみの場合 (基本的にはありえないが念のため)
             locationInfo = `
             【位置情報】
             GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
@@ -1056,7 +1011,6 @@ app.post('/identify-item', async (req, res) => {
             json = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error in identify-item:", e);
-            // フォールバック: エラーでクライアントを落とさない
             json = {
                 itemName: "なぞの物体",
                 rarity: 1, 
