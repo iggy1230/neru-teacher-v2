@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v468.2: 体育館ボタンonclick修正版) -->
+<!-- index.html (完全版 v470.1: 漢字ドリル完全修正版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -6,8 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
     <!-- CSSにもバージョン付与 -->
-    <link rel="stylesheet" href="style.css?v=468.2">
-    <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=470.1">
+    <!-- Google Fonts: 教科書体風フォントを追加 -->
+    <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&family=Klee+One:wght@400;600&family=Zen+Kurenaido&display=swap" rel="stylesheet">
     
     <!-- Leaflet (Map Library) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
@@ -41,7 +42,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v468.2-ButtonFix</div>
+            <div class="version-tag">Build: v470.1-FinalRevamp</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -177,7 +178,7 @@
             </div>
         </section>
 
-        <!-- ★修正: 体育館のボタンonclickを `window.` 呼び出しに統一 -->
+        <!-- 3-4. 体育館サブメニュー -->
         <section id="screen-playground" class="screen hidden">
             <h2 class="section-title" style="color:#fbc02d; text-shadow: 2px 2px 0 #fff;">🏀 体育館</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
@@ -445,7 +446,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 10. 漢字ドリル画面 (大幅リニューアル) -->
+        <!-- 10. 漢字ドリル画面 (大幅リニューアル: わら半紙風デザイン、詳細表示、花丸演出) -->
         <section id="screen-kanji" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-kanji"></div><div class="chat-bubble"><p id="nell-text-kanji">漢字の練習だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#ab47bc;">✍️ 漢字ドリル</h2>
@@ -479,16 +480,7 @@
                         <canvas id="kanji-canvas" width="300" height="300" class="hidden"></canvas>
                         <!-- 花丸表示用レイヤー -->
                         <div id="kanji-hanamaru" style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; display:none; z-index: 10;">
-                            <svg viewBox="0 0 100 100" style="width:100%; height:100%; drop-shadow: 2px 2px 2px rgba(0,0,0,0.2);">
-                                <path d="M50 10 
-                                         C20 10 10 30 10 50 
-                                         C10 80 30 90 50 90 
-                                         C80 90 90 70 90 50 
-                                         C90 20 70 10 50 10 
-                                         M30 40 
-                                         C30 40 40 60 70 30" 
-                                      fill="none" stroke="#ff1744" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
+                            <img src="assets/images/effects/hanamaru.png" class="hanamaru-stamp" alt="はなまる">
                         </div>
                     </div>
                     
@@ -579,7 +571,7 @@
     <script src="js/state/user.js?v=452.0"></script>
     <script src="js/voice-service.js?v=428.0"></script>
     <script src="js/camera-service.js?v=432.0"></script>
-    <script src="js/game-engine.js?v=470.0"></script>
+    <script src="js/game-engine.js?v=470.1"></script>
     <script src="js/analyze.js?v=450.0"></script>
 </body>
 </html>
