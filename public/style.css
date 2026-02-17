@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v470.2: 漢字ドリル赤丸対応版) --- */
+/* --- style.css (完全版 v470.5: リストハイライト & リトライ待機強化版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -555,6 +555,16 @@ button { font-family: inherit; }
     justify-content: space-between;
     align-items: center;
     width: 100%;
+}
+
+/* ★修正: ハイライトアニメーションの優先度向上 */
+@keyframes flashYellow {
+    0% { background-color: #fff176; box-shadow: 0 0 15px #fdd835; }
+    100% { background-color: white; box-shadow: none; }
+}
+
+.highlight-flash {
+    animation: flashYellow 2.0s ease-out !important;
 }
 
 .mini-teach-btn {
