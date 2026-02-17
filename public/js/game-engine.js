@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.0: 漢字ドリル大改造対応版) ---
+// --- js/game-engine.js (v468.2: ボタン呼び出し完全修正版) ---
 
 console.log("Game Engine Loading...");
 
@@ -204,7 +204,6 @@ window.drawGame = function() {
             window.gameRunning = false; if(window.safePlay) window.safePlay(window.sfxOver);
             if (window.score > 0) { 
                 window.giveGameReward(window.score); 
-                // カリカリキャッチは「スコア＝カリカリ」なのでそのまま
                 window.saveHighScore('karikari_catch', window.score);
                 if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`あ〜あ、落ちちゃったにゃ…。でも${window.score}個ゲットだにゃ！`, "sad"); 
             } else { 
@@ -231,7 +230,6 @@ window.drawGame = function() {
     if (allCleared) {
         window.gameRunning = false; 
         window.giveGameReward(window.score);
-        // カリカリキャッチは「スコア＝カリカリ」
         window.saveHighScore('karikari_catch', window.score);
         
         if(typeof window.updateNellMessage === 'function') window.updateNellMessage(`全部取ったにゃ！すごいにゃ！！${window.score}個ゲットだにゃ！`, "excited");
@@ -432,26 +430,22 @@ function spawnBullet() {
     danmakuState.bullets.push({ x: danmakuState.boss.x, y: danmakuState.boss.y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, ...bulletObj });
 }
 
-function gameOverDanmaku() {
-    danmakuState.running = false;
-    if (window.safePlay) window.safePlay(window.sfxOver);
-
-    // ★報酬はゲームスコアそのものにする
+function gameOverDanmaku() { 
+    danmakuState.running = false; 
+    if(window.safePlay) window.safePlay(window.sfxOver);
+    
     const reward = danmakuState.score;
-
-    // ★ランキングには「獲得カリカリ数(reward)」を保存
     window.saveHighScore('vs_robot', reward);
 
-    if (reward > 0) {
-        window.giveGameReward(reward);
-        window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${reward}個ゲットだにゃ！`, "sad");
-    } else {
-        window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad");
+    if (reward > 0) { 
+        window.giveGameReward(reward); 
+        window.updateNellMessage(`あぶにゃい！ぶつかったにゃ！でも${reward}個ゲットだにゃ！`, "sad"); 
+    } else { 
+        window.updateNellMessage("すぐにぶつかっちゃったにゃ…", "sad"); 
     }
-
-    const startBtn = document.getElementById('start-danmaku-btn');
-    startBtn.disabled = false;
-    startBtn.innerText = "もう一回！";
+    
+    const startBtn = document.getElementById('start-danmaku-btn'); 
+    startBtn.disabled = false; startBtn.innerText = "もう一回！";
 }
 
 function drawDanmakuFrame() {
@@ -1115,12 +1109,15 @@ window.nextKanjiQuestion = async function() {
     try {
         const res = await fetch('/generate-kanji', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ grade: grade, mode: kanjiState.mode, targetKanji: targetKanji })
+            body: JSON.stringify({ 
+                grade: grade, 
+                mode: kanjiState.mode,
+                targetKanji: targetKanji 
+            })
         });
         const data = await res.json();
         if (data && data.kanji) {
             kanjiState.data = data;
-            window.currentMinitest = data; 
             
             // 問題文表示
             qText.innerHTML = data.question_display;
@@ -1135,7 +1132,7 @@ window.nextKanjiQuestion = async function() {
                 if(data.onyomi) hints.push(`音: ${data.onyomi}`);
                 if(data.kunyomi) hints.push(`訓: ${data.kunyomi}`);
                 hintDiv.innerText = hints.join(' / ');
-                hintDiv.style.display = 'none'; // 正解時に表示
+                hintDiv.style.display = 'none';
             }
 
             window.updateNellMessage(data.question_speech, "normal", false, true);
@@ -1225,7 +1222,6 @@ window.toggleKanjiGuide = function() {
     tempCanvas.getContext('2d').putImageData(currentImage, 0, 0);
     kanjiState.ctx.drawImage(tempCanvas, 0, 0);
 };
-
 
 window.checkKanji = async function() {
     if (!kanjiState.data || kanjiState.data.type !== 'writing') return;
@@ -1619,4 +1615,4 @@ window.showGameRanking = function(gameKey, title) {
     } else {
         console.error("showRanking is missing!");
     }
-};```
+};
