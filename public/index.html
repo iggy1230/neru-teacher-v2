@@ -1,4 +1,4 @@
-<!-- index.html (完全版 v470.1: 漢字ドリル完全修正版) -->
+<!-- index.html (完全版 v470.3: 漢字ドリル精度向上 & 全機能復元) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
     <!-- CSSにもバージョン付与 -->
-    <link rel="stylesheet" href="style.css?v=470.1">
+    <link rel="stylesheet" href="style.css?v=470.2">
     <!-- Google Fonts: 教科書体風フォントを追加 -->
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&family=Klee+One:wght@400;600&family=Zen+Kurenaido&display=swap" rel="stylesheet">
     
@@ -42,7 +42,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v470.1-FinalRevamp</div>
+            <div class="version-tag">Build: v470.3</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -281,7 +281,6 @@
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-game"></div><div class="chat-bubble"><p id="nell-text-game">カリカリキャッチで遊ぶにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px;">🍖 カリカリ・キャッチ</h2>
             <div class="game-container"><canvas id="game-canvas" width="320" height="400"></canvas><div class="game-ui"><p>スコア: <span id="game-score">0</span></p><button id="start-game-btn" class="main-btn pink-btn" style="width: auto;">スタート！</button></div>
-            <!-- ★修正: showRanking を直接呼び出す -->
             <button onclick="window.showRanking('karikari_catch', '🏆 カリカリキャッチ ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button>
             </div>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
@@ -297,14 +296,13 @@
                     <p>スコア: <span id="danmaku-score">0</span></p>
                     <button id="start-danmaku-btn" onclick="startDanmakuGame()" class="main-btn red-btn" style="width: auto;">スタート！</button>
                 </div>
-                <!-- ★修正: showRanking を直接呼び出す -->
                 <button onclick="window.showRanking('vs_robot', '🏆 VS掃除機 ランキング')" class="main-btn orange-btn" style="width:auto; margin-top:10px;">🏆 ランキングを見る</button>
             </div>
             <p style="font-size:0.8rem; color:white; text-align:center; margin-top:5px;">※茶色のカリカリだけ取ってね！他はダメ！<br>画面をドラッグして移動</p>
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- ★新規: お宝神経衰弱 (ボタン修正版) -->
+        <!-- ★新規: お宝神経衰弱 -->
         <section id="screen-memory-game" class="screen hidden">
             <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div class="nell-chat" style="flex:1;"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-memory"></div><div class="chat-bubble"><p id="nell-text-memory">神経衰弱で勝負にゃ！</p></div></div>
@@ -318,7 +316,6 @@
                 <button onclick="startMemoryGame('normal')" class="main-btn orange-btn">中 (x20倍)</button>
                 <button onclick="startMemoryGame('strong')" class="main-btn red-btn">強 (x50倍)</button>
                 
-                <!-- ★修正: showRanking を直接呼び出す -->
                 <button onclick="window.showRanking('memory_match', '🏆 神経衰弱 ランキング')" class="main-btn blue-btn" style="margin-top:20px;">🏆 ランキングを見る</button>
             </div>
 
@@ -336,7 +333,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 9. クイズ画面 (音声ボタン対応版) -->
+        <!-- 9. クイズ画面 -->
         <section id="screen-quiz" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-quiz"></div><div class="chat-bubble"><p id="nell-text-quiz">ウルトラクイズに挑戦だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#42a5f5;">🎤 ウルトラクイズ</h2>
@@ -413,7 +410,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- ★新規: なぞなぞ画面 (★修正: 音声ボタン追加) -->
+        <!-- ★新規: なぞなぞ画面 -->
         <section id="screen-riddle" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-riddle"></div><div class="chat-bubble"><p id="nell-text-riddle">なぞなぞを出すにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#e91e63;">❓ なぞなぞ</h2>
@@ -446,7 +443,7 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- 10. 漢字ドリル画面 (大幅リニューアル: わら半紙風デザイン、詳細表示、花丸演出) -->
+        <!-- 10. 漢字ドリル画面 (はなまる画像削除版) -->
         <section id="screen-kanji" class="screen hidden">
             <div class="nell-chat"><div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-kanji"></div><div class="chat-bubble"><p id="nell-text-kanji">漢字の練習だにゃ！</p></div></div>
             <h2 class="section-title" style="margin-top:10px; color:#ab47bc;">✍️ 漢字ドリル</h2>
@@ -478,10 +475,8 @@
                     <!-- キャンバスエリア (相対配置) -->
                     <div style="position: relative; width: 300px; height: 300px; margin: 0 auto;">
                         <canvas id="kanji-canvas" width="300" height="300" class="hidden"></canvas>
-                        <!-- 花丸表示用レイヤー -->
-                        <div id="kanji-hanamaru" style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; display:none; z-index: 10;">
-                            <img src="assets/images/effects/hanamaru.png" class="hanamaru-stamp" alt="はなまる">
-                        </div>
+                        <!-- 花丸表示用レイヤー (空のコンテナ) -->
+                        <div id="kanji-hanamaru" style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; display:none; z-index: 10; display:flex; align-items:center; justify-content:center;"></div>
                     </div>
                     
                     <!-- コントロールボタン -->
@@ -563,7 +558,6 @@
     <script src="js/card-generator.js"></script>
     <script src="js/audio/audio.js"></script>
     
-    <!-- ★ここに追加: 漢字データ -->
     <script src="js/config/kanji-data.js?v=1.0"></script>
     
     <script src="js/ui/ranking.js?v=468.3"></script> 
@@ -571,7 +565,7 @@
     <script src="js/state/user.js?v=452.0"></script>
     <script src="js/voice-service.js?v=428.0"></script>
     <script src="js/camera-service.js?v=432.0"></script>
-    <script src="js/game-engine.js?v=470.1"></script>
+    <script src="js/game-engine.js?v=470.2"></script>
     <script src="js/analyze.js?v=450.0"></script>
 </body>
 </html>
