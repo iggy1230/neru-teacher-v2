@@ -1,4 +1,4 @@
-// --- js/analyze.js (v450.0: クロップ表示完全修正版) ---
+// --- js/analyze.js (v450.1: スクロール位置復元機能追加版) ---
 
 // グローバル変数
 window.currentLocation = null;
@@ -6,6 +6,7 @@ window.currentAddress = null; // 住所文字列
 window.locationWatchId = null;
 window.isHomeworkDetected = false; // 解析画像が宿題かどうかのフラグ
 window.lastAnalysisTime = 0;
+window.lastSelectedProblemId = null; // ★新規: ヒント画面遷移前のスクロール位置復元用ID
 
 // 画像処理用変数
 window.cropImg = null;
@@ -495,8 +496,13 @@ window.renderMistakeSelection = function() {
 
 window.startHint = function(id) {
     if (window.initAudioContext) window.initAudioContext().catch(e=>{});
+    
     window.selectedProblem = window.transcribedProblems.find(p => p.id == id); 
     if (!window.selectedProblem) return window.updateNellMessage("データエラーだにゃ", "thinking", false);
+    
+    // ★新規: 現在見ている問題のIDを保存して、戻ってきたときにスクロールできるようにする
+    window.lastSelectedProblemId = id;
+
     if (!window.selectedProblem.currentHintLevel) window.selectedProblem.currentHintLevel = 1;
     if (window.selectedProblem.maxUnlockedHintLevel === undefined) window.selectedProblem.maxUnlockedHintLevel = 0;
     ['problem-selection-view', 'grade-sheet-container', 'answer-display-area', 'chalkboard'].forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
@@ -639,9 +645,28 @@ window.updateGradingMessage = function() {
     }
 };
 
+// ★修正: リスト画面に戻った際にスクロール位置を復元
 window.backToProblemSelection = function() { 
     document.getElementById('final-view').classList.add('hidden'); document.getElementById('hint-detail-container').classList.add('hidden'); document.getElementById('chalkboard').classList.add('hidden'); document.getElementById('answer-display-area').classList.add('hidden'); 
-    if (window.currentMode === 'grade') window.showGradingView(); else { window.renderProblemSelection(); window.updateNellMessage("他も見るにゃ？", "normal", false); } 
+    
+    if (window.currentMode === 'grade') {
+        window.showGradingView(); 
+    } else { 
+        window.renderProblemSelection(); 
+        window.updateNellMessage("他も見るにゃ？", "normal", false); 
+    } 
+    
+    // スクロール位置復元処理
+    if (window.lastSelectedProblemId) {
+        setTimeout(() => {
+            const target = document.getElementById(`grade-item-${window.lastSelectedProblemId}`);
+            if (target) {
+                target.scrollIntoView({ behavior: 'auto', block: 'center' });
+            }
+            window.lastSelectedProblemId = null; // リセット
+        }, 100);
+    }
+
     const backBtn = document.getElementById('main-back-btn'); if(backBtn) { backBtn.classList.remove('hidden'); backBtn.onclick = window.backToLobby; } 
 };
 
