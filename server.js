@@ -1,4 +1,4 @@
-// --- server.js (v470.3: 完全版 - 漢字ドリル精度向上 & 全機能復元) ---
+// --- server.js (v470.4: 漢字ドリル読み仮名修正 & 完全版) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -180,7 +180,55 @@ const FALLBACK_QUIZZES = {
             "fact_basis": "平年は365日、閏年は366日。"
         }
     ],
-    // その他のフォールバックは省略せず必要に応じて追加
+    "雑学": [
+        {
+            "question": "パンダの好物と言えば何ですか？",
+            "options": ["笹（ササ）", "バナナ", "お肉", "魚"],
+            "answer": "笹（ササ）",
+            "explanation": "パンダは竹や笹を主食としています。",
+            "fact_basis": "ジャイアントパンダの主食は竹や笹。"
+        },
+        {
+            "question": "信号機の「進め」の色は何色ですか？",
+            "options": ["青", "赤", "黄色", "紫"],
+            "answer": "青",
+            "explanation": "正式には「青信号」と呼ばれていますが、実際の色は緑色に近いこともあります。",
+            "fact_basis": "道路交通法では青色灯火。"
+        }
+    ],
+    "ポケモン": [
+        {
+            "question": "ピカチュウの進化前のポケモンはどれですか？",
+            "options": ["ピチュー", "ライチュウ", "ミミッキュ", "プラスル"],
+            "answer": "ピチュー",
+            "explanation": "ピチューがなつくとピカチュウに進化します。",
+            "fact_basis": "ピチュー -> ピカチュウ -> ライチュウ"
+        },
+        {
+            "question": "最初の3匹のうち、炎タイプのポケモンはどれ？（カントー地方）",
+            "options": ["ヒトカゲ", "ゼニガメ", "フシギダネ", "ピカチュウ"],
+            "answer": "ヒトカゲ",
+            "explanation": "ヒトカゲは炎タイプ、ゼニガメは水タイプ、フシギダネは草タイプです。",
+            "fact_basis": "初代御三家はフシギダネ、ヒトカゲ、ゼニガメ。"
+        }
+    ],
+    "マインクラフト": [
+        {
+            "question": "クリーパーを倒すと手に入るアイテムはどれですか？",
+            "options": ["火薬", "骨", "腐った肉", "糸"],
+            "answer": "火薬",
+            "explanation": "クリーパーは爆発するモンスターなので、倒すと火薬を落とします。",
+            "fact_basis": "クリーパーのドロップアイテムは火薬。"
+        },
+        {
+            "question": "ネザーに行くために必要なゲートを作る材料は？",
+            "options": ["黒曜石", "ダイヤモンド", "鉄ブロック", "土"],
+            "answer": "黒曜石",
+            "explanation": "黒曜石を四角く並べて火をつけるとネザーゲートが開きます。",
+            "fact_basis": "ネザーポータルは黒曜石で枠を作る。"
+        }
+    ],
+    // デフォルト用
     "default": [
         {
             "question": "空が青いのはなぜですか？",
@@ -582,11 +630,11 @@ app.post('/generate-kanji', async (req, res) => {
             ${mode === 'writing' ? `
             【書き取り問題の作成ルール (絶対厳守)】
             1. ターゲットの漢字「${targetKanji}」を含む短い例文を作成してください。
-            2. 例文の中で、**ターゲットの漢字「${targetKanji}」の部分だけをひらがなに変換**し、
+            2. 例文の中で、**ターゲットの漢字「${targetKanji}」に対応する読み仮名全体**をひらがなに変換し、
                そのひらがな部分を \`<span style='color:red;'>...</span>\` タグで囲んで強調してください。
-            3. **重要**: ターゲット以外の漢字は、学年に応じてそのまま漢字で書くか、難しければひらがなにしてください。
-               ただし、**出題対象の箇所は必ず赤字のひらがな**にしてください。
-            4. 例: 「犬」が出題の場合 → 「かわいい<span style='color:red;'>いぬ</span>が走る。」
+            3. **重要**: 「私（わたし）」のように読みが複数文字の場合、**「わた」ではなく「わたし」全体**を赤字にしてください。送り仮名がある場合（例：強（つよ）い）は、漢字部分（つよ）のみを赤字にしてください。
+            4. 例: 「私」が出題の場合 → 「これは<span style='color:red;'>わたし</span>の宝物です。」
+            5. 例: 「犬」が出題の場合 → 「かわいい<span style='color:red;'>いぬ</span>が走る。」
             ` : `
             【読み問題の作成ルール】
             1. ターゲットの漢字「${targetKanji}」を含む短い例文を作成してください。
@@ -888,6 +936,7 @@ app.post('/analyze', async (req, res) => {
             let cleanText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
             cleanText = extractFirstJson(cleanText); // ★JSON抽出強化
             
+            // 配列の場合は別途対応が必要だが、extractFirstJsonは配列も対応済み
             problems = JSON.parse(cleanText);
         } catch (e) {
             console.error("JSON Parse Error:", responseText);
@@ -915,6 +964,7 @@ app.post('/identify-item', async (req, res) => {
 
         let locationInfo = "";
         
+        // ★修正: 住所情報がある場合、それを絶対視する指示を追加
         if (address) {
             locationInfo = `
             【★最優先：場所の特定情報】
@@ -927,6 +977,7 @@ app.post('/identify-item', async (req, res) => {
             4. Google検索を行う際も、「${address} 観光」「${address} 公園」「${address} 店」などのキーワードを使って、その住所内での候補を探してください。
             `;
         } else if (location && location.lat && location.lon) {
+             // 住所文字列がなく、座標のみの場合 (基本的にはありえないが念のため)
             locationInfo = `
             【位置情報】
             GPS座標: 緯度 ${location.lat}, 経度 ${location.lon}
