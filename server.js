@@ -1,5 +1,3 @@
-// --- server.js (v469.1: 完全版) ---
-
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
 import cors from 'cors';
@@ -616,28 +614,23 @@ app.post('/generate-kanji', async (req, res) => {
             
             ${instruction}
 
-            【絶対厳守: 回答は1文字限定】
-            - 今回練習する漢字は「${targetKanji || "正解の漢字"}」の**1文字だけ**です。
-            - **絶対に2文字以上の熟語全体（例：「規則」）を答えさせないでください。**
-            - 熟語を出題する場合は、対象の漢字部分だけをひらがなにしてください。
-              - 悪い例: 「<span style='color:red;'>きそく</span>を守る」（答え：規則 -> 2文字なのでNG）
-              - 良い例: 「<span style='color:red;'>き</span>則を守る」（答え：規 -> 1文字なのでOK）
+            【重要: データ充実化】
+            - 出題する漢字の「画数」「音読み」「訓読み」も正確に提供してください。
+            - 例文は、その学年の子供が理解できる自然な内容にしてください。
 
-            【絶対厳守: 整合性チェック】
-            - **作成した例文の中で、対象の漢字「${targetKanji || "正解の漢字"}」が、指定された読み方や意味で正しく使われていることを必ず確認してください。**
-            - 「手短（てみじか）」の「短」を「簡（かん）」と間違えるような、**不適切な漢字の当てはめは厳禁**です。
-            - 例文は、小学${grade}年生が理解できる自然な日本語にしてください。
-
-            【絶対厳守: 言語制限】
-            - **全てのテキスト（問題文、答え、解説、読み上げ）は、完全に「日本語」で記述してください。**
-            - **"reading" フィールドは必ず「ひらがな」にしてください。**
+            【絶対厳守: 整合性】
+            - 「手短（てみじか）」の「短」を「簡」とするような間違いは厳禁です。
+            - 書き取り問題の場合、対象の漢字1文字だけを答える形式にしてください。
 
             【出力JSONフォーマット】
             {
                 "type": "${mode}",
                 "kanji": "${targetKanji || "正解の漢字"}",
                 "reading": "正解の読み仮名（ひらがな）",
-                "question_display": "画面表示用HTML（書き取りなら<span style='color:red;'>ひらがな</span>、読みなら<span style='color:red;'>漢字</span>）",
+                "onyomi": "音読み（カタカナ、なければ空文字）",
+                "kunyomi": "訓読み（ひらがな、なければ空文字）",
+                "kakusu": "画数（数字のみ）",
+                "question_display": "画面表示用HTML",
                 "question_speech": "読み上げ用テキスト"
             }
             `;
