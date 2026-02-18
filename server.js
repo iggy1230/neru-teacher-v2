@@ -1,4 +1,4 @@
-// --- server.js (v470.11: 完全版 - 省略なし) ---
+// --- server.js (v470.12: 完全版 - 省略なし) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -66,7 +66,6 @@ try {
 // Helper Functions & Constants
 // ==========================================
 
-// JSON抽出強化関数
 function extractFirstJson(text) {
     const firstBrace = text.indexOf('{');
     const firstBracket = text.indexOf('[');
@@ -321,7 +320,7 @@ app.post('/generate-quiz', async (req, res) => {
             const currentLevel = level || 1;
             let difficultyDesc = "";
             switch(parseInt(currentLevel)) {
-                case 1: difficultyDesc = `小学${grade}年生ウェルカムな、基礎的な事実`; break;
+                case 1: difficultyDesc = `小学${grade}年生向けの基礎的な事実`; break;
                 case 2: difficultyDesc = `ファンなら確実に知っている標準的な事実`; break;
                 case 3: difficultyDesc = `少し詳しい人が知っている事実`; break;
                 case 4: difficultyDesc = `かなり詳しい人向けの事実`; break;
@@ -384,7 +383,7 @@ app.post('/generate-quiz', async (req, res) => {
             let text = result.response.text();
             
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const cleanText = extractFirstJson(text); // ★JSON抽出強化
+            const cleanText = extractFirstJson(text);
 
             let jsonResponse;
             try {
@@ -1086,10 +1085,10 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- 反応系 (★給食反応 - 個数分岐あり) ---
+// --- 給食反応 API (★コメントスタイル統一版) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
-        const { count, name, amount } = req.body;
+        const { name, amount } = req.body; 
         await appendToServerLog(name, `給食をくれた(今回:${amount}個)。`);
         
         const model = genAI.getGenerativeModel({ 
@@ -1106,45 +1105,39 @@ app.post('/lunch-reaction', async (req, res) => {
         let prompt = "";
         let isSpecial = false;
 
-        // ★個数による分岐ロジック
+        // ★個数による分岐ロジック (コメントスタイルを統一)
         if (numAmount >= 10000) {
             isSpecial = true;
-            prompt = `あなたは猫の「ネル先生」。生徒の「${name}さん」から、なんと一度に${numAmount}個もの給食（カリカリ）をもらいました！
+            prompt = `あなたは猫の「ネル先生」。生徒「${name}」から一度に${numAmount}個もの給食（カリカリ）をもらいました！
                【ルール】
                1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
-               2. **神様、仏様、${name}様！**と崇めるレベルで、我を忘れて感謝し、絶叫してください。
-               3. 文字数は100文字以内で、熱量はMAX（限界突破）。
-               4. 語尾は「にゃ！！！！」や「だにゃぁぁぁ！！」など、興奮を表現してください。`;
+               2. **猫としてのアイデンティティを保ちつつ**、思わずクスッと笑えるような独特な食レポや感謝の言葉を、**限界突破の熱量**で表現してください。
+               3. 文字数は100文字程度で、壮大な比喩や詩的な表現をふんだんに使ってください。
+               4. 語尾は「にゃ！！！！」や「だにゃぁぁぁ！！」など、興奮を最大限に表現してください。`;
         } else if (numAmount >= 5000) {
             isSpecial = true;
-            prompt = `あなたは猫の「ネル先生」。生徒の「${name}さん」から、一度に${numAmount}個もの大量の給食（カリカリ）をもらいました！
+            prompt = `あなたは猫の「ネル先生」。生徒「${name}」から一度に${numAmount}個もの大量の給食（カリカリ）をもらいました！
                【ルール】
                1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
-               2. 夢のようだ、一生ついていく、といったニュアンスで、狂喜乱舞してください。
-               3. 文字数は80文字以内。
+               2. クスッと笑える独特な食レポや感謝の言葉を、**狂喜乱舞するほどの熱量**で表現してください。
+               3. 文字数は80文字程度で。
                4. 語尾は「にゃ！！」など強く。`;
         } else if (numAmount >= 1000) {
             isSpecial = true;
-            prompt = `あなたは猫の「ネル先生」。生徒の「${name}さん」から、一度に${numAmount}個の給食（カリカリ）をもらいました！
+            prompt = `あなたは猫の「ネル先生」。生徒「${name}」から一度に${numAmount}個の給食（カリカリ）をもらいました！
                【ルール】
                1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
-               2. 「こんなにもらっていいのかにゃ！？」と驚きつつ、盛大に感謝してください。
-               3. 文字数は60文字以内。`;
+               2. クスッと笑える独特な食レポや感謝の言葉を、**驚きと感謝が入り混じった熱量**で表現してください。
+               3. 文字数は60文字程度。`;
         } else if (numAmount >= 100) {
-            prompt = `あなたは猫の「ネル先生」。生徒の「${name}さん」から、一度に${numAmount}個の給食（カリカリ）をもらいました。
+            prompt = `あなたは猫の「ネル先生」。生徒「${name}」から一度に${numAmount}個の給食（カリカリ）をもらいました。
                【ルール】
                1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
-               2. 「豪勢だにゃ！」「お腹いっぱい食べれるにゃ！」と、かなり喜んでください。
-               3. 文字数は50文字以内。`;
-        } else if (numAmount >= 10) {
-            prompt = `あなたは猫の「ネル先生」。生徒の「${name}さん」から、${numAmount}個の給食（カリカリ）をもらいました。
-               【ルール】
-               1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
-               2. 「おっ、今日はちょっと多いにゃ？」「嬉しいにゃ！」と、上機嫌で感謝してください。
-               3. 文字数は40文字以内。`;
+               2. クスッと笑える独特な食レポや感想を、**かなり喜んでいる様子**で表現してください。
+               3. 文字数は50文字程度。`;
         } else {
-            // 1〜9個 (通常)
-            prompt = `あなたは猫の「ネル先生」。生徒の「${name}さん」から給食（カリカリ）を${numAmount}個もらって食べました。
+            // 1〜99個
+            prompt = `あなたは猫の「ネル先生」。生徒「${name}」から給食（カリカリ）を${numAmount}個もらって食べました。
                【ルール】
                1. 相手を呼ぶときは必ず「${name}さん」と呼ぶこと。
                2. 思わずクスッと笑ってしまうような、独特な食レポや、猫ならではの感想を30文字以内で言ってください。
