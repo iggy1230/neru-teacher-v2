@@ -1,4 +1,4 @@
-// --- server.js (v470.9: 完全版) ---
+// --- server.js (v470.11: 完全版 - 省略なし) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -63,9 +63,10 @@ try {
 } catch (e) { console.error("Init Error:", e.message); }
 
 // ==========================================
-// Helper Functions
+// Helper Functions & Constants
 // ==========================================
 
+// JSON抽出強化関数
 function extractFirstJson(text) {
     const firstBrace = text.indexOf('{');
     const firstBracket = text.indexOf('[');
@@ -118,7 +119,6 @@ function getSubjectInstructions(subject) {
     }
 }
 
-// ジャンルごとの信頼できる参照URLリスト
 const GENRE_REFERENCES = {
     "魔法陣グルグル": [
         "https://dic.pixiv.net/a/%E9%AD%94%E6%B3%95%E9%99%A3%E3%82%B0%E3%83%AB%E3%82%B0%E3%83%AB",
@@ -162,7 +162,6 @@ const GENRE_REFERENCES = {
     ]
 };
 
-// ストック問題リスト
 const FALLBACK_QUIZZES = {
     "一般知識": [
         {
@@ -688,7 +687,7 @@ app.post('/generate-kanji', async (req, res) => {
 });
 
 
-// --- 漢字・読み採点 API (★機能拡張: テキスト判定追加) ---
+// --- 漢字採点 API (★機能拡張: テキスト判定追加) ---
 app.post('/check-kanji', async (req, res) => {
     try {
         // userTextがあれば「読み判定モード」、imageがあれば「書き取り判定モード」
@@ -1087,10 +1086,10 @@ app.post('/identify-item', async (req, res) => {
     }
 });
 
-// --- 給食反応 API (★大幅改修: 個数に応じた反応) ---
+// --- 反応系 (★給食反応 - 個数分岐あり) ---
 app.post('/lunch-reaction', async (req, res) => {
     try {
-        const { count, name, amount } = req.body; // count: 累計(未使用), amount: 今回あげた数
+        const { count, name, amount } = req.body;
         await appendToServerLog(name, `給食をくれた(今回:${amount}個)。`);
         
         const model = genAI.getGenerativeModel({ 
@@ -1158,8 +1157,7 @@ app.post('/lunch-reaction', async (req, res) => {
     } catch (error) { 
         console.error("Lunch Reaction Error:", error); 
         const fallbacks = ["おいしいにゃ！", "うまうまにゃ！", "カリカリ最高にゃ！", "ありがとにゃ！", "元気が出たにゃ！"];
-        const randomFallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-        res.json({ reply: randomFallback, isSpecial: false }); 
+        res.json({ reply: fallbacks[0], isSpecial: false }); 
     }
 });
 
