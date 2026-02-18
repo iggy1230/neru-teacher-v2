@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v470.1: 漢字ドリルデザイン強化 & はなまる演出版) --- */
+/* --- style.css (完全版 v470.13: ランキングメニュースクロール修正版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1492,10 +1492,19 @@ button { font-family: inherit; }
     padding: 10px 5px;
     margin-bottom: 10px;
     -webkit-overflow-scrolling: touch;
-    scrollbar-width: none; /* Firefox */
+    width: 100%; /* 幅を明示 */
 }
+
+/* スクロールバーを操作可能にするため表示 (デザイン調整) */
 .ranking-menu-scroll::-webkit-scrollbar {
-    display: none; /* Chrome/Safari */
+    height: 6px;
+}
+.ranking-menu-scroll::-webkit-scrollbar-thumb {
+    background: rgba(141, 110, 99, 0.4);
+    border-radius: 3px;
+}
+.ranking-menu-scroll::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 .ranking-tab-btn {
