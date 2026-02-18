@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.7: 漢字音声AI判定 & 完全版) ---
+// --- js/game-engine.js (v470.8: 漢字ドリルランキング対応 & 完全版) ---
 
 console.log("Game Engine Loading...");
 
@@ -785,7 +785,7 @@ window.finishQuizSet = function() {
     let totalReward = correctCount * rewardPerCorrect;
     if (correctCount === 0) totalReward = 10;
 
-    // ★修正: ランキングには「獲得カリカリ数(totalReward)」を保存
+    // ランキングには「獲得カリカリ数(totalReward)」を保存
     window.saveHighScore(`quiz_${quizState.genre}`, totalReward);
 
     let msg = "";
@@ -906,7 +906,7 @@ window.nextRiddle = async function() {
         else if (riddleState.score > 0) msg = `${riddleState.score}問正解！カリカリ${reward}個あげるにゃ！`;
         else msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
         
-        // ★修正: なぞなぞにもランキングがあればここで reward を保存する
+        // なぞなぞにもランキングがあればここで reward を保存する
         // window.saveHighScore('riddle', reward); 
         
         window.giveGameReward(reward);
@@ -1055,6 +1055,10 @@ window.nextKanjiQuestion = async function() {
         if (kanjiState.correctCount === 5) msg = `全問正解！すごいにゃ！カリカリ${reward}個あげるにゃ！`;
         else if (kanjiState.correctCount > 0) msg = `${kanjiState.correctCount}問正解！カリカリ${reward}個あげるにゃ！`;
         else msg = `残念、全問不正解だにゃ…。次はがんばるにゃ！`;
+        
+        // ★追加: ランキング保存
+        window.saveHighScore('kanji_drill', reward);
+
         window.giveGameReward(reward);
         window.updateNellMessage(msg, "happy", false, true);
         alert(msg);
@@ -1113,20 +1117,18 @@ window.nextKanjiQuestion = async function() {
             const controls = document.getElementById('kanji-controls');
             const giveupBtn = document.getElementById('giveup-kanji-btn');
             
-            // ★UI切り替えロジック
             if (data.type === 'writing') {
                 cvs.classList.remove('hidden'); 
                 mic.classList.add('hidden'); 
-                controls.style.display = 'flex'; // 書き取り用ボタン表示
+                controls.style.display = 'flex'; 
                 giveupBtn.style.display = 'inline-block';
                 window.clearKanjiCanvas();
             } else {
                 cvs.classList.add('hidden'); 
-                mic.classList.remove('hidden'); // マイクボタン表示
-                controls.style.display = 'none'; // 書き取り用ボタン非表示
+                mic.classList.remove('hidden'); 
+                controls.style.display = 'none'; 
                 giveupBtn.style.display = 'inline-block';
                 
-                // マイクボタン初期化
                 const micBtn = document.getElementById('kanji-mic-btn');
                 if (micBtn) { micBtn.disabled = false; micBtn.innerHTML = '<span style="font-size:1.5rem;">🎤</span> 声で答える'; micBtn.style.background = "#4db6ac"; }
             }
@@ -1214,7 +1216,7 @@ window.processKanjiSuccess = function(comment) {
     ansDisplay.classList.remove('hidden');
     document.getElementById('kanji-answer-text').innerText = kanjiState.data.kanji;
     const detailText = document.getElementById('kanji-answer-detail');
-    if(detailText) detailText.innerHTML = `音読み: ${kanjiState.data.onyomi || "-"} / 訓読み: ${kanjiState.data.kunyomi || "-"} / 画数: ${kanjiState.data.kakusu || "-"}画`;
+    if(detailText) detailText.innerHTML = `音読み: ${kanjiState.data.onyomi || "-"}<br>訓読み: ${kanjiState.data.kunyomi || "-"}<br>画数: ${kanjiState.data.kakusu || "-"}画`;
     
     // 花丸表示
     const hanamaru = document.getElementById('kanji-hanamaru');
@@ -1571,7 +1573,7 @@ window.endMemoryGame = function() {
         if (pScore === nScore) reward = pScore * settings.reward; // 引き分けでもスコア分あげる
     }
 
-    // ★修正: ランキングには「獲得カリカリ数(reward)」を保存
+    // ランキングには「獲得カリカリ数(reward)」を保存
     window.saveHighScore('memory_match', reward);
 
     if (pScore > nScore) {
