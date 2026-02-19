@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v1.1: みんなのシール帳対応・画像追加版) ---
+// --- js/ui/sticker.js (v1.1: みんなのシール帳・ゴミ箱・画像追加版) ---
 
 // 画像プール (ランダム用)
 const STICKER_IMAGES = [
@@ -109,6 +109,13 @@ window.loadAndRenderStickers = async function(userId) {
     // 自分かどうか判定
     const isMe = (currentUser && currentUser.id === userId);
 
+    // ゴミ箱の表示制御 (自分のみ)
+    const trash = document.getElementById('sticker-trash');
+    if (trash) {
+        if (isMe) trash.classList.remove('hidden');
+        else trash.classList.add('hidden');
+    }
+
     if (isMe) {
         stickers = currentUser.stickers || [];
     } else {
@@ -174,18 +181,30 @@ window.createStickerElement = function(data, editable = true) {
     return div;
 };
 
-// 操作ロジック（ドラッグ＆回転）
+// 操作ロジック（ドラッグ＆回転 & ゴミ箱）
 window.attachStickerEvents = function(el, data) {
     let isDragging = false;
     let startX, startY;
     let initialLeft, initialTop;
     let moved = false;
+    const trash = document.getElementById('sticker-trash');
+
+    // ゴミ箱との当たり判定
+    const isOverTrash = (element) => {
+        if (!trash) return false;
+        const r1 = element.getBoundingClientRect();
+        const r2 = trash.getBoundingClientRect();
+        return !(r1.right < r2.left || 
+                 r1.left > r2.right || 
+                 r1.bottom < r2.top || 
+                 r1.top > r2.bottom);
+    };
 
     // ドラッグ開始
     const startDrag = (e) => {
-        if (e.target.closest('.main-btn')) return; // ボタン等は除外
+        if (e.target.closest('.main-btn')) return; 
         e.preventDefault();
-        e.stopPropagation(); // 他のシールへの干渉防止
+        e.stopPropagation();
 
         isDragging = true;
         moved = false;
@@ -193,13 +212,15 @@ window.attachStickerEvents = function(el, data) {
         // 最前面へ
         el.style.zIndex = 999;
         
+        // ゴミ箱をアクティブ表示（少し大きくする等）
+        if (trash) trash.classList.add('active');
+        
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         
         startX = clientX;
         startY = clientY;
         
-        // 現在の％位置を読み取る
         initialLeft = parseFloat(el.style.left);
         initialTop = parseFloat(el.style.top);
     };
@@ -215,28 +236,34 @@ window.attachStickerEvents = function(el, data) {
         const dx = clientX - startX;
         const dy = clientY - startY;
         
-        // 移動量判定（タップ判定用）
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
 
         const parentRect = el.parentElement.getBoundingClientRect();
         
-        // ピクセル移動量を％に変換
         const dxPercent = (dx / parentRect.width) * 100;
         const dyPercent = (dy / parentRect.height) * 100;
         
         let newX = initialLeft + dxPercent;
         let newY = initialTop + dyPercent;
         
-        // 画面外へのはみ出し制限 (0% ~ 100%)
-        newX = Math.max(0, Math.min(100, newX));
-        newY = Math.max(0, Math.min(100, newY));
+        // 画面外へのはみ出し制限は一旦解除（ゴミ箱が外にあるかもしれないので）
+        // ただし、極端に行き過ぎないように
+        newX = Math.max(-20, Math.min(120, newX));
+        newY = Math.max(-20, Math.min(120, newY));
 
         el.style.left = newX + '%';
         el.style.top = newY + '%';
         
-        // データ更新（一時的）
-        data.x = newX;
-        data.y = newY;
+        // ゴミ箱の上にあるか判定してスタイル変更
+        if (trash) {
+            if (isOverTrash(el)) {
+                trash.classList.add('hover');
+                el.style.opacity = '0.5'; // 消える予兆
+            } else {
+                trash.classList.remove('hover');
+                el.style.opacity = '1';
+            }
+        }
     };
 
     // ドラッグ終了
@@ -244,17 +271,55 @@ window.attachStickerEvents = function(el, data) {
         if (!isDragging) return;
         isDragging = false;
         
+        // ゴミ箱のリセット
+        if (trash) {
+            trash.classList.remove('active');
+            trash.classList.remove('hover');
+        }
+        
+        // ゴミ箱判定
+        if (moved && trash && isOverTrash(el)) {
+            // 削除実行
+            if (window.sfxBatu) window.safePlay(window.sfxBatu); // ポイ捨て音代わり
+            
+            // DOM削除
+            el.remove();
+            
+            // データ削除
+            if (currentUser && currentUser.stickers) {
+                currentUser.stickers = currentUser.stickers.filter(s => s.id !== data.id);
+                if (typeof window.saveAndSync === 'function') window.saveAndSync();
+            }
+            return; // 終了
+        }
+        
+        // 削除されなかった場合の位置調整（画面内に戻す）
+        let currentLeft = parseFloat(el.style.left);
+        let currentTop = parseFloat(el.style.top);
+        currentLeft = Math.max(0, Math.min(100, currentLeft));
+        currentTop = Math.max(0, Math.min(100, currentTop));
+        
+        el.style.left = currentLeft + '%';
+        el.style.top = currentTop + '%';
+        el.style.opacity = '1';
+
+        // データ更新
+        data.x = currentLeft;
+        data.y = currentTop;
+
         if (!moved) {
-            // クリック（タップ）時の動作：回転
+            // タップ回転
             data.rotation = (data.rotation || 0) + 45;
             el.style.transform = `translate(-50%, -50%) rotate(${data.rotation}deg) scale(${data.scale || 1})`;
             if (window.sfxBtn) window.safePlay(window.sfxBtn);
         } else {
-            // 移動終了時
-            // zIndexを確定
+            // zIndex確定
             data.zIndex = 10 + Math.floor(Math.random() * 50); 
             el.style.zIndex = data.zIndex;
         }
+        
+        // 保存
+        if (typeof window.saveAndSync === 'function') window.saveAndSync();
     };
 
     el.addEventListener('mousedown', startDrag);
@@ -269,11 +334,6 @@ window.attachStickerEvents = function(el, data) {
 
 window.saveStickers = function() {
     if (!currentUser) return;
-    
-    // 現在のcurrentUser.stickers は、参照渡しされている data オブジェクトが
-    // 操作によって直接更新されているため、そのまま保存すればOK。
-    // ただし、念のためFirestoreへ同期
-    
     if (typeof window.saveAndSync === 'function') {
         window.saveAndSync();
         alert("シール帳を保存したにゃ！");
@@ -313,10 +373,9 @@ window.openStickerUserList = async function() {
         
         snapshot.forEach(doc => {
             const user = doc.data();
-            // 自分は除外してもいいが、あえて含めても良い（リストに自分がいればわかりやすい）
             
             const div = document.createElement('div');
-            div.className = "memory-item"; // 既存スタイル流用
+            div.className = "memory-item"; 
             div.style.alignItems = "center";
             div.style.cursor = "pointer";
             div.onclick = () => {
