@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.14: 完全版 - ランキング＆漢字ドリル強化) ---
+// --- js/game-engine.js (v470.15: 漢字ドリルはなまる修正・音声認識改善版) ---
 
 console.log("Game Engine Loading...");
 
