@@ -1,6 +1,21 @@
-// --- js/ui/sticker.js (v1.0: ファイルベース・バインダー対応版) ---
+// --- js/ui/sticker.js (v1.1: みんなのシール帳対応・画像追加版) ---
 
-// シールデータの構造: { id, src, x, y, rotation, scale, zIndex }
+// 画像プール (ランダム用)
+const STICKER_IMAGES = [
+    // ステッカーフォルダ (MAX_COUNT=2 なので 001, 002)
+    'assets/images/sticker/sticker001.png',
+    'assets/images/sticker/sticker002.png',
+    // キャラクター
+    'assets/images/characters/nell-normal.png',
+    'assets/images/characters/nell-happy.png',
+    'assets/images/characters/nell-excited.png',
+    // アイテム・ゲーム
+    'assets/images/items/nikukyuhanko.png',
+    'assets/images/game/souji/neru_dot.png',
+    'assets/images/game/souji/runba_dot.png',
+    'assets/images/game/souji/kari1_dot.png',
+    'assets/images/game/souji/churu_dot.png'
+];
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -14,16 +29,12 @@ window.showStickerBook = function(targetUserId = null) {
     window.loadAndRenderStickers(userId);
 };
 
-window.grantRandomSticker = function() {
+window.grantRandomSticker = function(fromLunch = false) {
     if (!currentUser) return;
     
-    // 1 ～ MAX_COUNT の乱数を生成
-    const max = window.STICKER_FILE_MAX_COUNT || 10; 
-    const num = Math.floor(Math.random() * max) + 1;
-    const formattedNum = String(num).padStart(3, '0');
-    const fileName = `sticker${formattedNum}.png`;
-    // ★修正: パスを絶対パス (/assets/...) に変更
-    const filePath = `/assets/images/sticker/${fileName}`;
+    // 画像プールからランダムに選択
+    const randomIndex = Math.floor(Math.random() * STICKER_IMAGES.length);
+    const filePath = STICKER_IMAGES[randomIndex];
     
     // 新しいシールデータ作成
     const newSticker = {
@@ -45,19 +56,26 @@ window.grantRandomSticker = function() {
     // 演出
     if(window.safePlay) window.safePlay(window.sfxHirameku);
     
-    // 画像をプリロードして確認（エラーならアラートでごまかす）
-    const img = new Image();
-    img.onload = () => {
-        alert(`🎉 おめでとう！\n累計1000個達成で「シールNo.${num}」をゲットしたにゃ！\nシール帳に貼っておいたにゃ！`);
-    };
-    img.onerror = () => {
-        // 画像がない場合
-        alert(`🎉 おめでとう！\n累計1000個達成だにゃ！`);
-    };
-    img.src = filePath;
+    // 給食からの呼び出しなら特別なメッセージ
+    if (fromLunch) {
+        window.updateNellMessage("いっぱいくれたお礼に特製シールをあげるにゃ！", "excited", false, true);
+        
+        // 画像をプリロードして確認（エラーならアラートでごまかす）
+        const img = new Image();
+        img.onload = () => {
+            alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\nシール帳に貼っておいたにゃ！`);
+        };
+        img.onerror = () => {
+            alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！`);
+        };
+        img.src = filePath;
+    } else {
+        // 通常の呼び出し
+        alert(`🎉 シールをゲットしたにゃ！`);
+    }
 };
 
-window.loadAndRenderStickers = function(userId) {
+window.loadAndRenderStickers = async function(userId) {
     const board = document.getElementById('sticker-board');
     if (!board) return;
     board.innerHTML = ''; // クリア
@@ -87,17 +105,35 @@ window.loadAndRenderStickers = function(userId) {
 
     // ユーザーデータ取得
     let stickers = [];
-    if (currentUser && currentUser.id === userId) {
+    
+    // 自分かどうか判定
+    const isMe = (currentUser && currentUser.id === userId);
+
+    if (isMe) {
         stickers = currentUser.stickers || [];
+    } else {
+        // 他人のデータはFirestoreから取得
+        if (db) {
+            try {
+                const doc = await db.collection("users").doc(String(userId)).get();
+                if (doc.exists) {
+                    const data = doc.data();
+                    stickers = data.stickers || [];
+                    window.updateNellMessage(`${data.name}さんのシール帳だにゃ！`, "happy");
+                }
+            } catch (e) {
+                console.error("Sticker Fetch Error:", e);
+            }
+        }
     }
 
     stickers.forEach(s => {
-        const el = window.createStickerElement(s);
+        const el = window.createStickerElement(s, isMe); // isMeを渡す（編集可否制御のため）
         board.appendChild(el);
     });
 };
 
-window.createStickerElement = function(data) {
+window.createStickerElement = function(data, editable = true) {
     const div = document.createElement('div');
     div.className = 'sticker-item';
     div.id = data.id;
@@ -128,8 +164,12 @@ window.createStickerElement = function(data) {
     
     div.appendChild(img);
 
-    // イベントリスナー登録 (操作ロジック)
-    window.attachStickerEvents(div, data);
+    // イベントリスナー登録 (操作ロジック) - 自分のシール帳のみ操作可能
+    if (editable) {
+        window.attachStickerEvents(div, data);
+    } else {
+        div.style.cursor = 'default';
+    }
 
     return div;
 };
@@ -238,4 +278,73 @@ window.saveStickers = function() {
         window.saveAndSync();
         alert("シール帳を保存したにゃ！");
     }
+};
+
+// ==========================================
+// ★ みんなのシール帳 (ユーザー選択モーダル)
+// ==========================================
+
+window.openStickerUserList = async function() {
+    const modal = document.getElementById('sticker-user-modal');
+    const listContainer = document.getElementById('sticker-user-list');
+    if (!modal || !listContainer) return;
+    
+    modal.classList.remove('hidden');
+    listContainer.innerHTML = '<p style="text-align:center; padding:20px;">読み込み中にゃ...</p>';
+    
+    if (!db) {
+        listContainer.innerHTML = '<p style="text-align:center; color:red;">データベースにつながってないにゃ...</p>';
+        return;
+    }
+
+    try {
+        // 最近ログインしたユーザーを取得
+        const snapshot = await db.collection("users")
+            .orderBy("lastLogin", "desc")
+            .limit(20)
+            .get();
+            
+        listContainer.innerHTML = "";
+        
+        if (snapshot.empty) {
+            listContainer.innerHTML = '<p style="text-align:center;">まだ誰もいないにゃ。</p>';
+            return;
+        }
+        
+        snapshot.forEach(doc => {
+            const user = doc.data();
+            // 自分は除外してもいいが、あえて含めても良い（リストに自分がいればわかりやすい）
+            
+            const div = document.createElement('div');
+            div.className = "memory-item"; // 既存スタイル流用
+            div.style.alignItems = "center";
+            div.style.cursor = "pointer";
+            div.onclick = () => {
+                window.closeStickerUserList();
+                window.showStickerBook(user.id);
+            };
+            
+            const iconSrc = user.photo || 'assets/images/characters/nell-normal.png';
+            const stickerCount = (user.stickers && Array.isArray(user.stickers)) ? user.stickers.length : 0;
+            
+            div.innerHTML = `
+                <img src="${iconSrc}" style="width:40px; height:40px; border-radius:50%; object-fit:cover; margin-right:10px; border:1px solid #ddd;">
+                <div style="flex:1;">
+                    <div style="font-weight:bold; color:#333;">${window.cleanDisplayString(user.name)}</div>
+                    <div style="font-size:0.7rem; color:#888;">シール: ${stickerCount}枚</div>
+                </div>
+                <button class="mini-teach-btn" style="background:#e91e63;">みる</button>
+            `;
+            listContainer.appendChild(div);
+        });
+        
+    } catch(e) {
+        console.error("User List Error:", e);
+        listContainer.innerHTML = '<p style="text-align:center; color:red;">読み込めなかったにゃ...</p>';
+    }
+};
+
+window.closeStickerUserList = function() {
+    const modal = document.getElementById('sticker-user-modal');
+    if (modal) modal.classList.add('hidden');
 };
