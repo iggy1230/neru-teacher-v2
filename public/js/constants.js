@@ -6,7 +6,7 @@
 window.currentMode = '';
 window.currentSubject = '';
 window.isAnalyzing = false;
-window.lastAnalysisTime = 0; // ★新規: 最後の分析開始時間を記録
+window.lastAnalysisTime = 0; 
 window.transcribedProblems = [];
 window.selectedProblem = null;
 window.hintIndex = 0;
@@ -73,18 +73,11 @@ window.subjectImages = {
 window.defaultIcon = 'assets/images/characters/nell-normal.png';
 window.talkIcon = 'assets/images/characters/nell-talk.png';
 
-// ★新規: シール定義
+// ★新規: シール設定
+window.STICKER_FILE_MAX_COUNT = 3; // sticker001.png ～ sticker003.png まで用意されていると仮定
 window.STICKER_TYPES = [
-    { id: 'paw_red', src: 'assets/images/items/nikukyuhanko.png', name: '赤肉球' },
-    { id: 'paw_gold', text: '🐾', color: '#ffd700', name: '金肉球' }, 
-    { id: 'fish', text: '🐟', name: 'おさかな' },
-    { id: 'flower', text: '💮', name: 'はなまる' },
-    { id: 'star', text: '⭐', name: 'おほしさま' },
-    { id: 'cat_face', text: '🐱', name: 'ねこ' },
-    { id: 'sparkle', text: '✨', name: 'キラキラ' },
-    { id: 'heart', text: '💖', name: 'ハート' },
-    { id: 'sushi', text: '🍣', name: 'おすし' },
-    { id: 'medal', text: '🏅', name: 'メダル' }
+    // ファイルベースのシールは動的に生成されるため、ここは固定の特殊シール用などに使えるが、
+    // 今回はファイルベースをメインにするため、空でも良い。
 ];
 
 // ==========================================
