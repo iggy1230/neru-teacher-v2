@@ -495,7 +495,8 @@ window.giveLunch = function() {
         // シール獲得！
         if (typeof window.grantRandomSticker === 'function') {
             setTimeout(() => {
-                window.grantRandomSticker();
+                // 引数 true は「給食画面からの獲得」を示す
+                window.grantRandomSticker(true);
             }, 1500); // 食べた後に演出
         }
     }
