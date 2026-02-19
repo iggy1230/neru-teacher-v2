@@ -1643,8 +1643,8 @@ button { font-family: inherit; }
 }
 
 .sticker-img {
-    width: 60px; /* 基本サイズ */
-    height: 60px;
+    width: 90px; /* 基本サイズ 1.5倍に拡大 (60px -> 90px) */
+    height: 90px;
     object-fit: contain;
     pointer-events: none; 
 }
