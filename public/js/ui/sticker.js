@@ -18,11 +18,12 @@ window.grantRandomSticker = function() {
     if (!currentUser) return;
     
     // 1 ～ MAX_COUNT の乱数を生成
-    const max = window.STICKER_FILE_MAX_COUNT || 10; // デフォルト10
+    const max = window.STICKER_FILE_MAX_COUNT || 10; 
     const num = Math.floor(Math.random() * max) + 1;
     const formattedNum = String(num).padStart(3, '0');
     const fileName = `sticker${formattedNum}.png`;
-    const filePath = `assets/images/sticker/${fileName}`;
+    // ★修正: パスを絶対パス (/assets/...) に変更
+    const filePath = `/assets/images/sticker/${fileName}`;
     
     // 新しいシールデータ作成
     const newSticker = {
@@ -71,9 +72,7 @@ window.loadAndRenderStickers = function(userId) {
     clasp.className = 'binder-clasp';
     const container = document.getElementById('sticker-board-container');
     if (container) {
-        // 留め具はcontainerに追加（overflow:hiddenの影響を受けないように調整もできるが、今回はboard内でもOK）
-        // ただしboardはoverflow:hiddenなので、containerにappendする
-        // 既存の留め具があれば削除
+        // 留め具はcontainerに追加
         const oldClasp = container.querySelector('.binder-clasp');
         if (oldClasp) oldClasp.remove();
         container.appendChild(clasp);
@@ -111,7 +110,7 @@ window.createStickerElement = function(data) {
 
     // 画像
     const img = document.createElement('img');
-    // data.src があればそれを使う。なければ typeId から（後方互換）
+    // data.src があればそれを使う
     if (data.src) {
         img.src = data.src;
     } else if (window.STICKER_TYPES) {
