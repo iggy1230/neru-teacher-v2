@@ -1,11 +1,11 @@
-<!-- index.html (完全版 v470.14: 1000個あげるボタン追加版) -->
+<!-- index.html (完全版 v470.16: シール帳ゴミ箱機能追加版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
-    <link rel="stylesheet" href="style.css?v=470.14">
+    <link rel="stylesheet" href="style.css?v=470.16">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&family=Klee+One:wght@400;600&family=Zen+Kurenaido&display=swap" rel="stylesheet">
     <!-- ライブラリ群 -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -35,7 +35,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v470.14</div>
+            <div class="version-tag">Build: v470.16</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -80,9 +80,9 @@
                 <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
                 <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
                 <button onclick="showRanking('karikari', '🏆 カリカリランキング')" class="main-btn" style="background-color:#8d6e63 !important; box-shadow: 0 4px 0 #5d4037 !important;">📋 廊下の掲示板</button>
+                <button onclick="window.showStickerBook()" class="main-btn" style="background-color:#e91e63 !important; box-shadow: 0 4px 0 #c2185b !important;">📒 シール帳をみる</button>
                 <button onclick="selectMode('chat')" class="main-btn" style="background-color:#5c6bc0 !important; box-shadow: 0 4px 0 #3949ab !important;">💎 ネル先生のお宝図鑑</button>
                 <button onclick="showMap()" class="main-btn" style="background-color:#29b6f6 !important; box-shadow: 0 4px 0 #0288d1 !important;">🗺️ 足あとマップ</button>
-                <button onclick="window.showStickerBook()" class="main-btn" style="background-color:#e91e63 !important; box-shadow: 0 4px 0 #c2185b !important;">📒 シール帳をみる</button>
                 <button onclick="backToTitle()" class="main-btn gray-btn">👋 帰宅する</button>
             </div>
         </section>
@@ -118,6 +118,7 @@
             <h2 class="section-title">🍽️ 給食室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
                 <button onclick="selectMode('lunch')" class="main-btn pink-btn">🍽️ おいしい給食</button>
+                <button onclick="window.showStickerBook()" class="main-btn" style="background-color:#e91e63 !important; box-shadow: 0 4px 0 #c2185b !important;">📒 シール帳をみる</button>
                 <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
             </div>
         </section>
@@ -149,14 +150,22 @@
         <!-- ★ シール帳画面 -->
         <section id="screen-sticker-book" class="screen hidden" style="padding-top:60px;">
             <h2 class="section-title" style="color:#e91e63; text-shadow: 2px 2px 0 #fff;">📒 シール帳</h2>
+            <div style="display:flex; justify-content:center; gap:10px; margin-bottom:5px;">
+                <button onclick="window.showStickerBook()" class="main-btn pink-btn" style="width:auto; padding:5px 15px; font-size:0.9rem; margin:0;">じぶんの</button>
+                <button onclick="window.openStickerUserList()" class="main-btn green-btn" style="width:auto; padding:5px 15px; font-size:0.9rem; margin:0; background-color:#8d6e63 !important; box-shadow:0 3px 0 #5d4037 !important;">みんなの</button>
+            </div>
             <div id="sticker-board-container">
                 <div id="sticker-board">
                     <!-- シール要素がここに追加されます -->
                     <div id="sticker-guide-text" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:rgba(0,0,0,0.3); font-weight:bold; pointer-events:none;">ここにシールを貼ってね</div>
                 </div>
             </div>
+            <!-- ゴミ箱 -->
+            <div id="sticker-trash" class="hidden">🗑️</div>
+            
             <p style="text-align:center; font-size:0.8rem; color:white; margin-top:5px; text-shadow:1px 1px 2px rgba(0,0,0,0.5);">
-                ドラッグで移動、タップで回転だにゃ！
+                ドラッグで移動、タップで回転だにゃ！<br>
+                いらないシールはゴミ箱へポイだにゃ！
             </p>
             <div style="text-align:center; margin-top:10px;">
                 <button onclick="window.saveStickers()" class="main-btn blue-btn" style="width:auto; display:inline-block; padding:10px 20px;">💾 保存する</button>
@@ -407,8 +416,7 @@
         </section>
     </div>
 
-    <!-- モーダル類 (既存のものと同じ) -->
-    <!-- ... (camera-modal, cropper-modal, memory-manager-modal, collection-modal, timer-modal, memory-match-modal) ... -->
+    <!-- モーダル類 -->
     <div id="inline-whiteboard" class="hidden whiteboard-overlay"><div class="whiteboard-board"><p style="margin:0 0 10px 0; color:#8d6e63; font-weight:bold;">ネル先生のメモ</p><div id="whiteboard-content" class="whiteboard-text"></div><button onclick="document.getElementById('inline-whiteboard').classList.add('hidden')" class="close-board-btn">✖ 閉じる</button></div></div>
     <div id="camera-modal" class="camera-modal hidden"><div class="camera-container"><video id="camera-video" autoplay playsinline></video><div class="camera-guide-box"><p>枠に合わせてにゃ</p></div></div><div class="camera-controls"><button id="camera-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="camera-shutter-btn" class="camera-shutter-btn"></button></div><canvas id="camera-canvas" style="display:none;"></canvas></div>
     <div id="cropper-modal" class="camera-modal hidden"><div class="cropper-wrapper"><canvas id="crop-canvas"></canvas><svg id="crop-lines" style="position:absolute; top:0; left:0; pointer-events:none; width:100%; height:100%;"></svg><div id="handle-tl" class="crop-handle" style="top:0; left:0;"></div><div id="handle-tr" class="crop-handle" style="top:0; right:0;"></div><div id="handle-br" class="crop-handle" style="bottom:0; right:0;"></div><div id="handle-bl" class="crop-handle" style="bottom:0; left:0;"></div></div><div class="camera-controls"><button id="cropper-cancel-btn" class="main-btn gray-btn" style="width:100px;">やめる</button><button id="cropper-ok-btn" class="main-btn pink-btn" style="width:120px;">決定！</button></div></div>
@@ -434,6 +442,14 @@
             <button onclick="skipMemoryExplanation()" class="main-btn orange-btn" style="margin-top:15px; width:auto; padding:10px 30px; box-shadow:0 4px 0 #e65100;">次へ ▶</button>
         </div>
     </div>
+    <!-- ★シール帳ユーザー選択モーダル -->
+    <div id="sticker-user-modal" class="memory-modal-overlay hidden">
+        <div class="memory-modal-content">
+            <h3 style="text-align:center; margin:0 0 10px 0; color:#5c6bc0;">🎒 みんなのシール帳</h3>
+            <div id="sticker-user-list" class="memory-list" style="flex:1; overflow-y:auto;"></div>
+            <button onclick="closeStickerUserList()" class="main-btn gray-btn" style="margin-top:10px;">閉じる</button>
+        </div>
+    </div>
     
     <script src="js/config/firebase-config.js"></script>
     <script src="js/constants.js"></script>
@@ -448,6 +464,6 @@
     <script src="js/camera-service.js?v=432.0"></script>
     <script src="js/game-engine.js?v=470.7"></script>
     <script src="js/analyze.js?v=470.1"></script>
-    <script src="js/ui/sticker.js?v=1.0"></script>
+    <script src="js/ui/sticker.js?v=1.1"></script>
 </body>
 </html>
