@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.15: 漢字ドリルはなまる修正・音声認識改善版) ---
+// --- js/game-engine.js (v470.16: 漢字ドリルはなまるシンプル化版) ---
 
 console.log("Game Engine Loading...");
 
@@ -1305,15 +1305,16 @@ window.processKanjiSuccess = function(comment) {
     const detailText = document.getElementById('kanji-answer-detail');
     if(detailText) detailText.innerHTML = `音読み: ${kanjiState.data.onyomi || "-"} / 訓読み: ${kanjiState.data.kunyomi || "-"} / 画数: ${kanjiState.data.kakusu || "-"}画`;
     
-    // ★修正: はなまる表示アニメーション
+    // ★修正: はなまる表示 (シンプルな「○」)
     const hanamaru = document.getElementById('kanji-hanamaru');
     if (hanamaru) { 
-        hanamaru.innerText = "💮"; 
+        hanamaru.innerText = "○"; 
         hanamaru.className = "hanamaru-stamp"; // CSSアニメーション適用
         hanamaru.style.display = 'flex'; 
-        hanamaru.style.fontSize = "150px";
-        hanamaru.style.color = "#ff5252";
-        hanamaru.style.textShadow = "2px 2px 0 #fff";
+        hanamaru.style.fontSize = "200px";
+        hanamaru.style.color = "rgba(255, 50, 50, 0.7)";
+        hanamaru.style.textShadow = "none";
+        hanamaru.style.fontFamily = "sans-serif";
     }
 };
 
