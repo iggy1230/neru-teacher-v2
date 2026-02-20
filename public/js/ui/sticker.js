@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v2.5: シール消失バグ修正版) ---
+// --- js/ui/sticker.js (v2.6: ドラッグ操作修正・完全版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -18,6 +18,7 @@ window.grantRandomSticker = async function(fromLunch = false) {
         return;
     }
 
+    // 演出開始
     if(window.safePlay) window.safePlay(window.sfxHirameku);
 
     try {
@@ -39,8 +40,9 @@ window.grantRandomSticker = async function(fromLunch = false) {
             id: 'st_' + Date.now() + '_' + Math.floor(Math.random()*1000),
             src: url,
             location: 'newArea', 
-            x: 10 + Math.random() * 60, // はみ出し防止のため範囲を狭める
-            y: 10 + Math.random() * 50, 
+            // 枠内からはみ出さないようにマージンを持たせる
+            x: 20 + Math.random() * 60, 
+            y: 20 + Math.random() * 40, 
             rotation: (Math.random() * 40 - 20),
             scale: 1.0,
             zIndex: 100 
@@ -111,7 +113,6 @@ window.loadAndRenderStickers = async function(userId) {
     }
 
     stickers.forEach(s => {
-        // 所属エリアに応じて配置
         const parentEl = (s.location === 'newArea') ? newArea : board;
         const el = window.createStickerElement(s, isMe);
         parentEl.appendChild(el);
@@ -148,10 +149,13 @@ window.createStickerElement = function(data, editable = true) {
     return div;
 };
 
+// ★修正: ドラッグ処理のロジック
 window.attachStickerEvents = function(el, data) {
     let isDragging = false;
-    let startX, startY, initialLeft, initialTop;
+    let startX, startY;
+    let initialLeft, initialTop; // 画面上の絶対座標(中心)
     let moved = false;
+    
     const trash = document.getElementById('sticker-trash');
     const board = document.getElementById('sticker-board');
     const newArea = document.getElementById('new-sticker-area');
@@ -171,34 +175,47 @@ window.attachStickerEvents = function(el, data) {
 
         isDragging = true;
         moved = false;
-        el.style.zIndex = 999;
-        if (trash) trash.classList.add('active');
-
-        // 親コンテナの影響を受けないように、一時的にbody直下に移動
-        document.body.appendChild(el);
-
+        
+        // タッチ座標の取得
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        
-        // 画面全体での絶対座標を取得
-        const rect = el.getBoundingClientRect();
-        initialLeft = rect.left;
-        initialTop = rect.top;
         startX = clientX;
         startY = clientY;
+
+        // 現在の矩形情報を取得
+        const rect = el.getBoundingClientRect();
+        
+        // ★重要: CSSで translate(-50%, -50%) しているため、
+        // left/top は「要素の中心座標」に合わせる必要がある
+        initialLeft = rect.left + rect.width / 2;
+        initialTop = rect.top + rect.height / 2;
+
+        // body直下に移動させて、親要素のoverflowなどの影響を受けないようにする
+        document.body.appendChild(el);
+        el.style.zIndex = 9999;
+        
+        // 座標を固定値(px)に変換してセット
+        el.style.left = initialLeft + 'px';
+        el.style.top = initialTop + 'px';
+
+        if (trash) trash.classList.add('active');
     };
 
     const onDrag = (e) => {
         if (!isDragging) return;
         e.preventDefault();
+        
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
         const dx = clientX - startX;
         const dy = clientY - startY;
+        
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
 
-        el.style.left = `${initialLeft + dx}px`;
-        el.style.top = `${initialTop + dy}px`;
+        // 追従
+        el.style.left = (initialLeft + dx) + 'px';
+        el.style.top = (initialTop + dy) + 'px';
         
         if (trash) {
             if (isOverTrash(el)) {
@@ -214,12 +231,13 @@ window.attachStickerEvents = function(el, data) {
     const endDrag = (e) => {
         if (!isDragging) return;
         isDragging = false;
+        
         if (trash) {
             trash.classList.remove('active');
             trash.classList.remove('hover');
         }
         
-        // ゴミ箱判定
+        // ゴミ箱処理
         if (moved && trash && isOverTrash(el)) {
             if (window.sfxBatu) window.safePlay(window.sfxBatu); 
             el.remove();
@@ -227,23 +245,19 @@ window.attachStickerEvents = function(el, data) {
                 currentUser.stickers = currentUser.stickers.filter(s => s.id !== data.id);
                 if (typeof window.saveAndSync === 'function') window.saveAndSync();
             }
-            // ★削除されたことを通知
             alert("シールを捨てたにゃ！🗑️");
             return;
         }
 
-        // --- ドロップ場所の判定ロジックを強化 ---
+        // --- ドロップ位置の判定と親要素への戻し ---
         const stickerRect = el.getBoundingClientRect();
         const newAreaRect = newArea.getBoundingClientRect();
         
-        let targetParent;
-        let finalX, finalY;
-
-        // シールの中心点
+        // シールの中心Y座標
         const stickerCenterY = stickerRect.top + stickerRect.height / 2;
 
-        // ★修正: 「新規エリア」の上端よりも上にあったら、問答無用で「シール帳」に移動させる
-        // （シール帳の座標取得に頼ると隙間で消える可能性があるため、境界線で判定）
+        let targetParent;
+        // 「新規エリア」の上端より上なら「シール帳(board)」とみなす
         if (stickerCenterY < newAreaRect.top) {
             targetParent = board;
             data.location = 'board';
@@ -252,35 +266,41 @@ window.attachStickerEvents = function(el, data) {
             data.location = 'newArea';
         }
 
+        // 親要素内での相対座標(%)を計算
         const parentRect = targetParent.getBoundingClientRect();
+        const stickerCenterX = stickerRect.left + stickerRect.width / 2;
+        // stickerCenterY は上で計算済み
+
+        let finalX = (stickerCenterX - parentRect.left) / parentRect.width * 100;
+        let finalY = (stickerCenterY - parentRect.top) / parentRect.height * 100;
         
-        // 親要素内での相対位置(%)を計算
-        finalX = ((stickerRect.left + stickerRect.width / 2) - parentRect.left) / parentRect.width * 100;
-        finalY = ((stickerRect.top + stickerRect.height / 2) - parentRect.top) / parentRect.height * 100;
-        
-        // ★修正: はみ出しすぎて見えなくならないように座標を制限 (0%〜90%)
-        finalX = Math.max(0, Math.min(90, finalX));
-        finalY = Math.max(0, Math.min(90, finalY));
+        // 画面外に行き過ぎないように制限 (-20% ~ 120% 程度は許容)
+        finalX = Math.max(-20, Math.min(120, finalX));
+        finalY = Math.max(-20, Math.min(120, finalY));
 
         // DOMツリーを正しい親に戻す
         targetParent.appendChild(el);
         
-        el.style.left = `${finalX}%`;
-        el.style.top = `${finalY}%`;
+        el.style.left = finalX + '%';
+        el.style.top = finalY + '%';
+        el.style.zIndex = data.zIndex || 10;
         el.style.opacity = '1';
         
         // データ更新
         data.x = finalX;
         data.y = finalY;
 
+        // タップ（移動なし）の場合は回転
         if (!moved) {
             data.rotation = (data.rotation || 0) + 45;
             el.style.transform = `translate(-50%, -50%) rotate(${data.rotation}deg) scale(${data.scale || 1})`;
             if (window.sfxBtn) window.safePlay(window.sfxBtn);
         } else {
+            // 移動した場合はZ-Indexを更新して手前に
             data.zIndex = 10 + Math.floor(Math.random() * 50); 
             el.style.zIndex = data.zIndex;
         }
+        
         if (typeof window.saveAndSync === 'function') window.saveAndSync();
     };
 
