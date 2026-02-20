@@ -565,7 +565,10 @@ window.startHint = function(id) {
     window.lastSelectedProblemId = id;
 
     if (!window.selectedProblem.currentHintLevel) window.selectedProblem.currentHintLevel = 1;
-    if (window.selectedProblem.maxUnlockedHintLevel === undefined) window.selectedProblem.maxUnlockedHintLevel = 0;.forEach(i => { const el = document.getElementById(i); if(el) el.classList.add('hidden'); });
+    if (window.selectedProblem.maxUnlockedHintLevel === undefined) window.selectedProblem.maxUnlockedHintLevel = 0;.forEach(i => { 
+        const el = document.getElementById(i); 
+        if(el) el.classList.add('hidden'); 
+    });
     
     document.getElementById('final-view').classList.remove('hidden'); 
     document.getElementById('hint-detail-container').classList.remove('hidden');
@@ -615,7 +618,7 @@ window.unlockNextHint = function(level, cost) {
 };
 
 window.showHintText = function(level) {
-    const hints = window.selectedProblem.hints || []; 
+    const hints = window.selectedProblem.hints ||[]; 
     const text = hints || "ヒントが見つからないにゃ...";
     window.updateNellMessage(text, "thinking", false);
     const hl = document.getElementById('hint-step-label'); if(hl) hl.innerText = `ヒント Lv.${level}`; 
@@ -1143,7 +1146,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
         let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。"; 
         window.liveSocket.send(JSON.stringify({ 
             clientContent: { 
-                turns: }], 
+                turns:[{ role: "user", parts: }], 
                 turnComplete: true 
             } 
         })); 
