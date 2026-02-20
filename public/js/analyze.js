@@ -1,4 +1,4 @@
-// --- js/analyze.js (v470.3: 完全版 - シール獲得セリフ統合・欠落完全修正版) ---
+// --- js/analyze.js (v470.4: 構文エラー完全修復・シール獲得セリフ統合版) ---
 
 // ==========================================
 // グローバル変数・初期設定
@@ -289,7 +289,7 @@ window.startMouthAnimation = function() {
         if (!img) return;
         let baseImg = window.defaultIcon;
         let talkImg = window.talkIcon;
-        if (window.currentSubject && window.subjectImages && window.subjectImages && 
+        if (window.currentSubject && window.subjectImages && 
            (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review')) {
             baseImg = window.subjectImages.base;
             talkImg = window.subjectImages.talk;
@@ -333,7 +333,7 @@ window.saveToNellMemory = function(role, text) {
 window.setSubject = function(s) { 
     window.currentSubject = s; 
     const icon = document.querySelector('.nell-avatar-wrap img'); 
-    if(icon && window.subjectImages && window.subjectImages){
+    if(icon && window.subjectImages){
         icon.src = window.subjectImages.base;
         icon.onerror = () => { icon.src = window.defaultIcon; };
     } 
@@ -615,7 +615,7 @@ window.unlockNextHint = function(level, cost) {
 };
 
 window.showHintText = function(level) {
-    const hints = window.selectedProblem.hints ||[]; 
+    const hints = window.selectedProblem.hints || []; 
     const text = hints || "ヒントが見つからないにゃ...";
     window.updateNellMessage(text, "thinking", false);
     const hl = document.getElementById('hint-step-label'); if(hl) hl.innerText = `ヒント Lv.${level}`; 
@@ -1139,7 +1139,15 @@ window.captureAndSendLiveImage = function(context = 'main') {
     const flash = document.createElement('div'); flash.style.cssText = "position:fixed; top:0; left:0; width:100%; height:100%; background:white; opacity:0.8; z-index:9999; pointer-events:none; transition:opacity 0.3s;"; document.body.appendChild(flash); setTimeout(() => { flash.style.opacity = 0; setTimeout(() => flash.remove(), 300); }, 50);
     const videoContainer = document.getElementById('live-chat-video-container-free'); if (videoContainer) { const oldPreview = document.getElementById('snapshot-preview-overlay'); if(oldPreview) oldPreview.remove(); const previewImg = document.createElement('img'); previewImg.id = 'snapshot-preview-overlay'; previewImg.src = compressedDataUrl; previewImg.style.cssText = "position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:10; border:4px solid #ffeb3b; box-sizing:border-box; animation: fadeIn 0.2s;"; videoContainer.style.position = "relative"; videoContainer.appendChild(previewImg); setTimeout(() => { if(previewImg && previewImg.parentNode) previewImg.remove(); }, 3000); }
     if(typeof window.updateNellMessage === 'function') window.updateNellMessage("ん？どれどれ…", "thinking", false, false);
-    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) { let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。"; window.liveSocket.send(JSON.stringify({ clientContent: { turns:[{ role: "user", parts: }], turnComplete: true } })); }
+    if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN) { 
+        let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。"; 
+        window.liveSocket.send(JSON.stringify({ 
+            clientContent: { 
+                turns: }], 
+                turnComplete: true 
+            } 
+        })); 
+    }
     setTimeout(() => { window.isLiveImageSending = false; window.isMicMuted = false; if (typeof window.stopPreviewCamera === 'function') { window.stopPreviewCamera(); } if (btn) { btn.innerHTML = "<span>📷</span> 写真を見せてお話"; btn.style.backgroundColor = "#009688"; } }, 3000); setTimeout(() => { window.ignoreIncomingAudio = false; }, 300);
 };
 
