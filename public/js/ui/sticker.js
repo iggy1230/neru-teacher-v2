@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v1.8: Firebase Storage抽出 & 脱字修正版) ---
+// --- js/ui/sticker.js (v1.9: Firebase Storage抽出 完全修正版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -34,12 +34,12 @@ window.grantRandomSticker = async function(fromLunch = false) {
             return;
         }
 
-        // 3. ランダムに1つ選ぶ（★ここが前回のコードで抜けていました！）
+        // 3. ★修正: ランダムに「1つだけ」選ぶ（ここが原因でした）
         const randomIndex = Math.floor(Math.random() * res.items.length);
-        const randomRef = res.items;
+        const randomRef = res.items; // ← が必須です！
 
         // 4. ダウンロードURLを取得
-        const url = await window.fireStorage.ref(randomRef.fullPath).getDownloadURL();
+        const url = await randomRef.getDownloadURL();
 
         // 5. 新しいシールデータ作成
         // 初期配置を 'newArea'（新規シール置き場）に設定
@@ -78,20 +78,31 @@ window.loadAndRenderStickers = async function(userId) {
     board.innerHTML = '';
     newArea.innerHTML = '<div class="new-sticker-title">あたらしいシール</div>';
 
-    const ring = document.createElement('div'); ring.className = 'binder-ring'; board.appendChild(ring);
+    const ring = document.createElement('div'); 
+    ring.className = 'binder-ring'; 
+    board.appendChild(ring);
+    
     const container = document.getElementById('sticker-board-container');
     if (container) {
-        const oldClasp = container.querySelector('.binder-clasp'); if (oldClasp) oldClasp.remove();
-        const clasp = document.createElement('div'); clasp.className = 'binder-clasp'; container.appendChild(clasp);
+        const oldClasp = container.querySelector('.binder-clasp'); 
+        if (oldClasp) oldClasp.remove();
+        const clasp = document.createElement('div'); 
+        clasp.className = 'binder-clasp'; 
+        container.appendChild(clasp);
     }
-    const guide = document.createElement('div'); guide.id = 'sticker-guide-text';
+    
+    const guide = document.createElement('div'); 
+    guide.id = 'sticker-guide-text';
     guide.style.cssText = "position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:rgba(0,0,0,0.1); font-weight:bold; pointer-events:none; font-size:2rem; white-space:nowrap;";
-    guide.innerText = "STICKER BOOK"; board.appendChild(guide);
+    guide.innerText = "STICKER BOOK"; 
+    board.appendChild(guide);
 
     let stickers =[];
     const isMe = (currentUser && currentUser.id === userId);
     const trash = document.getElementById('sticker-trash');
-    if (trash) { isMe ? trash.classList.remove('hidden') : trash.classList.add('hidden'); }
+    if (trash) { 
+        isMe ? trash.classList.remove('hidden') : trash.classList.add('hidden'); 
+    }
 
     if (isMe) {
         stickers = currentUser.stickers ||[];
@@ -104,7 +115,9 @@ window.loadAndRenderStickers = async function(userId) {
                     stickers = data.stickers ||[];
                     window.updateNellMessage(`${data.name}さんのシール帳だにゃ！`, "happy");
                 }
-            } catch (e) { console.error("Sticker Fetch Error:", e); }
+            } catch (e) { 
+                console.error("Sticker Fetch Error:", e); 
+            }
         }
     }
 
@@ -129,9 +142,11 @@ window.createStickerElement = function(data, editable = true) {
     const img = document.createElement('img');
     img.src = data.src || 'assets/images/items/nikukyuhanko.png';
     img.className = 'sticker-img';
-    img.crossOrigin = "anonymous";
+    img.crossOrigin = "anonymous"; // CORS対応
     
-    img.onerror = () => { img.src = 'assets/images/items/nikukyuhanko.png'; };
+    img.onerror = () => { 
+        img.src = 'assets/images/items/nikukyuhanko.png'; 
+    };
     
     div.appendChild(img);
 
