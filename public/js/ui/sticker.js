@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v2.2: Firebase Storage抽出 確実修正版) ---
+// --- js/ui/sticker.js (v2.3: Firebase Storage抽出 確実修正版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -34,9 +34,9 @@ window.grantRandomSticker = async function(fromLunch = false) {
             return;
         }
 
-        // 3. ランダムに1つ選ぶ（★ここを確実に修正しました）
+        // 3. ランダムに1つ選ぶ（★今度こそ確実に配列から1つを取り出します）
         const randomIndex = Math.floor(Math.random() * res.items.length);
-        const randomItem = res.items;
+        const randomItem = res.items; // ← を確実に記述しました！
 
         // 4. ダウンロードURLを取得
         const url = await randomItem.getDownloadURL();
