@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v2.4: Firebase Storage抽出 最終修正版) ---
+// --- js/ui/sticker.js (v2.5: シール消失バグ修正版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -18,39 +18,29 @@ window.grantRandomSticker = async function(fromLunch = false) {
         return;
     }
 
-    // 演出開始（読み込み時間を稼ぐ）
     if(window.safePlay) window.safePlay(window.sfxHirameku);
 
     try {
-        // 1. Storageの stickers フォルダを参照
         const listRef = window.fireStorage.ref('stickers');
-
-        // 2. ファイル一覧を取得
         const res = await listRef.listAll();
 
         if (res.items.length === 0) {
-            console.warn("No stickers found in Firebase Storage 'stickers' folder.");
+            console.warn("No stickers found.");
             alert("まだシールがないみたいだにゃ…。");
             return;
         }
 
-        // 3. ランダムに1つ選ぶ (配列のインデックスを使用)
         const randomIndex = Math.floor(Math.random() * res.items.length);
-        const randomItem = res.items[randomIndex]; // ★ここを修正: 配列から要素を取り出す
+        const randomItem = res.items[randomIndex];
+        const url = await window.fireStorage.ref(randomItem.fullPath).getDownloadURL();
 
-        // 4. ダウンロードURLを取得
-        // ※念のため、アイテムオブジェクトから直接ではなく、パスを使って再参照する最も安全な方法をとります
-        const fullPath = randomItem.fullPath; 
-        const url = await window.fireStorage.ref(fullPath).getDownloadURL();
-
-        // 5. 新しいシールデータ作成
         // 初期配置を 'newArea'（新規シール置き場）に設定
         const newSticker = {
             id: 'st_' + Date.now() + '_' + Math.floor(Math.random()*1000),
             src: url,
             location: 'newArea', 
-            x: 10 + Math.random() * 80, // 置き場内でのX座標(%)
-            y: 15 + Math.random() * 70, // 置き場内でのY座標(%)
+            x: 10 + Math.random() * 60, // はみ出し防止のため範囲を狭める
+            y: 10 + Math.random() * 50, 
             rotation: (Math.random() * 40 - 20),
             scale: 1.0,
             zIndex: 100 
@@ -59,15 +49,12 @@ window.grantRandomSticker = async function(fromLunch = false) {
         if (!currentUser.stickers) currentUser.stickers = [];
         currentUser.stickers.push(newSticker);
         
-        // 保存
         if (typeof window.saveAndSync === 'function') window.saveAndSync();
         
-        // 完了アラート
         alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\n画面の下の「あたらしいシール」に置いておいたにゃ！`);
 
     } catch (error) {
         console.error("Firebase Sticker Error:", error);
-        // エラー詳細をコンソールに出しつつ、ユーザーには優しく通知
         alert("シールの取得に失敗したにゃ…。\n(" + error.message + ")");
     }
 };
@@ -77,7 +64,6 @@ window.loadAndRenderStickers = async function(userId) {
     const newArea = document.getElementById('new-sticker-area'); 
     if (!board || !newArea) return;
     
-    // 中身をクリア
     board.innerHTML = '';
     newArea.innerHTML = '<div class="new-sticker-title">あたらしいシール</div>';
 
@@ -125,7 +111,7 @@ window.loadAndRenderStickers = async function(userId) {
     }
 
     stickers.forEach(s => {
-        // locationプロパティがなければ 'board' とみなす
+        // 所属エリアに応じて配置
         const parentEl = (s.location === 'newArea') ? newArea : board;
         const el = window.createStickerElement(s, isMe);
         parentEl.appendChild(el);
@@ -143,10 +129,9 @@ window.createStickerElement = function(data, editable = true) {
     div.style.zIndex = data.zIndex || 1;
 
     const img = document.createElement('img');
-    // data.src があればそれを使う。なければデフォルト画像
     img.src = data.src || 'assets/images/items/nikukyuhanko.png';
     img.className = 'sticker-img';
-    img.crossOrigin = "anonymous"; // CORS対応
+    img.crossOrigin = "anonymous";
     
     img.onerror = () => { 
         img.src = 'assets/images/items/nikukyuhanko.png'; 
@@ -189,13 +174,13 @@ window.attachStickerEvents = function(el, data) {
         el.style.zIndex = 999;
         if (trash) trash.classList.add('active');
 
-        // ドラッグ開始時に、一時的にbody直下に移動させる
+        // 親コンテナの影響を受けないように、一時的にbody直下に移動
         document.body.appendChild(el);
 
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         
-        // 画面全体での座標を使う
+        // 画面全体での絶対座標を取得
         const rect = el.getBoundingClientRect();
         initialLeft = rect.left;
         initialTop = rect.top;
@@ -234,6 +219,7 @@ window.attachStickerEvents = function(el, data) {
             trash.classList.remove('hover');
         }
         
+        // ゴミ箱判定
         if (moved && trash && isOverTrash(el)) {
             if (window.sfxBatu) window.safePlay(window.sfxBatu); 
             el.remove();
@@ -241,18 +227,24 @@ window.attachStickerEvents = function(el, data) {
                 currentUser.stickers = currentUser.stickers.filter(s => s.id !== data.id);
                 if (typeof window.saveAndSync === 'function') window.saveAndSync();
             }
+            // ★削除されたことを通知
+            alert("シールを捨てたにゃ！🗑️");
             return;
         }
 
-        // ドロップした場所によって所属コンテナと座標を決定
-        const currentRect = el.getBoundingClientRect();
-        const boardRect = board.getBoundingClientRect();
+        // --- ドロップ場所の判定ロジックを強化 ---
+        const stickerRect = el.getBoundingClientRect();
+        const newAreaRect = newArea.getBoundingClientRect();
         
         let targetParent;
         let finalX, finalY;
 
-        // ボードの上か判定
-        if (currentRect.top < boardRect.bottom && currentRect.bottom > boardRect.top) {
+        // シールの中心点
+        const stickerCenterY = stickerRect.top + stickerRect.height / 2;
+
+        // ★修正: 「新規エリア」の上端よりも上にあったら、問答無用で「シール帳」に移動させる
+        // （シール帳の座標取得に頼ると隙間で消える可能性があるため、境界線で判定）
+        if (stickerCenterY < newAreaRect.top) {
             targetParent = board;
             data.location = 'board';
         } else {
@@ -261,14 +253,23 @@ window.attachStickerEvents = function(el, data) {
         }
 
         const parentRect = targetParent.getBoundingClientRect();
-        finalX = ((currentRect.left + currentRect.width / 2) - parentRect.left) / parentRect.width * 100;
-        finalY = ((currentRect.top + currentRect.height / 2) - parentRect.top) / parentRect.height * 100;
         
+        // 親要素内での相対位置(%)を計算
+        finalX = ((stickerRect.left + stickerRect.width / 2) - parentRect.left) / parentRect.width * 100;
+        finalY = ((stickerRect.top + stickerRect.height / 2) - parentRect.top) / parentRect.height * 100;
+        
+        // ★修正: はみ出しすぎて見えなくならないように座標を制限 (0%〜90%)
+        finalX = Math.max(0, Math.min(90, finalX));
+        finalY = Math.max(0, Math.min(90, finalY));
+
+        // DOMツリーを正しい親に戻す
         targetParent.appendChild(el);
+        
         el.style.left = `${finalX}%`;
         el.style.top = `${finalY}%`;
-        
         el.style.opacity = '1';
+        
+        // データ更新
         data.x = finalX;
         data.y = finalY;
 
