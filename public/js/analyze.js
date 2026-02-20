@@ -109,13 +109,19 @@ window.selectMode = function(m) {
         });
         
         document.getElementById('conversation-log').classList.add('hidden');
-        document.getElementById('log-content').innerHTML = "";.forEach(bid => {
+        document.getElementById('log-content').innerHTML = "";
+        
+        const boardIds =;
+        boardIds.forEach(bid => {
             const embedBoard = document.getElementById(bid);
             if (embedBoard) {
                 embedBoard.innerText = "";
                 embedBoard.classList.add('hidden');
             }
-        });.forEach(iid => {
+        });
+
+        const inputIds =;
+        inputIds.forEach(iid => {
             const embedInput = document.getElementById(iid);
             if(embedInput) embedInput.value = "";
         });
@@ -289,7 +295,7 @@ window.startMouthAnimation = function() {
         if (!img) return;
         let baseImg = window.defaultIcon;
         let talkImg = window.talkIcon;
-        if (window.currentSubject && window.subjectImages && 
+        if (window.currentSubject && window.subjectImages && window.subjectImages && 
            (window.currentMode === 'explain' || window.currentMode === 'grade' || window.currentMode === 'review')) {
             baseImg = window.subjectImages.base;
             talkImg = window.subjectImages.talk;
@@ -333,7 +339,7 @@ window.saveToNellMemory = function(role, text) {
 window.setSubject = function(s) { 
     window.currentSubject = s; 
     const icon = document.querySelector('.nell-avatar-wrap img'); 
-    if(icon && window.subjectImages){
+    if(icon && window.subjectImages && window.subjectImages){
         icon.src = window.subjectImages.base;
         icon.onerror = () => { icon.src = window.defaultIcon; };
     } 
@@ -510,7 +516,7 @@ window.giveLunch = function() {
         if(window.safePlay) window.safePlay(window.sfxBori);
     }
 
-    window.lunchCount++; // セッション内カウント
+    window.lunchCount = (window.lunchCount || 0) + 1; // セッション内カウント
     
     // サーバーへ送信
     fetch('/lunch-reaction', { 
@@ -565,7 +571,10 @@ window.startHint = function(id) {
     window.lastSelectedProblemId = id;
 
     if (!window.selectedProblem.currentHintLevel) window.selectedProblem.currentHintLevel = 1;
-    if (window.selectedProblem.maxUnlockedHintLevel === undefined) window.selectedProblem.maxUnlockedHintLevel = 0;.forEach(i => { 
+    if (window.selectedProblem.maxUnlockedHintLevel === undefined) window.selectedProblem.maxUnlockedHintLevel = 0;
+    
+    const hideIds =;
+    hideIds.forEach(i => { 
         const el = document.getElementById(i); 
         if(el) el.classList.add('hidden'); 
     });
@@ -700,9 +709,17 @@ window.renderProblemSelection = function() {
     const btn = document.querySelector('#problem-selection-view button.orange-btn'); if (btn) { btn.disabled = false; btn.innerText = "✨ ぜんぶわかったにゃ！"; } 
 };
 
-window.normalizeAnswer = function(str) { if (!str) return ""; let normalized = str.trim().replace(//g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); return normalized; };
+window.normalizeAnswer = function(str) { 
+    if (!str) return ""; 
+    let normalized = str.trim().replace(//g, m => String.fromCharCode(m.charCodeAt(0) - 0x60)); 
+    return normalized; 
+};
 
-window.isMatch = function(student, correctString) { const s = window.normalizeAnswer(student); const options = window.normalizeAnswer(correctString).split('|'); return options.some(opt => opt === s); };
+window.isMatch = function(student, correctString) { 
+    const s = window.normalizeAnswer(student); 
+    const options = window.normalizeAnswer(correctString).split('|'); 
+    return options.some(opt => opt === s); 
+};
 
 window.checkMultiAnswer = function(id, event) {
     if (window.isComposing) return; const problem = window.transcribedProblems.find(p => p.id === id);
@@ -745,7 +762,14 @@ window.checkOneProblem = function(id) {
     const problem = window.transcribedProblems.find(p => p.id === id); if (!problem) return; 
     const correctList = Array.isArray(problem.correct_answer) ? problem.correct_answer :;
     let userValues =[]; 
-    if (correctList.length > 1) { const inputs = document.querySelectorAll(`.multi-input-${id}`); userValues = Array.from(inputs).map(i => i.value); } else { const input = document.getElementById(`single-input-${id}`); if(input) userValues =; } 
+    if (correctList.length > 1) { 
+        const inputs = document.querySelectorAll(`.multi-input-${id}`); 
+        userValues = Array.from(inputs).map(i => i.value); 
+    } else { 
+        const input = document.getElementById(`single-input-${id}`); 
+        if(input) userValues =; 
+    } 
+    
     let isCorrect = false; 
     if (userValues.length === correctList.length) { 
         const usedIndices = new Set(); let matchCount = 0; 
@@ -758,6 +782,7 @@ window.checkOneProblem = function(id) {
         } 
         isCorrect = (matchCount === correctList.length); 
     } 
+    
     if (isCorrect) { if(window.safePlay) window.safePlay(window.sfxMaru); } else { if(window.safePlay) window.safePlay(window.sfxBatu); } 
     const markElem = document.getElementById(`mark-${id}`); const container = document.getElementById(`grade-item-${id}`); 
     if (markElem && container) { if (isCorrect) { markElem.innerText = "⭕"; markElem.style.color = "#ff5252"; container.style.backgroundColor = "#fff5f5"; window.updateNellMessage("正解だにゃ！すごいにゃ！", "excited", false); } else { markElem.innerText = "❌"; markElem.style.color = "#4a90e2"; container.style.backgroundColor = "#f0f8ff"; window.updateNellMessage("おしい！もう一回考えてみて！", "gentle", false); } } 
@@ -1146,7 +1171,7 @@ window.captureAndSendLiveImage = function(context = 'main') {
         let promptText = "（ユーザーが勉強の問題や画像を見せました）この画像の内容を詳しく、子供にもわかるように丁寧に教えてください。図鑑登録は不要です。"; 
         window.liveSocket.send(JSON.stringify({ 
             clientContent: { 
-                turns:[{ role: "user", parts: }], 
+                turns:[ { role: "user", parts: } ], 
                 turnComplete: true 
             } 
         })); 
