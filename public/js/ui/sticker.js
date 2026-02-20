@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v2.3: Firebase Storage抽出 確実修正版) ---
+// --- js/ui/sticker.js (v2.4: Firebase Storage抽出 最終修正版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -34,12 +34,14 @@ window.grantRandomSticker = async function(fromLunch = false) {
             return;
         }
 
-        // 3. ランダムに1つ選ぶ（★今度こそ確実に配列から1つを取り出します）
+        // 3. ランダムに1つ選ぶ (配列のインデックスを使用)
         const randomIndex = Math.floor(Math.random() * res.items.length);
-        const randomItem = res.items; // ← を確実に記述しました！
+        const randomItem = res.items[randomIndex]; // ★ここを修正: 配列から要素を取り出す
 
         // 4. ダウンロードURLを取得
-        const url = await randomItem.getDownloadURL();
+        // ※念のため、アイテムオブジェクトから直接ではなく、パスを使って再参照する最も安全な方法をとります
+        const fullPath = randomItem.fullPath; 
+        const url = await window.fireStorage.ref(fullPath).getDownloadURL();
 
         // 5. 新しいシールデータ作成
         // 初期配置を 'newArea'（新規シール置き場）に設定
@@ -54,7 +56,7 @@ window.grantRandomSticker = async function(fromLunch = false) {
             zIndex: 100 
         };
 
-        if (!currentUser.stickers) currentUser.stickers =[];
+        if (!currentUser.stickers) currentUser.stickers = [];
         currentUser.stickers.push(newSticker);
         
         // 保存
@@ -65,7 +67,8 @@ window.grantRandomSticker = async function(fromLunch = false) {
 
     } catch (error) {
         console.error("Firebase Sticker Error:", error);
-        alert("シールの取得に失敗したにゃ…。通信環境や設定を確認してにゃ。");
+        // エラー詳細をコンソールに出しつつ、ユーザーには優しく通知
+        alert("シールの取得に失敗したにゃ…。\n(" + error.message + ")");
     }
 };
 
@@ -97,7 +100,7 @@ window.loadAndRenderStickers = async function(userId) {
     guide.innerText = "STICKER BOOK"; 
     board.appendChild(guide);
 
-    let stickers =[];
+    let stickers = [];
     const isMe = (currentUser && currentUser.id === userId);
     const trash = document.getElementById('sticker-trash');
     if (trash) { 
@@ -105,14 +108,14 @@ window.loadAndRenderStickers = async function(userId) {
     }
 
     if (isMe) {
-        stickers = currentUser.stickers ||[];
+        stickers = currentUser.stickers || [];
     } else {
         if (db) {
             try {
                 const doc = await db.collection("users").doc(String(userId)).get();
                 if (doc.exists) {
                     const data = doc.data();
-                    stickers = data.stickers ||[];
+                    stickers = data.stickers || [];
                     window.updateNellMessage(`${data.name}さんのシール帳だにゃ！`, "happy");
                 }
             } catch (e) { 
@@ -140,6 +143,7 @@ window.createStickerElement = function(data, editable = true) {
     div.style.zIndex = data.zIndex || 1;
 
     const img = document.createElement('img');
+    // data.src があればそれを使う。なければデフォルト画像
     img.src = data.src || 'assets/images/items/nikukyuhanko.png';
     img.className = 'sticker-img';
     img.crossOrigin = "anonymous"; // CORS対応
@@ -188,8 +192,8 @@ window.attachStickerEvents = function(el, data) {
         // ドラッグ開始時に、一時的にbody直下に移動させる
         document.body.appendChild(el);
 
-        const clientX = e.touches ? e.touches.clientX : e.clientX;
-        const clientY = e.touches ? e.touches.clientY : e.clientY;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         
         // 画面全体での座標を使う
         const rect = el.getBoundingClientRect();
@@ -202,8 +206,8 @@ window.attachStickerEvents = function(el, data) {
     const onDrag = (e) => {
         if (!isDragging) return;
         e.preventDefault();
-        const clientX = e.touches ? e.touches.clientX : e.clientX;
-        const clientY = e.touches ? e.touches.clientY : e.clientY;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const dx = clientX - startX;
         const dy = clientY - startY;
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
