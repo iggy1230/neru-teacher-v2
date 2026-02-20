@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v2.6: ドラッグ操作修正・完全版) ---
+// --- js/ui/sticker.js (v2.7: ドラッグ座標ズレ修正版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -149,7 +149,7 @@ window.createStickerElement = function(data, editable = true) {
     return div;
 };
 
-// ★修正: ドラッグ処理のロジック
+// ★修正: ドラッグ処理のロジック (スクロール対応)
 window.attachStickerEvents = function(el, data) {
     let isDragging = false;
     let startX, startY;
@@ -176,7 +176,7 @@ window.attachStickerEvents = function(el, data) {
         isDragging = true;
         moved = false;
         
-        // タッチ座標の取得
+        // タッチ/マウス座標の取得
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         startX = clientX;
@@ -185,10 +185,10 @@ window.attachStickerEvents = function(el, data) {
         // 現在の矩形情報を取得
         const rect = el.getBoundingClientRect();
         
-        // ★重要: CSSで translate(-50%, -50%) しているため、
-        // left/top は「要素の中心座標」に合わせる必要がある
-        initialLeft = rect.left + rect.width / 2;
-        initialTop = rect.top + rect.height / 2;
+        // ★重要修正: スクロール量(window.scrollX/Y)を加算する
+        // CSSで translate(-50%, -50%) しているため、left/top は「要素の中心座標」に合わせる
+        initialLeft = rect.left + rect.width / 2 + window.scrollX;
+        initialTop = rect.top + rect.height / 2 + window.scrollY;
 
         // body直下に移動させて、親要素のoverflowなどの影響を受けないようにする
         document.body.appendChild(el);
