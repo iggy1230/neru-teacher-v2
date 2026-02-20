@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v1.5: Firebase SDK v8互換修正版) ---
+// --- js/ui/sticker.js (v1.7: Firebase Storage抽出 & 新規シール置き場 対応版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -22,7 +22,7 @@ window.grantRandomSticker = async function(fromLunch = false) {
     if(window.safePlay) window.safePlay(window.sfxHirameku);
 
     try {
-        // 1. Firebase Storageの 'stickers' フォルダを参照
+        // 1. Storageの stickers フォルダを参照
         const listRef = window.fireStorage.ref('stickers');
 
         // 2. ファイル一覧を取得
@@ -30,95 +30,88 @@ window.grantRandomSticker = async function(fromLunch = false) {
 
         if (res.items.length === 0) {
             console.warn("No stickers found in Firebase Storage 'stickers' folder.");
+            alert("まだシールがないみたいだにゃ…。");
             return;
         }
 
         // 3. ランダムに1つ選ぶ
-        const randomRef = res.items[Math.floor(Math.random() * res.items.length)];
+        const randomRef = res.items;
 
-        // 4. そのファイルのダウンロードURLを取得 (v8互換の書き方)
+        // 4. ダウンロードURLを取得 (v8互換の書き方)
         const url = await window.fireStorage.ref(randomRef.fullPath).getDownloadURL();
 
         // 5. 新しいシールデータ作成
-        // 初期位置を台紙の「右側の枠外」に設定 (x: 115%)
+        // 初期配置を 'newArea'（新規シール置き場）に設定
         const newSticker = {
             id: 'st_' + Date.now() + '_' + Math.floor(Math.random()*1000),
             src: url,
-            x: 115, 
-            y: 10 + (Math.random() * 30), 
+            location: 'newArea', 
+            x: 10 + Math.random() * 80, // 置き場内でのX座標(%)
+            y: 15 + Math.random() * 70, // 置き場内でのY座標(%)
             rotation: (Math.random() * 40 - 20),
             scale: 1.0,
             zIndex: 100 
         };
 
-        if (!currentUser.stickers) currentUser.stickers = [];
+        if (!currentUser.stickers) currentUser.stickers =[];
         currentUser.stickers.push(newSticker);
         
         // 保存
         if (typeof window.saveAndSync === 'function') window.saveAndSync();
         
         // 完了アラート
-        alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\nシール帳の右側に置いておいたにゃ！`);
+        alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\n画面の下の「あたらしいシール」に置いておいたにゃ！`);
 
     } catch (error) {
         console.error("Firebase Sticker Error:", error);
-        alert("シールの取得に失敗したにゃ…。通信環境を確認してにゃ。");
+        alert("シールの取得に失敗したにゃ…。通信環境や設定を確認してにゃ。");
     }
 };
 
 window.loadAndRenderStickers = async function(userId) {
     const board = document.getElementById('sticker-board');
-    if (!board) return;
-    board.innerHTML = ''; 
+    const newArea = document.getElementById('new-sticker-area'); 
+    if (!board || !newArea) return;
     
-    const ring = document.createElement('div');
-    ring.className = 'binder-ring';
-    board.appendChild(ring);
-    
+    // 中身をクリア
+    board.innerHTML = '';
+    newArea.innerHTML = '<div class="new-sticker-title">あたらしいシール</div>';
+
+    const ring = document.createElement('div'); ring.className = 'binder-ring'; board.appendChild(ring);
     const container = document.getElementById('sticker-board-container');
     if (container) {
-        const oldClasp = container.querySelector('.binder-clasp');
-        if (oldClasp) oldClasp.remove();
-        const clasp = document.createElement('div');
-        clasp.className = 'binder-clasp';
-        container.appendChild(clasp);
+        const oldClasp = container.querySelector('.binder-clasp'); if (oldClasp) oldClasp.remove();
+        const clasp = document.createElement('div'); clasp.className = 'binder-clasp'; container.appendChild(clasp);
     }
-    
-    const guide = document.createElement('div');
-    guide.id = 'sticker-guide-text';
+    const guide = document.createElement('div'); guide.id = 'sticker-guide-text';
     guide.style.cssText = "position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:rgba(0,0,0,0.1); font-weight:bold; pointer-events:none; font-size:2rem; white-space:nowrap;";
-    guide.innerText = "STICKER BOOK";
-    board.appendChild(guide);
+    guide.innerText = "STICKER BOOK"; board.appendChild(guide);
 
-    let stickers = [];
+    let stickers =[];
     const isMe = (currentUser && currentUser.id === userId);
-
     const trash = document.getElementById('sticker-trash');
-    if (trash) {
-        if (isMe) trash.classList.remove('hidden');
-        else trash.classList.add('hidden');
-    }
+    if (trash) { isMe ? trash.classList.remove('hidden') : trash.classList.add('hidden'); }
 
     if (isMe) {
-        stickers = currentUser.stickers || [];
+        stickers = currentUser.stickers ||[];
     } else {
         if (db) {
             try {
                 const doc = await db.collection("users").doc(String(userId)).get();
                 if (doc.exists) {
                     const data = doc.data();
-                    stickers = data.stickers || [];
+                    stickers = data.stickers ||[];
                     window.updateNellMessage(`${data.name}さんのシール帳だにゃ！`, "happy");
                 }
-            } catch (e) {
-                console.error("Sticker Fetch Error:", e);
-            }
+            } catch (e) { console.error("Sticker Fetch Error:", e); }
         }
     }
 
     stickers.forEach(s => {
+        // locationプロパティがなければ 'board' とみなす
+        const parentEl = (s.location === 'newArea') ? newArea : board;
         const el = window.createStickerElement(s, isMe);
-        board.appendChild(el);
+        parentEl.appendChild(el);
     });
 };
 
@@ -135,11 +128,9 @@ window.createStickerElement = function(data, editable = true) {
     const img = document.createElement('img');
     img.src = data.src || 'assets/images/items/nikukyuhanko.png';
     img.className = 'sticker-img';
-    img.crossOrigin = "anonymous"; // ★CORS対応に必須
+    img.crossOrigin = "anonymous";
     
-    img.onerror = () => {
-        img.src = 'assets/images/items/nikukyuhanko.png'; 
-    };
+    img.onerror = () => { img.src = 'assets/images/items/nikukyuhanko.png'; };
     
     div.appendChild(img);
 
@@ -154,10 +145,11 @@ window.createStickerElement = function(data, editable = true) {
 
 window.attachStickerEvents = function(el, data) {
     let isDragging = false;
-    let startX, startY;
-    let initialLeft, initialTop;
+    let startX, startY, initialLeft, initialTop;
     let moved = false;
     const trash = document.getElementById('sticker-trash');
+    const board = document.getElementById('sticker-board');
+    const newArea = document.getElementById('new-sticker-area');
 
     const isOverTrash = (element) => {
         if (!trash) return false;
@@ -176,36 +168,32 @@ window.attachStickerEvents = function(el, data) {
         moved = false;
         el.style.zIndex = 999;
         if (trash) trash.classList.add('active');
+
+        // ドラッグ開始時に、一時的にbody直下に移動させる
+        document.body.appendChild(el);
+
+        const clientX = e.touches ? e.touches.clientX : e.clientX;
+        const clientY = e.touches ? e.touches.clientY : e.clientY;
         
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        // 画面全体での座標を使う
+        const rect = el.getBoundingClientRect();
+        initialLeft = rect.left;
+        initialTop = rect.top;
         startX = clientX;
         startY = clientY;
-        initialLeft = parseFloat(el.style.left);
-        initialTop = parseFloat(el.style.top);
     };
 
     const onDrag = (e) => {
         if (!isDragging) return;
         e.preventDefault();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const clientX = e.touches ? e.touches.clientX : e.clientX;
+        const clientY = e.touches ? e.touches.clientY : e.clientY;
         const dx = clientX - startX;
         const dy = clientY - startY;
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
 
-        const parentRect = el.parentElement.getBoundingClientRect();
-        const dxPercent = (dx / parentRect.width) * 100;
-        const dyPercent = (dy / parentRect.height) * 100;
-        
-        let newX = initialLeft + dxPercent;
-        let newY = initialTop + dyPercent;
-        
-        newX = Math.max(-50, Math.min(150, newX));
-        newY = Math.max(-50, Math.min(150, newY));
-
-        el.style.left = newX + '%';
-        el.style.top = newY + '%';
+        el.style.left = `${initialLeft + dx}px`;
+        el.style.top = `${initialTop + dy}px`;
         
         if (trash) {
             if (isOverTrash(el)) {
@@ -235,10 +223,34 @@ window.attachStickerEvents = function(el, data) {
             }
             return;
         }
+
+        // ドロップした場所によって所属コンテナと座標を決定
+        const currentRect = el.getBoundingClientRect();
+        const boardRect = board.getBoundingClientRect();
+        
+        let targetParent;
+        let finalX, finalY;
+
+        // ボードの上か判定
+        if (currentRect.top < boardRect.bottom && currentRect.bottom > boardRect.top) {
+            targetParent = board;
+            data.location = 'board';
+        } else {
+            targetParent = newArea;
+            data.location = 'newArea';
+        }
+
+        const parentRect = targetParent.getBoundingClientRect();
+        finalX = ((currentRect.left + currentRect.width / 2) - parentRect.left) / parentRect.width * 100;
+        finalY = ((currentRect.top + currentRect.height / 2) - parentRect.top) / parentRect.height * 100;
+        
+        targetParent.appendChild(el);
+        el.style.left = `${finalX}%`;
+        el.style.top = `${finalY}%`;
         
         el.style.opacity = '1';
-        data.x = parseFloat(el.style.left);
-        data.y = parseFloat(el.style.top);
+        data.x = finalX;
+        data.y = finalY;
 
         if (!moved) {
             data.rotation = (data.rotation || 0) + 45;
