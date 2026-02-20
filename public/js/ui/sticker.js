@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v1.7: Firebase Storage抽出 & 新規シール置き場 対応版) ---
+// --- js/ui/sticker.js (v1.8: Firebase Storage抽出 & 脱字修正版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -34,10 +34,11 @@ window.grantRandomSticker = async function(fromLunch = false) {
             return;
         }
 
-        // 3. ランダムに1つ選ぶ
+        // 3. ランダムに1つ選ぶ（★ここが前回のコードで抜けていました！）
+        const randomIndex = Math.floor(Math.random() * res.items.length);
         const randomRef = res.items;
 
-        // 4. ダウンロードURLを取得 (v8互換の書き方)
+        // 4. ダウンロードURLを取得
         const url = await window.fireStorage.ref(randomRef.fullPath).getDownloadURL();
 
         // 5. 新しいシールデータ作成
