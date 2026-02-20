@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v1.4: Firebase Storage版 完全版) ---
+// --- js/ui/sticker.js (v1.5: Firebase SDK v8互換修正版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -18,8 +18,11 @@ window.grantRandomSticker = async function(fromLunch = false) {
         return;
     }
 
+    // 演出開始（読み込み時間を稼ぐ）
+    if(window.safePlay) window.safePlay(window.sfxHirameku);
+
     try {
-        // 1. Storageの stickers フォルダを参照
+        // 1. Firebase Storageの 'stickers' フォルダを参照
         const listRef = window.fireStorage.ref('stickers');
 
         // 2. ファイル一覧を取得
@@ -31,10 +34,10 @@ window.grantRandomSticker = async function(fromLunch = false) {
         }
 
         // 3. ランダムに1つ選ぶ
-        const randomRef = res.items;
+        const randomRef = res.items[Math.floor(Math.random() * res.items.length)];
 
-        // 4. ダウンロードURLを取得
-        const url = await randomRef.getDownloadURL();
+        // 4. そのファイルのダウンロードURLを取得 (v8互換の書き方)
+        const url = await window.fireStorage.ref(randomRef.fullPath).getDownloadURL();
 
         // 5. 新しいシールデータ作成
         // 初期位置を台紙の「右側の枠外」に設定 (x: 115%)
@@ -48,21 +51,18 @@ window.grantRandomSticker = async function(fromLunch = false) {
             zIndex: 100 
         };
 
-        if (!currentUser.stickers) currentUser.stickers =[];
+        if (!currentUser.stickers) currentUser.stickers = [];
         currentUser.stickers.push(newSticker);
         
         // 保存
         if (typeof window.saveAndSync === 'function') window.saveAndSync();
-
-        // 演出音
-        if(window.safePlay) window.safePlay(window.sfxHirameku);
         
         // 完了アラート
         alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\nシール帳の右側に置いておいたにゃ！`);
 
     } catch (error) {
         console.error("Firebase Sticker Error:", error);
-        alert("シールの取得に失敗したにゃ…。設定を確認してにゃ。");
+        alert("シールの取得に失敗したにゃ…。通信環境を確認してにゃ。");
     }
 };
 
@@ -90,7 +90,7 @@ window.loadAndRenderStickers = async function(userId) {
     guide.innerText = "STICKER BOOK";
     board.appendChild(guide);
 
-    let stickers =[];
+    let stickers = [];
     const isMe = (currentUser && currentUser.id === userId);
 
     const trash = document.getElementById('sticker-trash');
@@ -100,14 +100,14 @@ window.loadAndRenderStickers = async function(userId) {
     }
 
     if (isMe) {
-        stickers = currentUser.stickers ||[];
+        stickers = currentUser.stickers || [];
     } else {
         if (db) {
             try {
                 const doc = await db.collection("users").doc(String(userId)).get();
                 if (doc.exists) {
                     const data = doc.data();
-                    stickers = data.stickers ||[];
+                    stickers = data.stickers || [];
                     window.updateNellMessage(`${data.name}さんのシール帳だにゃ！`, "happy");
                 }
             } catch (e) {
@@ -135,7 +135,7 @@ window.createStickerElement = function(data, editable = true) {
     const img = document.createElement('img');
     img.src = data.src || 'assets/images/items/nikukyuhanko.png';
     img.className = 'sticker-img';
-    img.crossOrigin = "anonymous"; 
+    img.crossOrigin = "anonymous"; // ★CORS対応に必須
     
     img.onerror = () => {
         img.src = 'assets/images/items/nikukyuhanko.png'; 
@@ -177,8 +177,8 @@ window.attachStickerEvents = function(el, data) {
         el.style.zIndex = 999;
         if (trash) trash.classList.add('active');
         
-        const clientX = e.touches ? e.touches.clientX : e.clientX;
-        const clientY = e.touches ? e.touches.clientY : e.clientY;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         startX = clientX;
         startY = clientY;
         initialLeft = parseFloat(el.style.left);
@@ -188,8 +188,8 @@ window.attachStickerEvents = function(el, data) {
     const onDrag = (e) => {
         if (!isDragging) return;
         e.preventDefault();
-        const clientX = e.touches ? e.touches.clientX : e.clientX;
-        const clientY = e.touches ? e.touches.clientY : e.clientY;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const dx = clientX - startX;
         const dy = clientY - startY;
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
