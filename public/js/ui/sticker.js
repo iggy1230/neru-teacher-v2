@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v1.2: ファイル名ルール修正・枠外配置・ゴミ箱強化版) ---
+// --- js/ui/sticker.js (v1.3: 連番26枚対応版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -15,25 +15,18 @@ window.showStickerBook = function(targetUserId = null) {
 window.grantRandomSticker = function(fromLunch = false) {
     if (!currentUser) return;
     
-    // ★修正: シールのファイル名決定ロジック
-    // 「stickerXXX.png」 (XXXは3桁数字) という規則に従ってランダム生成
-    // ※サーバーの全ファイルは不明なため、確実にありそうな 001～010 と、例示された 202, 212 を候補にする
-    // 必要に応じて範囲を広げてください
-    const specialNumbers = [202, 212];
-    const maxNormal = 10; // 001 ~ 010
+    // ★修正: シールの総数を26に設定
+    const TOTAL_STICKERS = 26;
     
-    let num;
-    if (Math.random() < 0.2) { // 20%でスペシャル番号
-        num = specialNumbers[Math.floor(Math.random() * specialNumbers.length)];
-    } else {
-        num = Math.floor(Math.random() * maxNormal) + 1;
-    }
+    // 1 から TOTAL_STICKERS までのランダムな整数を生成
+    const num = Math.floor(Math.random() * TOTAL_STICKERS) + 1;
+    
+    // 3桁の文字列に変換 (例: 5 -> "005")
     const numStr = String(num).padStart(3, '0');
     const filePath = `assets/images/sticker/sticker${numStr}.png`;
     
     // 新しいシールデータ作成
-    // ★修正: 初期位置を台紙の「右側の枠外」に設定 (x: 115%)
-    // style.css で overflow: visible にしたので見えるはず
+    // 初期位置を台紙の「右側の枠外」に設定 (x: 115%)
     const newSticker = {
         id: 'st_' + Date.now() + '_' + Math.floor(Math.random()*1000),
         src: filePath,
@@ -53,7 +46,7 @@ window.grantRandomSticker = function(fromLunch = false) {
     // 演出
     if(window.safePlay) window.safePlay(window.sfxHirameku);
     
-    // ★セリフ削除: 呼び出し元(giveLunch)で統合するため、ここではアラートのみ
+    // アラート表示
     const img = new Image();
     img.onload = () => {
         alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\nシール帳の右側に置いておいたにゃ！`);
@@ -182,7 +175,7 @@ window.attachStickerEvents = function(el, data) {
     let moved = false;
     const trash = document.getElementById('sticker-trash');
 
-    // ★修正: ゴミ箱判定ロジック (中心点判定)
+    // ゴミ箱判定ロジック (中心点判定)
     const isOverTrash = (element) => {
         if (!trash) return false;
         const r1 = element.getBoundingClientRect(); // シール
@@ -241,8 +234,7 @@ window.attachStickerEvents = function(el, data) {
         let newX = initialLeft + dxPercent;
         let newY = initialTop + dyPercent;
         
-        // ★修正: 画面外へのはみ出し制限を緩和 (枠外配置用)
-        // ただし、極端に行き過ぎないように
+        // はみ出し制限を緩和 (枠外配置用)
         newX = Math.max(-50, Math.min(150, newX));
         newY = Math.max(-50, Math.min(150, newY));
 
