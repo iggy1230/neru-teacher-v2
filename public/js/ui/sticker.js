@@ -1,10 +1,4 @@
-// --- js/ui/sticker.js (v1.2: 修正版) ---
-
-// 画像プール (ランダム用 - stickerXXX.png のみ)
-const STICKER_IMAGES = [
-    'assets/images/sticker/sticker001.png',
-    'assets/images/sticker/sticker002.png'
-];
+// --- js/ui/sticker.js (v1.2: ファイル名ルール修正・枠外配置・ゴミ箱強化版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -21,17 +15,30 @@ window.showStickerBook = function(targetUserId = null) {
 window.grantRandomSticker = function(fromLunch = false) {
     if (!currentUser) return;
     
-    // 画像プールからランダムに選択
-    const randomIndex = Math.floor(Math.random() * STICKER_IMAGES.length);
-    const filePath = STICKER_IMAGES[randomIndex];
+    // ★修正: シールのファイル名決定ロジック
+    // 「stickerXXX.png」 (XXXは3桁数字) という規則に従ってランダム生成
+    // ※サーバーの全ファイルは不明なため、確実にありそうな 001～010 と、例示された 202, 212 を候補にする
+    // 必要に応じて範囲を広げてください
+    const specialNumbers = [202, 212];
+    const maxNormal = 10; // 001 ~ 010
+    
+    let num;
+    if (Math.random() < 0.2) { // 20%でスペシャル番号
+        num = specialNumbers[Math.floor(Math.random() * specialNumbers.length)];
+    } else {
+        num = Math.floor(Math.random() * maxNormal) + 1;
+    }
+    const numStr = String(num).padStart(3, '0');
+    const filePath = `assets/images/sticker/sticker${numStr}.png`;
     
     // 新しいシールデータ作成
-    // ★修正: 初期位置を台紙の枠外（右上）に設定
+    // ★修正: 初期位置を台紙の「右側の枠外」に設定 (x: 115%)
+    // style.css で overflow: visible にしたので見えるはず
     const newSticker = {
         id: 'st_' + Date.now() + '_' + Math.floor(Math.random()*1000),
         src: filePath,
-        x: 105, // 右側の枠外 (台紙はoverflow:visibleなので見える)
-        y: 15 + (Math.random() * 20), // 上の方に少し散らす
+        x: 115, 
+        y: 10 + (Math.random() * 30), // 上の方に少し散らす
         rotation: (Math.random() * 40 - 20),
         scale: 1.0,
         zIndex: 100 // 最前面へ
@@ -46,14 +53,14 @@ window.grantRandomSticker = function(fromLunch = false) {
     // 演出
     if(window.safePlay) window.safePlay(window.sfxHirameku);
     
-    // ★修正: セリフは呼び出し元(giveLunch)で統合するため、ここではアラートのみ
-    // 画像をプリロードして確認（エラーならアラートでごまかす）
+    // ★セリフ削除: 呼び出し元(giveLunch)で統合するため、ここではアラートのみ
     const img = new Image();
     img.onload = () => {
-        alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\nシール帳に貼っておいたにゃ！`);
+        alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\nシール帳の右側に置いておいたにゃ！`);
     };
     img.onerror = () => {
-        alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！`);
+        // 画像がない場合のアラート
+        alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\n(画像が見つからなかったときは肉球になるにゃ)`);
     };
     img.src = filePath;
 };
@@ -140,9 +147,12 @@ window.createStickerElement = function(data, editable = true) {
     if (data.src) {
         img.src = data.src;
     } else if (window.STICKER_TYPES) {
+        // 古いデータ形式の互換性
         const typeDef = window.STICKER_TYPES.find(t => t.id === data.typeId);
         if (typeDef && typeDef.src) img.src = typeDef.src;
         else img.src = 'assets/images/items/nikukyuhanko.png'; // fallback
+    } else {
+        img.src = 'assets/images/items/nikukyuhanko.png';
     }
     
     img.className = 'sticker-img';
