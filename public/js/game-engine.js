@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.26: ウルトラクイズ報酬調整版) ---
+// --- js/game-engine.js (v470.26: 漢字ドリル花丸対応・完全版) ---
 
 console.log("Game Engine Loading...");
 
@@ -773,7 +773,6 @@ window.finishQuizSet = function() {
     
     // ★修正: レベル別報酬設定
     let rewardPerCorrect = 50; // デフォルト(Lv1)
-    
     if (currentLevel === 2) rewardPerCorrect = 100;
     else if (currentLevel === 3) rewardPerCorrect = 150;
     else if (currentLevel === 4) rewardPerCorrect = 200;
@@ -1170,6 +1169,19 @@ window.redrawCanvas = function() {
 };
 
 window.nextKanjiQuestion = async function() {
+    // ★修正: 次の問題へ進む際にUIをリセット
+    document.getElementById('kanji-answer-display').classList.add('hidden');
+    document.getElementById('kanji-answer-text').innerText = "";
+    // 書き取りの筆跡もクリア
+    window.clearKanjiCanvas();
+    // 花丸も消す
+    const hanamaru = document.getElementById('kanji-hanamaru');
+    if(hanamaru) { 
+        hanamaru.innerText = ""; 
+        hanamaru.className = ""; 
+        hanamaru.style.display = 'none'; 
+    }
+
     if (kanjiState.questionCount >= kanjiState.maxQuestions) {
         const reward = kanjiState.correctCount * 100;
         let msg = "";
@@ -1189,18 +1201,10 @@ window.nextKanjiQuestion = async function() {
     kanjiState.strokes = []; 
     
     kanjiState.guideVisible = false;
-    // ★修正: はなまる要素のリセット
-    const hanamaru = document.getElementById('kanji-hanamaru');
-    if(hanamaru) { 
-        hanamaru.innerText = ""; 
-        hanamaru.className = ""; // クラス削除
-        hanamaru.style.display = 'none'; 
-    }
 
     document.getElementById('kanji-hint-readings').style.display = 'none';
     document.getElementById('guide-kanji-btn').innerText = "うすく表示";
     document.getElementById('kanji-progress').innerText = `${kanjiState.questionCount}/${kanjiState.maxQuestions} 問目`;
-    document.getElementById('kanji-answer-display').classList.add('hidden');
     document.getElementById('next-kanji-btn').style.display = 'none';
     
     const micStatus = document.getElementById('kanji-mic-status');
@@ -1361,9 +1365,10 @@ window.processKanjiSuccess = function(comment) {
     window.updateNellMessage(comment, "excited", false, true);
     kanjiState.correctCount++;
     
-    if (kanjiState.data.type === 'writing') {
-        window.clearKanjiCanvas(true);
-    }
+    // ★修正: 筆跡を残すため、クリア処理を削除しました
+    // if (kanjiState.data.type === 'writing') {
+    //    window.clearKanjiCanvas(true);
+    // }
     
     document.getElementById('kanji-controls').style.display = 'none';
     document.getElementById('kanji-mic-container').classList.add('hidden');
