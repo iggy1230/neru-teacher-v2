@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v3.0: 起動エラー修正・完全版) ---
+// --- js/ui/sticker.js (v3.1: ポップアップ廃止版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
@@ -26,7 +26,6 @@ window.grantRandomSticker = async function(fromLunch = false) {
 
         if (res.items.length === 0) {
             console.warn("No stickers found.");
-            alert("まだシールがないみたいだにゃ…。");
             return;
         }
 
@@ -52,8 +51,6 @@ window.grantRandomSticker = async function(fromLunch = false) {
         
         if (typeof window.saveAndSync === 'function') window.saveAndSync();
         
-        alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\n画面の下の「あたらしいシール」に置いておいたにゃ！`);
-
         // 自分のページを開いているなら即座に再描画
         const board = document.getElementById('sticker-board');
         if (board && !board.classList.contains('hidden') && (!window.currentStickerUserId || window.currentStickerUserId === currentUser.id)) {
@@ -62,7 +59,6 @@ window.grantRandomSticker = async function(fromLunch = false) {
 
     } catch (error) {
         console.error("Firebase Sticker Error:", error);
-        alert("シールの取得に失敗したにゃ…。\n(" + error.message + ")");
     }
 };
 
@@ -284,7 +280,8 @@ window.attachStickerEvents = function(el, handle, data) {
                 currentUser.stickers = currentUser.stickers.filter(s => s.id !== data.id);
                 if (typeof window.saveAndSync === 'function') window.saveAndSync();
             }
-            alert("シールを捨てたにゃ！🗑️");
+            // 削除メッセージも目障りならこの下の行をコメントアウトしてください
+            // alert("シールを捨てたにゃ！🗑️");
             return;
         }
 
@@ -303,7 +300,7 @@ window.attachStickerEvents = function(el, handle, data) {
         }
 
         const parentRect = targetParent.getBoundingClientRect();
-        // 親要素内での相対位置(%)
+        // 中心点からの相対％
         let finalX = ((stickerRect.left + stickerRect.width / 2) - parentRect.left) / parentRect.width * 100;
         let finalY = ((stickerRect.top + stickerRect.height / 2) - parentRect.top) / parentRect.height * 100;
         
