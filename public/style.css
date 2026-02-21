@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v470.23: スロット豪華版) --- */
+/* --- style.css (完全版 v470.24: スロット豪華装飾版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1762,7 +1762,7 @@ button { font-family: inherit; }
     border-radius: 10px;
 }
 
-/* スロットゲーム画面スタイル */
+/* スロットゲーム画面スタイル (豪華版) */
 .slot-machine-container {
     display: flex;
     flex-direction: column;
