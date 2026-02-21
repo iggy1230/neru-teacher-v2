@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.25: ウルトラクイズ修正機能復元版) ---
+// --- js/game-engine.js (v470.26: ウルトラクイズ報酬調整版) ---
 
 console.log("Game Engine Loading...");
 
@@ -769,10 +769,18 @@ window.finishQuizSet = function() {
     window.currentQuiz = null;
     
     const correctCount = Math.floor(quizState.score / 20);
-    const currentLevel = quizState.level || 1;
-    let rewardPerCorrect = 50; 
+    const currentLevel = parseInt(quizState.level) || 1;
+    
+    // ★修正: レベル別報酬設定
+    let rewardPerCorrect = 50; // デフォルト(Lv1)
+    
+    if (currentLevel === 2) rewardPerCorrect = 100;
+    else if (currentLevel === 3) rewardPerCorrect = 150;
+    else if (currentLevel === 4) rewardPerCorrect = 200;
+    else if (currentLevel >= 5) rewardPerCorrect = 300;
+    
     let totalReward = correctCount * rewardPerCorrect;
-    if (correctCount === 0) totalReward = 10;
+    if (correctCount === 0) totalReward = 10; // 参加賞
 
     // ★修正: ランキングには「獲得カリカリ数(totalReward)」を保存
     window.saveHighScore(`quiz_${quizState.genre}`, totalReward);
