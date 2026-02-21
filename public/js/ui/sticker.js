@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v3.6: リアルタイム同期完全対応版) ---
+// --- js/ui/sticker.js (v3.7: リアルタイム同期完全対応版 - リストも同期) ---
 
 // ★追加: 戻り先画面IDを保存する変数 (初期値: ロビー)
 let stickerReturnScreen = 'screen-lobby';
@@ -40,8 +40,9 @@ window.closeStickerBook = function() {
 // ★Firebase Storageからランダムに取得する
 window.grantRandomSticker = async function(fromLunch = false) {
     if (!currentUser) return;
+    // ローカルユーザー等でStorageが未初期化の場合は、ローカルアセットを使うフォールバックへ
     if (!window.fireStorage) {
-        console.error("Storage not initialized.");
+        window.grantLocalFallbackSticker();
         return;
     }
 
@@ -53,7 +54,8 @@ window.grantRandomSticker = async function(fromLunch = false) {
         const res = await listRef.listAll();
 
         if (res.items.length === 0) {
-            console.warn("No stickers found.");
+            console.warn("No stickers found in storage. Using fallback.");
+            window.grantLocalFallbackSticker();
             return;
         }
 
@@ -77,24 +79,47 @@ window.grantRandomSticker = async function(fromLunch = false) {
         currentUser.stickers.push(newSticker);
         
         if (typeof window.saveAndSync === 'function') window.saveAndSync();
-        
-        // ★修正: ポップアップ通知を表示 (図鑑登録時風のデザイン)
-        const notif = document.createElement('div');
-        notif.innerHTML = "🎉 特製シールをゲットしたにゃ！<br>シール帳に貼るにゃ！";
-        // スタイル設定（中央上部に表示、ポップインアニメーション）
-        notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #ff9800; color:#e65100; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3); text-align:center; width: 85%; max-width: 400px;";
-        document.body.appendChild(notif);
-        
-        // 4秒後に消す
-        setTimeout(() => {
-            if(notif && notif.parentNode) notif.remove();
-        }, 4000);
+        window.showStickerNotification();
 
-        // 自分のページを開いているなら即座に再描画 (リスナー経由で更新されるが念のため)
-        
     } catch (error) {
         console.error("Firebase Sticker Error:", error);
+        window.grantLocalFallbackSticker();
     }
+};
+
+// ★新規: ローカルフォールバック用シール付与
+window.grantLocalFallbackSticker = function() {
+    const localStickers = [
+        'assets/images/items/nikukyuhanko.png',
+        'assets/images/items/student-id-base.png', 
+        'assets/images/characters/nell-normal.png'
+    ];
+    const randomSrc = localStickers[Math.floor(Math.random() * localStickers.length)];
+    
+    const newSticker = {
+        id: 'st_' + Date.now() + '_' + Math.floor(Math.random()*1000),
+        src: randomSrc,
+        location: 'newArea',
+        x: 20 + Math.random() * 60,
+        y: 20 + Math.random() * 40,
+        rotation: 0,
+        scale: 1.0,
+        zIndex: 100
+    };
+
+    if (!currentUser.stickers) currentUser.stickers = [];
+    currentUser.stickers.push(newSticker);
+
+    if (typeof window.saveAndSync === 'function') window.saveAndSync();
+    window.showStickerNotification();
+};
+
+window.showStickerNotification = function() {
+    const notif = document.createElement('div');
+    notif.innerHTML = "🎉 特製シールをゲットしたにゃ！<br>シール帳に貼るにゃ！";
+    notif.style.cssText = "position:fixed; top:20%; left:50%; transform:translateX(-50%); background:rgba(255,255,255,0.95); border:4px solid #ff9800; color:#e65100; padding:15px 25px; border-radius:30px; font-weight:900; z-index:10000; animation: popIn 0.5s ease; box-shadow:0 10px 25px rgba(0,0,0,0.3); text-align:center; width: 85%; max-width: 400px;";
+    document.body.appendChild(notif);
+    setTimeout(() => { if(notif && notif.parentNode) notif.remove(); }, 4000);
 };
 
 // ★修正: リアルタイムリスナー (onSnapshot) を使用してシールを読み込む
