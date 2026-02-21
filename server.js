@@ -1,4 +1,4 @@
-// --- server.js (v470.15: 漢字ドリル検証強化版) ---
+// --- server.js (v470.29: 完全版 - 漢字ドリル修正機能・検証強化搭載) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -325,7 +325,7 @@ async function verifyQuiz(quizData, genre) {
     }
 }
 
-// ★修正: 漢字ドリル検証用 (グレードチェック追加)
+// 漢字ドリル検証用 (グレードチェック)
 async function verifyKanji(kanjiData, targetGrade) {
     if (!kanjiData || !kanjiData.kanji || !kanjiData.reading || !kanjiData.question_display) return false;
     if (kanjiData.reading.trim() === "") return false;
@@ -717,7 +717,8 @@ app.post('/generate-kanji', async (req, res) => {
                 "kunyomi": "訓読み（ひらがな、なければ空文字）",
                 "kakusu": "画数（数字のみ）",
                 "question_display": "画面表示用のHTML（ルールに従った例文）",
-                "question_speech": "読み上げ用テキスト"
+                "question_speech": "読み上げ用テキスト",
+                "grade": "${grade}" 
             }
             `;
 
@@ -732,7 +733,6 @@ app.post('/generate-kanji', async (req, res) => {
                 throw new Error("Target kanji mismatch");
             }
 
-            // ★学年も渡して検証
             const isValid = await verifyKanji(json, grade);
             if (isValid) {
                 res.json(json);
@@ -765,11 +765,60 @@ app.post('/generate-kanji', async (req, res) => {
             onyomi: "", // ストックにはないので空
             kunyomi: "",
             kakusu: "0",
+            grade: grade,
             fallback: true
         };
         res.json(safeFallback);
     } catch (e) {
         res.status(500).json({ error: "漢字が見つからないにゃ…" });
+    }
+});
+
+// --- ★新規: 漢字ドリル修正 API ---
+app.post('/correct-kanji', async (req, res) => {
+    try {
+        const { oldKanji, reason } = req.body;
+        const model = genAI.getGenerativeModel({ model: MODEL_FAST, generationConfig: { responseMimeType: "application/json" } });
+
+        const prompt = `
+        あなたは国語の先生です。先ほど作成した以下の漢字ドリルに「間違い」または「不備」があると報告されました。
+
+        【元の問題】
+        漢字: ${oldKanji.kanji}
+        読み: ${oldKanji.reading}
+        例文: ${oldKanji.question_display.replace(/<[^>]*>/g, '')}
+        
+        【ユーザーの指摘】
+        ${reason}
+
+        ### 指示
+        指摘内容を確認し、正しく修正した新しいJSONデータを作成してください。
+        フォーマットは前回と同じです。
+
+        【出力JSONフォーマット】
+        {
+            "type": "${oldKanji.type}",
+            "kanji": "修正後の漢字",
+            "reading": "修正後の読み",
+            "onyomi": "音読み",
+            "kunyomi": "訓読み",
+            "kakusu": "画数",
+            "question_display": "修正後のHTML例文",
+            "question_speech": "修正後の読み上げテキスト",
+            "grade": "${oldKanji.grade}"
+        }
+        `;
+
+        const result = await model.generateContent(prompt);
+        let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+        const cleanText = extractFirstJson(text);
+        const jsonResponse = JSON.parse(cleanText);
+
+        res.json(jsonResponse);
+
+    } catch (e) {
+        console.error("Correct Kanji Error:", e);
+        res.status(500).json({ error: "修正できなかったにゃ…ごめんにゃ。" });
     }
 });
 
