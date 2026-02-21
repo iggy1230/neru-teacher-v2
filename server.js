@@ -1,4 +1,4 @@
-// --- server.js (v470.14: 完全版 - 漢字ドリル強化・ストック機能搭載) ---
+// --- server.js (v470.15: 漢字ドリル検証強化版) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -325,11 +325,9 @@ async function verifyQuiz(quizData, genre) {
     }
 }
 
-// 漢字ドリル検証用
-async function verifyKanji(kanjiData) {
+// ★修正: 漢字ドリル検証用 (グレードチェック追加)
+async function verifyKanji(kanjiData, targetGrade) {
     if (!kanjiData || !kanjiData.kanji || !kanjiData.reading || !kanjiData.question_display) return false;
-    
-    // 簡易検証: 読み仮名が空でないか、HTMLタグが含まれているか
     if (kanjiData.reading.trim() === "") return false;
     if (!kanjiData.question_display.includes("<span")) return false;
     
@@ -337,23 +335,30 @@ async function verifyKanji(kanjiData) {
     try {
         const model = genAI.getGenerativeModel({ model: MODEL_FAST });
         const checkPrompt = `
-        以下の漢字問題の整合性をチェックしてください。
+        以下の漢字問題が、日本の小学校教育課程において適切かチェックしてください。
+
+        対象学年: 小学${targetGrade}年生
         漢字: ${kanjiData.kanji}
         読み: ${kanjiData.reading}
         例文: ${kanjiData.question_display.replace(/<[^>]*>/g, '')}
         
-        判定基準:
-        1. 漢字と読みが正しい組み合わせか（一般的な読みか）。
-        2. 例文が日本語として自然か。
+        【判定基準】
+        1. **学年適合性**: 漢字「${kanjiData.kanji}」は、文部科学省の学習指導要領において、**小学${targetGrade}年生までに（または${targetGrade}年生で）**習う漢字ですか？
+           - もし上の学年で習う漢字なら NG です。
+        2. **読み**: 一般的で正しい読みですか？
+        3. **例文**: 子供に分かりやすい自然な日本語ですか？
         
-        OKなら "PASS"、NGなら "FAIL" と出力してください。
+        すべてOKなら "PASS"、一つでもNGなら "FAIL" と出力してください。
+        理由があれば FAIL の後に続けてください。
         `;
         const result = await model.generateContent(checkPrompt);
         const text = result.response.text().trim();
+        
+        console.log(`[Kanji Verify] Grade ${targetGrade} - ${kanjiData.kanji}: ${text}`);
         return text.includes("PASS");
     } catch (e) {
         console.warn("Kanji Verify Error (Skipping AI check):", e.message);
-        return true; // AIチェックエラー時は形式チェックのみで通過とする
+        return true; 
     }
 }
 
@@ -727,7 +732,8 @@ app.post('/generate-kanji', async (req, res) => {
                 throw new Error("Target kanji mismatch");
             }
 
-            const isValid = await verifyKanji(json);
+            // ★学年も渡して検証
+            const isValid = await verifyKanji(json, grade);
             if (isValid) {
                 res.json(json);
                 return;
