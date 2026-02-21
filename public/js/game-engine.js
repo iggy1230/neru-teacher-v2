@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.23: スロットゲーム機能追加・完全版) ---
+// --- js/game-engine.js (v470.24: スロット減速版・完全版) ---
 
 console.log("Game Engine Loading...");
 
@@ -2010,8 +2010,10 @@ window.slotGameLoop = function() {
     for (let i = 0; i < slotGameState.reelCount; i++) {
         if (slotGameState.spinning[i]) {
             allStopped = false;
-            // スクロール速度 (0.5倍に落とす: 元は 20+(i*2) 程度だった)
-            const speed = (10 + i); 
+            // スクロール速度 (0.8倍に減速)
+            const baseSpeed = 10 + i;
+            const speed = baseSpeed * 0.8;
+            
             slotGameState.positions[i] -= speed;
             
             // ループ処理
