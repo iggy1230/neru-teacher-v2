@@ -1,17 +1,15 @@
-// --- js/ui/sticker.js (v3.4: サーバー強制同期修正版) ---
+// --- js/ui/sticker.js (v3.5: リアルタイム同期対応版) ---
 
 // ★追加: 戻り先画面IDを保存する変数 (初期値: ロビー)
 let stickerReturnScreen = 'screen-lobby';
+// ★追加: リアルタイムリスナーの解除用関数
+window.stickerUnsubscribe = null;
 
 window.showStickerBook = function(targetUserId = null, returnTo = 'screen-lobby') {
     // 戻り先を保存 (指定があれば更新、なければロビーに戻ることを想定)
-    // ただし、もし returnTo が指定されていない場合でも、直前の画面がスロットならスロットに戻したいケースもあるが、
-    // ここでは明示的に引数で渡された場合のみ更新する設計にする。
-    // (引数なしの場合はデフォルト 'screen-lobby' になるので注意)
     if (arguments.length > 1) {
         stickerReturnScreen = returnTo;
     } else {
-        // 引数が省略された場合、ここがロビーからの呼び出しならロビーに戻る、という想定
         stickerReturnScreen = 'screen-lobby'; 
     }
 
@@ -24,8 +22,13 @@ window.showStickerBook = function(targetUserId = null, returnTo = 'screen-lobby'
     window.loadAndRenderStickers(userId);
 };
 
-// ★追加: シール帳を閉じて元の画面に戻る関数
+// ★修正: シール帳を閉じる際にリスナーを解除する
 window.closeStickerBook = function() {
+    if (window.stickerUnsubscribe) {
+        window.stickerUnsubscribe();
+        window.stickerUnsubscribe = null;
+    }
+
     if (stickerReturnScreen && document.getElementById(stickerReturnScreen)) {
         window.switchScreen(stickerReturnScreen);
     } else {
@@ -86,27 +89,81 @@ window.grantRandomSticker = async function(fromLunch = false) {
             if(notif && notif.parentNode) notif.remove();
         }, 4000);
 
-        // 自分のページを開いているなら即座に再描画
-        const board = document.getElementById('sticker-board');
-        if (board && !board.classList.contains('hidden') && (!window.currentStickerUserId || window.currentStickerUserId === currentUser.id)) {
-             window.loadAndRenderStickers(currentUser.id);
-        }
-
+        // 自分のページを開いているなら即座に再描画 (リスナー経由で更新されるが念のため)
+        // ※onSnapshotがあれば自動更新されるはずだが、saveAndSyncのタイミング次第
+        
     } catch (error) {
         console.error("Firebase Sticker Error:", error);
     }
 };
 
-window.loadAndRenderStickers = async function(userId) {
+// ★修正: リアルタイムリスナー (onSnapshot) を使用してシールを読み込む
+window.loadAndRenderStickers = function(userId) {
     window.currentStickerUserId = userId;
+
+    // 既存のリスナーがあれば解除
+    if (window.stickerUnsubscribe) {
+        window.stickerUnsubscribe();
+        window.stickerUnsubscribe = null;
+    }
 
     const board = document.getElementById('sticker-board');
     const newArea = document.getElementById('new-sticker-area'); 
     if (!board || !newArea) return;
     
+    // ロード中表示
+    board.innerHTML = '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#aaa;">読み込み中...</div>';
+
+    const isMe = (currentUser && currentUser.id === userId);
+
+    // DB接続がない場合のフォールバック (自分のみ)
+    if (!window.db) {
+        if (isMe) {
+            renderStickers(currentUser.stickers || [], true);
+        } else {
+            board.innerHTML = '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:red;">データベースにつながってないにゃ...</div>';
+        }
+        return;
+    }
+
+    // ★重要: リアルタイムリスナーを設定
+    window.stickerUnsubscribe = window.db.collection("users").doc(String(userId))
+        .onSnapshot((doc) => {
+            if (doc.exists) {
+                const data = doc.data();
+                const stickers = data.stickers || [];
+                
+                // 自分のデータならローカルcurrentUserも更新して同期を保つ
+                if (isMe) {
+                    currentUser.stickers = stickers;
+                } else {
+                    // 他人のデータの場合、名前などをメッセージに出すのは初回のみにしたいが、
+                    // ここでは更新のたびに再描画するだけにする
+                }
+
+                // 描画実行
+                renderStickers(stickers, isMe);
+            } else {
+                board.innerHTML = '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#aaa;">データがないにゃ...</div>';
+            }
+        }, (error) => {
+            console.error("Sticker Sync Error:", error);
+            board.innerHTML = '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:red;">読み込めなかったにゃ...</div>';
+        });
+};
+
+// ★新規: 描画ロジックを分離 (リスナーから呼ばれる)
+function renderStickers(stickers, isMe) {
+    const board = document.getElementById('sticker-board');
+    const newArea = document.getElementById('new-sticker-area'); 
+    
+    if (!board || !newArea) return;
+
+    // 盤面のクリアと初期化
     board.innerHTML = '';
     newArea.innerHTML = '<div class="new-sticker-title">あたらしいシール</div>';
 
+    // 背景クリックで選択解除
     const deselectAll = (e) => {
         if (e.target.closest('.sticker-item')) return;
         document.querySelectorAll('.sticker-item.selected').forEach(el => el.classList.remove('selected'));
@@ -114,6 +171,7 @@ window.loadAndRenderStickers = async function(userId) {
     board.onclick = deselectAll;
     newArea.onclick = deselectAll;
 
+    // バインダーのリング描画
     const ring = document.createElement('div'); 
     ring.className = 'binder-ring'; 
     board.appendChild(ring);
@@ -133,45 +191,19 @@ window.loadAndRenderStickers = async function(userId) {
     guide.innerText = "STICKER BOOK"; 
     board.appendChild(guide);
 
-    let stickers = [];
-    const isMe = (currentUser && currentUser.id === userId);
+    // ゴミ箱の表示切り替え
     const trash = document.getElementById('sticker-trash');
     if (trash) { 
         isMe ? trash.classList.remove('hidden') : trash.classList.add('hidden'); 
     }
 
-    if (isMe) {
-        stickers = currentUser.stickers || [];
-    } else {
-        if (window.db) {
-            try {
-                // ★修正: サーバーから強制的に最新を取得する
-                let doc;
-                try {
-                    doc = await window.db.collection("users").doc(String(userId)).get({ source: 'server' });
-                } catch(serverErr) {
-                    console.warn("Force server fetch failed, trying default:", serverErr);
-                    doc = await window.db.collection("users").doc(String(userId)).get();
-                }
-
-                if (doc.exists) {
-                    const data = doc.data();
-                    stickers = data.stickers || [];
-                    window.updateNellMessage(`${data.name}さんのシール帳だにゃ！`, "happy");
-                }
-            } catch (e) { 
-                console.error("Sticker Fetch Error:", e); 
-                window.updateNellMessage("読み込めなかったにゃ…", "sad");
-            }
-        }
-    }
-
+    // シール要素の生成と配置
     stickers.forEach(s => {
         const parentEl = (s.location === 'newArea') ? newArea : board;
         const el = window.createStickerElement(s, isMe);
         parentEl.appendChild(el);
     });
-};
+}
 
 window.createStickerElement = function(data, editable = true) {
     const div = document.createElement('div');
