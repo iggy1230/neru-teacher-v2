@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v470.22: スロットゲーム対応版) --- */
+/* --- style.css (完全版 v470.23: スロット豪華版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1768,44 +1768,54 @@ button { font-family: inherit; }
     flex-direction: column;
     align-items: center;
     gap: 15px;
-    background: #333;
+    background: linear-gradient(135deg, #333 0%, #555 100%); /* 少し豪華に */
     padding: 20px;
     border-radius: 20px;
-    box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+    box-shadow: 
+        0 10px 20px rgba(0,0,0,0.5),
+        inset 0 0 10px rgba(255,255,255,0.1);
     margin: 10px auto;
     max-width: 320px;
+    border: 5px solid #ffd700; /* 金枠 */
 }
 
 .slot-reels {
     display: flex;
     gap: 10px;
-    background: #fff;
+    background: #000;
     padding: 10px;
     border-radius: 10px;
     position: relative;
     overflow: hidden;
+    box-shadow: inset 0 0 10px #000;
 }
 
-/* センターライン（当たり判定ライン） */
-.slot-line {
+/* 当たり判定ライン（オーバーレイ） */
+.slot-overlay-line {
     position: absolute;
     top: 50%;
     left: 0;
     width: 100%;
-    height: 2px;
-    background: rgba(255, 0, 0, 0.5);
+    height: 40px; /* リール項目の高さの半分くらい */
+    transform: translateY(-50%);
+    border-top: 2px solid rgba(255, 215, 0, 0.6);
+    border-bottom: 2px solid rgba(255, 215, 0, 0.6);
+    background: rgba(255, 255, 255, 0.1);
     z-index: 10;
     pointer-events: none;
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
 }
 
 .slot-reel {
     width: 60px;
     height: 90px;
-    overflow: hidden; /* 表示領域のみ見せる */
+    overflow: hidden; 
     background: #fff;
     border: 2px solid #ccc;
     border-radius: 5px;
     position: relative;
+    /* 立体感を出す */
+    box-shadow: inset 0 0 15px rgba(0,0,0,0.5); 
 }
 
 .reel-strip {
@@ -1813,15 +1823,16 @@ button { font-family: inherit; }
     top: 0;
     left: 0;
     width: 100%;
-    /* 高さはJSで制御するが、初期表示用に */
     display: flex;
     flex-direction: column;
     align-items: center;
+    /* ドット絵をきれいに見せる */
+    image-rendering: pixelated; 
 }
 
 .reel-item {
     width: 60px;
-    height: 90px; /* リールの表示高さと合わせる */
+    height: 90px; 
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1852,6 +1863,8 @@ button { font-family: inherit; }
     font-weight: bold;
     box-shadow: 0 4px 0 #b71c1c;
     cursor: pointer;
+    font-family: monospace; /* アーケードっぽく */
+    border: 2px solid #fff;
 }
 
 .slot-stop-btn:active {
@@ -1860,7 +1873,9 @@ button { font-family: inherit; }
 }
 
 .slot-stop-btn:disabled {
-    background: #ccc;
+    background: #555;
+    color: #888;
     box-shadow: none;
+    border-color: #555;
     cursor: not-allowed;
 }
