@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.23: スロットゲーム機能追加版) ---
+// --- js/game-engine.js (v470.23: スロットゲーム機能追加・完全版) ---
 
 console.log("Game Engine Loading...");
 
@@ -1898,10 +1898,12 @@ let slotGameState = {
     spinning: [false, false, false],
     positions: [0, 0, 0],
     symbols: [
-        'assets/images/characters/nell-normal.png',
-        'assets/images/characters/nell-happy.png',
-        'assets/images/characters/nell-excited.png',
-        'assets/images/items/nikukyuhanko.png'
+        'assets/images/game/slot/neru_dot.png',
+        'assets/images/game/slot/kari100_dot.png',
+        'assets/images/game/slot/mouse_dot.png',
+        'assets/images/game/slot/soccerball_dot.png',
+        'assets/images/game/slot/baseball_dot.png',
+        'assets/images/game/slot/churu_dot.png'
     ],
     symbolHeight: 90, // リールの各アイテムの高さ
     animationId: null,
@@ -1932,18 +1934,17 @@ window.showSlotGame = function() {
 window.checkSlotDailyLimit = function() {
     if (!currentUser) return;
     
+    // テスト段階なので無制限 (常に0にリセット)
     const today = new Date().toISOString().split('T')[0];
-    // slotGameData: { date: "YYYY-MM-DD", count: 0 }
     if (!currentUser.slotGameData) {
         currentUser.slotGameData = { date: today, count: 0 };
-    } else if (currentUser.slotGameData.date !== today) {
-        // 日付が変わったらリセット
-        currentUser.slotGameData = { date: today, count: 0 };
     }
+    // テスト用に強制リセット
+    currentUser.slotGameData.count = 0; 
     
     // UI更新
     slotGameState.todayPlayCount = currentUser.slotGameData.count;
-    document.getElementById('slot-remain-count').innerText = 3 - slotGameState.todayPlayCount;
+    document.getElementById('slot-remain-count').innerText = "∞"; // テスト中
     
     if (typeof window.saveAndSync === 'function') window.saveAndSync();
 };
@@ -1973,19 +1974,22 @@ window.initSlotReels = function() {
 };
 
 window.startSlot = function() {
+    // テスト中は制限なし
+    /*
     if (slotGameState.todayPlayCount >= 3) {
         window.updateNellMessage("今日はもう終わりだにゃ！また明日にゃ！", "normal");
         return;
     }
+    */
     
     if (slotGameState.isRunning) return;
     slotGameState.isRunning = true;
     
-    // カウント消費
-    slotGameState.todayPlayCount++;
-    currentUser.slotGameData.count = slotGameState.todayPlayCount;
-    document.getElementById('slot-remain-count').innerText = 3 - slotGameState.todayPlayCount;
-    if (typeof window.saveAndSync === 'function') window.saveAndSync();
+    // カウント消費 (テスト中は増やさない)
+    // slotGameState.todayPlayCount++;
+    // currentUser.slotGameData.count = slotGameState.todayPlayCount;
+    // document.getElementById('slot-remain-count').innerText = 3 - slotGameState.todayPlayCount;
+    // if (typeof window.saveAndSync === 'function') window.saveAndSync();
 
     // UI更新
     document.getElementById('slot-start-btn').disabled = true;
@@ -2006,8 +2010,8 @@ window.slotGameLoop = function() {
     for (let i = 0; i < slotGameState.reelCount; i++) {
         if (slotGameState.spinning[i]) {
             allStopped = false;
-            // スクロール速度
-            const speed = 20 + (i * 2); // リールごとに少し速度を変える？
+            // スクロール速度 (0.5倍に落とす: 元は 20+(i*2) 程度だった)
+            const speed = (10 + i); 
             slotGameState.positions[i] -= speed;
             
             // ループ処理
@@ -2048,8 +2052,6 @@ window.stopReel = function(index) {
     if (strip) {
         strip.style.transition = "transform 0.2s ease-out";
         strip.style.transform = `translateY(${snappedY}px)`;
-        // 次回の回転のためにtransitionを戻すタイミングが必要だが、
-        // 今回は単純化のため、start時にstyleをリセットする形でも良い
         setTimeout(() => { strip.style.transition = "none"; }, 200);
     }
 };
@@ -2063,6 +2065,9 @@ window.checkSlotResult = function() {
     
     const results = slotGameState.positions.map(pos => {
         // posはマイナス値。絶対値を取って高さで割り、シンボル数で割った余り
+        // ※ 座標が0に近いほどリストの上の方(0番目)になるが、
+        // translateがマイナスに進むので、絶対値を取ると下の要素が表示される。
+        // 目押し位置の調整として、+0.5 などのオフセットは不要（スナップ済み）
         const index = Math.abs(Math.round(pos / h)) % symbolCount;
         return index;
     });
@@ -2087,10 +2092,6 @@ window.checkSlotResult = function() {
         window.updateNellMessage("残念！また挑戦してにゃ！", "normal");
     }
     
-    // プレイ回数が残っていればスタートボタン有効化
-    if (slotGameState.todayPlayCount < 3) {
-        document.getElementById('slot-start-btn').disabled = false;
-    } else {
-        document.getElementById('slot-start-btn').innerText = "また明日！";
-    }
+    // テスト中は常に有効
+    document.getElementById('slot-start-btn').disabled = false;
 };
