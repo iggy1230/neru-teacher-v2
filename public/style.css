@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v470.19: シール回転ハンドル対応版) --- */
+/* --- style.css (完全版 v470.20: シールサイズ強制固定版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1611,4 +1611,153 @@ button { font-family: inherit; }
     background: #81d4fa;
     border: 2px solid #4fc3f7;
     border-radius: 10px;
-    box-shadow: 2px 2px 5px rgba(0,0,0
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.binder-clasp::after {
+    content: "";
+    width: 15px;
+    height: 15px;
+    background: #4fc3f7;
+    border-radius: 50%;
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.2);
+}
+
+/* ★修正: シールアイテムのサイズを強制 (100x100) */
+.sticker-item {
+    position: absolute;
+    width: 100px;  /* 幅固定 */
+    height: 100px; /* 高さ固定 */
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    transition: transform 0.1s;
+    filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.3));
+    box-sizing: border-box; 
+    border: 2px solid transparent; /* 通常時は透明な枠 */
+    /* 中心基準にするための調整はJSで行うが、念のため */
+    transform-origin: center center;
+}
+
+.sticker-item.selected {
+    border: 2px dashed #2196f3; /* 選択時は青い点線 */
+    z-index: 1000 !important; /* 選択中は最前面 */
+    cursor: grab;
+}
+
+.sticker-item:active {
+    cursor: grabbing;
+    filter: drop-shadow(4px 4px 5px rgba(0,0,0,0.4));
+    z-index: 1000 !important; 
+}
+
+/* ★修正: 画像は親要素(100x100)に収まるようにする */
+.sticker-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none; 
+    display: block;
+}
+
+/* 回転ハンドル */
+.sticker-rotate-handle {
+    display: none; /* 通常は非表示 */
+    position: absolute;
+    bottom: -10px; /* 枠の少し外側 */
+    right: -10px;
+    width: 30px;
+    height: 30px;
+    background-color: #fff;
+    border: 2px solid #2196f3;
+    border-radius: 50%;
+    background-image: url('assets/images/items/icon_rotate.png'); /* 回転アイコン */
+    background-size: 60%;
+    background-position: center;
+    background-repeat: no-repeat;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    cursor: alias; /* 回転っぽいカーソル */
+    z-index: 1001;
+}
+
+/* 回転アイコン画像がない場合の代替文字 */
+.sticker-rotate-handle::after {
+    content: "↻";
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 18px;
+    font-weight: bold;
+    color: #2196f3;
+}
+
+/* 選択されている時だけハンドルを表示 */
+.sticker-item.selected .sticker-rotate-handle {
+    display: block;
+}
+
+.sticker-text {
+    font-size: 40px;
+    line-height: 1;
+    pointer-events: none;
+}
+
+/* ゴミ箱 */
+#sticker-trash {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 60px;
+    height: 60px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 3px solid #ff5252;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    z-index: 500;
+    transition: transform 0.2s, background-color 0.2s;
+    pointer-events: none; /* ドラッグ判定はJSのgetBoundingClientRectで行うため、イベント透過で問題なし */
+}
+
+#sticker-trash.active {
+    transform: scale(1.1);
+    background-color: #ffebee;
+}
+
+#sticker-trash.hover {
+    transform: scale(1.3);
+    background-color: #ffcdd2;
+    border-color: #d32f2f;
+}
+
+/* ★新規: 新しいシール置き場 */
+.new-sticker-area {
+    position: relative; /* シールの絶対配置の基準になる */
+    width: 100%;
+    height: 120px; /* 置き場の高さ */
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 15px;
+    margin-top: 15px;
+    padding: 10px;
+    border: 2px dashed rgba(255, 255, 255, 0.4);
+}
+
+.new-sticker-title {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #5d4037;
+    color: white;
+    font-size: 0.8rem;
+    font-weight: bold;
+    padding: 2px 12px;
+    border-radius: 10px;
+}
