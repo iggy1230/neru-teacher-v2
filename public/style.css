@@ -1,4 +1,4 @@
-/* --- style.css (完全版 v470.20: シールサイズ強制固定版) --- */
+/* --- style.css (完全版 v470.21: シールサイズ縮小版) --- */
 
 :root {
     --primary-pink: #ff8fa3;
@@ -1627,11 +1627,11 @@ button { font-family: inherit; }
     box-shadow: inset 1px 1px 2px rgba(0,0,0,0.2);
 }
 
-/* ★修正: シールアイテムのサイズを強制 (100x100) */
+/* ★修正: シールアイテムのサイズを強制 (70x70) */
 .sticker-item {
     position: absolute;
-    width: 100px;  /* 幅固定 */
-    height: 100px; /* 高さ固定 */
+    width: 70px;  /* 幅固定 100px -> 70px */
+    height: 70px; /* 高さ固定 100px -> 70px */
     cursor: grab;
     user-select: none;
     touch-action: none;
@@ -1655,7 +1655,7 @@ button { font-family: inherit; }
     z-index: 1000 !important; 
 }
 
-/* ★修正: 画像は親要素(100x100)に収まるようにする */
+/* ★修正: 画像は親要素(70x70)に収まるようにする */
 .sticker-img {
     width: 100%;
     height: 100%;
