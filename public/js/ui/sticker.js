@@ -1,4 +1,4 @@
-// --- js/ui/sticker.js (v3.3: 戻り先制御追加版) ---
+// --- js/ui/sticker.js (v3.4: サーバー強制同期修正版) ---
 
 // ★追加: 戻り先画面IDを保存する変数 (初期値: ロビー)
 let stickerReturnScreen = 'screen-lobby';
@@ -145,7 +145,15 @@ window.loadAndRenderStickers = async function(userId) {
     } else {
         if (window.db) {
             try {
-                const doc = await window.db.collection("users").doc(String(userId)).get();
+                // ★修正: サーバーから強制的に最新を取得する
+                let doc;
+                try {
+                    doc = await window.db.collection("users").doc(String(userId)).get({ source: 'server' });
+                } catch(serverErr) {
+                    console.warn("Force server fetch failed, trying default:", serverErr);
+                    doc = await window.db.collection("users").doc(String(userId)).get();
+                }
+
                 if (doc.exists) {
                     const data = doc.data();
                     stickers = data.stickers || [];
@@ -153,6 +161,7 @@ window.loadAndRenderStickers = async function(userId) {
                 }
             } catch (e) { 
                 console.error("Sticker Fetch Error:", e); 
+                window.updateNellMessage("読み込めなかったにゃ…", "sad");
             }
         }
     }
