@@ -1,4 +1,4 @@
-// --- js/game-engine.js (v470.30: 漢字ドリル完全版 - UI改善・DB保存・報告機能統合) ---
+// --- js/game-engine.js (v470.32: 漢字ドリルDB保存リトライ対応版) ---
 
 console.log("Game Engine Loading...");
 
@@ -75,7 +75,8 @@ window.saveHighScore = async function(gameKey, score) {
             }, { merge: true });
             console.log(`[Ranking] Highscore saved for ${gameKey}: ${score}`);
         } catch (e) {
-            console.error("[Ranking] Save failed:", e);
+            // 権限エラーなどはログに出すが、ゲーム進行は止めない
+            console.warn("[Ranking] Save failed:", e.message);
         }
     }
 };
@@ -1088,7 +1089,7 @@ let kanjiState = {
     isDrawing: false, mode: 'writing', 
     questionCount: 0, maxQuestions: 5, correctCount: 0,
     guideVisible: false, strokes: [], currentStroke: null,
-    history: [] 
+    history: [] // 重複防止用
 };
 
 window.showKanjiMenu = function() {
@@ -1105,7 +1106,7 @@ window.startKanjiSet = function(mode) {
     kanjiState.questionCount = 0;
     kanjiState.correctCount = 0;
     kanjiState.strokes = [];
-    kanjiState.history = []; 
+    kanjiState.history = []; // 履歴リセット
     
     document.getElementById('kanji-menu-container').style.display = 'none';
     const content = document.getElementById('kanji-game-content');
@@ -1145,6 +1146,8 @@ window.startKanjiSet = function(mode) {
 window.redrawCanvas = function() {
     if (!kanjiState.ctx) return;
     kanjiState.ctx.clearRect(0, 0, 300, 300);
+    
+    // ガイド描画
     if (kanjiState.guideVisible && kanjiState.data) {
         kanjiState.ctx.save();
         kanjiState.ctx.font = "240px 'Klee One', 'Zen Kurenaido', sans-serif";
@@ -1152,6 +1155,8 @@ window.redrawCanvas = function() {
         kanjiState.ctx.fillText(kanjiState.data.kanji, 150, 160);
         kanjiState.ctx.restore();
     }
+    
+    // ストローク再描画
     kanjiState.ctx.beginPath();
     kanjiState.strokes.forEach(stroke => {
         if (stroke.points.length > 0) {
@@ -1185,9 +1190,10 @@ async function fetchKanjiFromStock(grade, mode) {
     }
 }
 
-// ★修正: 生成した問題を保存する関数
+// ★修正: 生成した問題を保存する関数 (エラーハンドリング強化)
 async function saveKanjiProblemToDb(kanjiData) {
     if (!window.db || !kanjiData || !kanjiData.kanji) return;
+    
     try {
         // 重複チェック (IDは漢字+タイプ+学年)
         const docId = `${kanjiData.kanji}_${kanjiData.type}_${kanjiData.grade}`;
@@ -1196,7 +1202,12 @@ async function saveKanjiProblemToDb(kanjiData) {
             createdAt: new Date().toISOString()
         }, { merge: true });
     } catch(e) {
-        console.warn("DB Save Error:", e);
+        // 権限エラーの場合はログを控えめに
+        if (e.code === 'permission-denied') {
+            console.log("DB Save Skipped (Permission Denied). Firebase rules need update?");
+        } else {
+            console.warn("DB Save Error:", e);
+        }
     }
 }
 
