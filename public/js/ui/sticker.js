@@ -1,8 +1,8 @@
-// --- js/ui/sticker.js (v2.7: ドラッグ座標ズレ修正版) ---
+// --- js/ui/sticker.js (v2.8: 回転ハンドル実装版) ---
 
 window.showStickerBook = function(targetUserId = null) {
     window.switchScreen('screen-sticker-book');
-    window.updateNellMessage("シール帳だにゃ！自由に貼って遊ぶにゃ！", "happy");
+    window.updateNellMessage("シール帳だにゃ！シールをタップすると回転できるにゃ！", "happy");
     
     const userId = targetUserId || (currentUser ? currentUser.id : null);
     if (!userId) return;
@@ -18,7 +18,6 @@ window.grantRandomSticker = async function(fromLunch = false) {
         return;
     }
 
-    // 演出開始
     if(window.safePlay) window.safePlay(window.sfxHirameku);
 
     try {
@@ -40,10 +39,9 @@ window.grantRandomSticker = async function(fromLunch = false) {
             id: 'st_' + Date.now() + '_' + Math.floor(Math.random()*1000),
             src: url,
             location: 'newArea', 
-            // 枠内からはみ出さないようにマージンを持たせる
             x: 20 + Math.random() * 60, 
             y: 20 + Math.random() * 40, 
-            rotation: (Math.random() * 40 - 20),
+            rotation: 0, // 初期回転は0
             scale: 1.0,
             zIndex: 100 
         };
@@ -54,6 +52,12 @@ window.grantRandomSticker = async function(fromLunch = false) {
         if (typeof window.saveAndSync === 'function') window.saveAndSync();
         
         alert(`🎉 おめでとう！\n特製シールをゲットしたにゃ！\n画面の下の「あたらしいシール」に置いておいたにゃ！`);
+
+        // 即座に反映させるために自分のページなら再描画
+        const board = document.getElementById('sticker-board');
+        if (board && !board.classList.contains('hidden')) {
+             window.loadAndRenderStickers(currentUser.id);
+        }
 
     } catch (error) {
         console.error("Firebase Sticker Error:", error);
@@ -68,6 +72,14 @@ window.loadAndRenderStickers = async function(userId) {
     
     board.innerHTML = '';
     newArea.innerHTML = '<div class="new-sticker-title">あたらしいシール</div>';
+
+    // 背景クリックで選択解除するイベント
+    const deselectAll = (e) => {
+        if (e.target.closest('.sticker-item')) return; // シールクリック時は無視
+        document.querySelectorAll('.sticker-item.selected').forEach(el => el.classList.remove('selected'));
+    };
+    board.onclick = deselectAll;
+    newArea.onclick = deselectAll;
 
     const ring = document.createElement('div'); 
     ring.className = 'binder-ring'; 
@@ -133,15 +145,23 @@ window.createStickerElement = function(data, editable = true) {
     img.src = data.src || 'assets/images/items/nikukyuhanko.png';
     img.className = 'sticker-img';
     img.crossOrigin = "anonymous";
+    img.draggable = false; // 画像自体のドラッグを禁止
     
     img.onerror = () => { 
         img.src = 'assets/images/items/nikukyuhanko.png'; 
     };
-    
     div.appendChild(img);
 
+    // ★修正: 回転ハンドルを追加
     if (editable) {
-        window.attachStickerEvents(div, data);
+        const handle = document.createElement('div');
+        handle.className = 'sticker-rotate-handle';
+        // ハンドル自体はドラッグイベントを親に伝播させない
+        handle.addEventListener('mousedown', (e) => e.stopPropagation());
+        handle.addEventListener('touchstart', (e) => e.stopPropagation());
+        div.appendChild(handle);
+
+        window.attachStickerEvents(div, handle, data);
     } else {
         div.style.cursor = 'default';
     }
@@ -149,16 +169,32 @@ window.createStickerElement = function(data, editable = true) {
     return div;
 };
 
-// ★修正: ドラッグ処理のロジック (スクロール対応)
-window.attachStickerEvents = function(el, data) {
+// ★修正: ドラッグ移動と回転のロジック分離
+window.attachStickerEvents = function(el, handle, data) {
     let isDragging = false;
+    let isRotating = false;
+    
+    // 移動用変数
     let startX, startY;
-    let initialLeft, initialTop; // 画面上の絶対座標(中心)
+    let initialLeft, initialTop;
     let moved = false;
+
+    // 回転用変数
+    let boxCenter = { x: 0, y: 0 };
+    let startAngle = 0;
+    let initialRotation = 0;
     
     const trash = document.getElementById('sticker-trash');
     const board = document.getElementById('sticker-board');
     const newArea = document.getElementById('new-sticker-area');
+
+    // ----------------------------------------------------
+    // 共通ヘルパー
+    // ----------------------------------------------------
+    const getClientPos = (e) => {
+        const t = e.touches ? e.touches[0] : e;
+        return { x: t.clientX, y: t.clientY };
+    };
 
     const isOverTrash = (element) => {
         if (!trash) return false;
@@ -168,52 +204,52 @@ window.attachStickerEvents = function(el, data) {
         return (c1.x >= r2.left && c1.x <= r2.right && c1.y >= r2.top && c1.y <= r2.bottom);
     };
 
-    const startDrag = (e) => {
-        if (e.target.closest('.main-btn')) return; 
+    // ----------------------------------------------------
+    // 移動（ドラッグ）ロジック
+    // ----------------------------------------------------
+    const startMove = (e) => {
+        if (e.target.closest('.main-btn')) return;
+        if (e.target === handle) return; // ハンドルクリック時は移動しない
+
         e.preventDefault();
-        e.stopPropagation();
+        // e.stopPropagation(); // 親への伝播は止めない（選択解除のため）
+
+        // 他の選択状態を解除して、これをアクティブに
+        document.querySelectorAll('.sticker-item.selected').forEach(item => {
+            if (item !== el) item.classList.remove('selected');
+        });
+        el.classList.add('selected');
 
         isDragging = true;
         moved = false;
         
-        // タッチ/マウス座標の取得
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        startX = clientX;
-        startY = clientY;
+        const pos = getClientPos(e);
+        startX = pos.x;
+        startY = pos.y;
 
-        // 現在の矩形情報を取得
         const rect = el.getBoundingClientRect();
-        
-        // ★重要修正: スクロール量(window.scrollX/Y)を加算する
-        // CSSで translate(-50%, -50%) しているため、left/top は「要素の中心座標」に合わせる
+        // スクロール考慮
         initialLeft = rect.left + rect.width / 2 + window.scrollX;
         initialTop = rect.top + rect.height / 2 + window.scrollY;
 
-        // body直下に移動させて、親要素のoverflowなどの影響を受けないようにする
         document.body.appendChild(el);
         el.style.zIndex = 9999;
-        
-        // 座標を固定値(px)に変換してセット
         el.style.left = initialLeft + 'px';
         el.style.top = initialTop + 'px';
 
         if (trash) trash.classList.add('active');
     };
 
-    const onDrag = (e) => {
+    const onMove = (e) => {
         if (!isDragging) return;
         e.preventDefault();
         
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        
-        const dx = clientX - startX;
-        const dy = clientY - startY;
+        const pos = getClientPos(e);
+        const dx = pos.x - startX;
+        const dy = pos.y - startY;
         
         if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
 
-        // 追従
         el.style.left = (initialLeft + dx) + 'px';
         el.style.top = (initialTop + dy) + 'px';
         
@@ -228,7 +264,7 @@ window.attachStickerEvents = function(el, data) {
         }
     };
 
-    const endDrag = (e) => {
+    const endMove = (e) => {
         if (!isDragging) return;
         isDragging = false;
         
@@ -237,7 +273,6 @@ window.attachStickerEvents = function(el, data) {
             trash.classList.remove('hover');
         }
         
-        // ゴミ箱処理
         if (moved && trash && isOverTrash(el)) {
             if (window.sfxBatu) window.safePlay(window.sfxBatu); 
             el.remove();
@@ -249,15 +284,12 @@ window.attachStickerEvents = function(el, data) {
             return;
         }
 
-        // --- ドロップ位置の判定と親要素への戻し ---
+        // 親コンテナへ戻す
         const stickerRect = el.getBoundingClientRect();
         const newAreaRect = newArea.getBoundingClientRect();
-        
-        // シールの中心Y座標
         const stickerCenterY = stickerRect.top + stickerRect.height / 2;
 
         let targetParent;
-        // 「新規エリア」の上端より上なら「シール帳(board)」とみなす
         if (stickerCenterY < newAreaRect.top) {
             targetParent = board;
             data.location = 'board';
@@ -266,37 +298,29 @@ window.attachStickerEvents = function(el, data) {
             data.location = 'newArea';
         }
 
-        // 親要素内での相対座標(%)を計算
         const parentRect = targetParent.getBoundingClientRect();
-        const stickerCenterX = stickerRect.left + stickerRect.width / 2;
-        // stickerCenterY は上で計算済み
-
-        let finalX = (stickerCenterX - parentRect.left) / parentRect.width * 100;
-        let finalY = (stickerCenterY - parentRect.top) / parentRect.height * 100;
+        // 中心点からの相対％
+        let finalX = ((stickerRect.left + stickerRect.width / 2) - parentRect.left) / parentRect.width * 100;
+        let finalY = ((stickerRect.top + stickerRect.height / 2) - parentRect.top) / parentRect.height * 100;
         
-        // 画面外に行き過ぎないように制限 (-20% ~ 120% 程度は許容)
         finalX = Math.max(-20, Math.min(120, finalX));
         finalY = Math.max(-20, Math.min(120, finalY));
 
-        // DOMツリーを正しい親に戻す
         targetParent.appendChild(el);
-        
         el.style.left = finalX + '%';
         el.style.top = finalY + '%';
         el.style.zIndex = data.zIndex || 10;
         el.style.opacity = '1';
         
-        // データ更新
         data.x = finalX;
         data.y = finalY;
 
-        // タップ（移動なし）の場合は回転
+        // タップのみ（移動なし）の場合はZ-Index更新のみ
         if (!moved) {
-            data.rotation = (data.rotation || 0) + 45;
-            el.style.transform = `translate(-50%, -50%) rotate(${data.rotation}deg) scale(${data.scale || 1})`;
-            if (window.sfxBtn) window.safePlay(window.sfxBtn);
+            // 回転はハンドルで行うので、ここではタップで手前に持ってくるだけ
+            data.zIndex = 100 + Math.floor(Math.random() * 50); 
+            el.style.zIndex = data.zIndex;
         } else {
-            // 移動した場合はZ-Indexを更新して手前に
             data.zIndex = 10 + Math.floor(Math.random() * 50); 
             el.style.zIndex = data.zIndex;
         }
@@ -304,12 +328,78 @@ window.attachStickerEvents = function(el, data) {
         if (typeof window.saveAndSync === 'function') window.saveAndSync();
     };
 
-    el.addEventListener('mousedown', startDrag);
-    el.addEventListener('touchstart', startDrag, { passive: false });
-    window.addEventListener('mousemove', onDrag);
-    window.addEventListener('touchmove', onDrag, { passive: false });
-    window.addEventListener('mouseup', endDrag);
-    window.addEventListener('touchend', endDrag);
+    // ----------------------------------------------------
+    // 回転ロジック
+    // ----------------------------------------------------
+    const startRotate = (e) => {
+        e.preventDefault();
+        e.stopPropagation(); // 移動イベントの発火を防ぐ
+
+        isRotating = true;
+        
+        // 中心の計算
+        const rect = el.getBoundingClientRect();
+        boxCenter = {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2
+        };
+
+        const pos = getClientPos(e);
+        // マウス位置の角度（ラジアン）
+        startAngle = Math.atan2(pos.y - boxCenter.y, pos.x - boxCenter.x);
+        initialRotation = data.rotation || 0;
+    };
+
+    const onRotate = (e) => {
+        if (!isRotating) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const pos = getClientPos(e);
+        const currentAngle = Math.atan2(pos.y - boxCenter.y, pos.x - boxCenter.x);
+        
+        // 角度差分を計算 (ラジアン -> 度)
+        const deg = (currentAngle - startAngle) * (180 / Math.PI);
+        
+        let newRotation = initialRotation + deg;
+        el.style.transform = `translate(-50%, -50%) rotate(${newRotation}deg) scale(${data.scale || 1})`;
+        
+        data.rotation = newRotation;
+    };
+
+    const endRotate = (e) => {
+        if (!isRotating) return;
+        isRotating = false;
+        // 回転終了時に保存
+        if (typeof window.saveAndSync === 'function') window.saveAndSync();
+    };
+
+    // イベントリスナー登録 (移動)
+    el.addEventListener('mousedown', startMove);
+    el.addEventListener('touchstart', startMove, { passive: false });
+
+    // イベントリスナー登録 (回転ハンドル)
+    handle.addEventListener('mousedown', startRotate);
+    handle.addEventListener('touchstart', startRotate, { passive: false });
+
+    // Window全体で移動/回転イベントを監視 (外れても追従するように)
+    window.addEventListener('mousemove', (e) => {
+        if (isDragging) onMove(e);
+        if (isRotating) onRotate(e);
+    });
+    window.addEventListener('touchmove', (e) => {
+        if (isDragging) onMove(e);
+        if (isRotating) onRotate(e);
+    }, { passive: false });
+
+    window.addEventListener('mouseup', (e) => {
+        if (isDragging) endMove(e);
+        if (isRotating) endRotate(e);
+    });
+    window.addEventListener('touchend', (e) => {
+        if (isDragging) endMove(e);
+        if (isRotating) endRotate(e);
+    });
 };
 
 window.saveStickers = function() {
@@ -334,29 +424,4 @@ window.openStickerUserList = async function() {
 
     try {
         const snapshot = await db.collection("users").orderBy("lastLogin", "desc").limit(20).get();
-        listContainer.innerHTML = "";
-        if (snapshot.empty) {
-            listContainer.innerHTML = '<p style="text-align:center;">まだ誰もいないにゃ。</p>';
-            return;
-        }
-        snapshot.forEach(doc => {
-            const user = doc.data();
-            const div = document.createElement('div');
-            div.className = "memory-item"; 
-            div.style.alignItems = "center";
-            div.style.cursor = "pointer";
-            div.onclick = () => { window.closeStickerUserList(); window.showStickerBook(user.id); };
-            const iconSrc = user.photo || 'assets/images/characters/nell-normal.png';
-            const stickerCount = (user.stickers && Array.isArray(user.stickers)) ? user.stickers.length : 0;
-            div.innerHTML = `<img src="${iconSrc}" style="width:40px; height:40px; border-radius:50%; object-fit:cover; margin-right:10px; border:1px solid #ddd;"><div style="flex:1;"><div style="font-weight:bold; color:#333;">${window.cleanDisplayString(user.name)}</div><div style="font-size:0.7rem; color:#888;">シール: ${stickerCount}枚</div></div><button class="mini-teach-btn" style="background:#e91e63;">みる</button>`;
-            listContainer.appendChild(div);
-        });
-    } catch(e) {
-        listContainer.innerHTML = '<p style="text-align:center; color:red;">読み込めなかったにゃ...</p>';
-    }
-};
-
-window.closeStickerUserList = function() {
-    const modal = document.getElementById('sticker-user-modal');
-    if (modal) modal.classList.add('hidden');
-};
+        listContainer.inn
