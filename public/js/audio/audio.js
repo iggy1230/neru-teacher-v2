@@ -1,6 +1,6 @@
 // --- START OF FILE audio.js ---
 
-// --- js/audio/audio.js (v436.0: APIダウン時の完全フォールバック対応版) ---
+// --- js/audio/audio.js (v437.0: Google翻訳API 高速・安定版) ---
 window.audioCtx = null;
 window.masterGainNode = null; 
 window.currentNellAudio = null;
@@ -39,7 +39,7 @@ window.cancelNellSpeech = function() {
     window.isNellSpeaking = false;
 };
 
-// ★修正: Promiseを返し、エラー時は自動でブラウザ内蔵TTSに切り替える
+// ★修正: Google翻訳の非公式音声API（超安定・完全無料）を使用
 window.speakNell = function(text, mood = "normal") {
     return new Promise((resolve) => {
         if (!text || text === "") {
@@ -50,6 +50,7 @@ window.speakNell = function(text, mood = "normal") {
         window.cancelNellSpeech();
 
         let cleanText = text;
+        // 読み上げエラーの原因になる絵文字や記号を削除
         cleanText = cleanText.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, ''); 
         cleanText = cleanText.replace(/[★☆✨♪！!？?]/g, ''); 
         cleanText = cleanText.replace(/[\(（][^\)）]+[\)）]/g, ''); 
@@ -59,37 +60,20 @@ window.speakNell = function(text, mood = "normal") {
             return;
         }
 
-        // =====================================
-        // フォールバック（APIが死んでいる時の内蔵音声）
-        // =====================================
-        const playFallbackTTS = () => {
-            console.log("APIエラーのため、ブラウザ内蔵音声(TTS)に切り替えますにゃ。");
-            if ('speechSynthesis' in window) {
-                window.speechSynthesis.cancel();
-                const msg = new SpeechSynthesisUtterance(cleanText);
-                msg.lang = 'ja-JP';
-                msg.rate = 1.2; // 少し早口
-                
-                msg.onstart = () => { window.isNellSpeaking = true; };
-                msg.onend = () => { window.isNellSpeaking = false; resolve(); };
-                msg.onerror = () => { window.isNellSpeaking = false; resolve(); };
-                
-                window.speechSynthesis.speak(msg);
-            } else {
-                resolve();
-            }
-        };
-
-        // =====================================
-        // メイン処理（ネル先生音声API）
-        // =====================================
-        const url = `https://iggy1230-neru-sensei.hf.space/speak?text=${encodeURIComponent(cleanText)}`;
+        // ----------------------------------------------------
+        // Google翻訳 TTS API (tw-ob client)
+        // サーバーがスリープすることなく、一瞬で音声が返ってきます。
+        // ----------------------------------------------------
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q=${encodeURIComponent(cleanText)}`;
+        
         const audio = new Audio(url);
         window.currentNellAudio = audio;
 
         const vol = (typeof window.isMuted !== 'undefined' && window.isMuted) ? 0 : (window.appVolume || 0.5);
         audio.volume = vol;
-        audio.playbackRate = 1.3;
+        
+        // 少し早送りにすると可愛い声になります
+        audio.playbackRate = 1.2;
 
         audio.onplay = () => {
             window.isNellSpeaking = true;
@@ -105,23 +89,41 @@ window.speakNell = function(text, mood = "normal") {
             window.isNellSpeaking = false;
         };
 
-        // ★エラー発生時は即座にフォールバックへ
+        // 万が一Googleがブロックした場合はブラウザ内蔵音声に逃げる
         audio.onerror = (e) => {
-            console.error("Nell Audio API Error:", e);
+            console.error("Google TTS API Error:", e);
             window.isNellSpeaking = false;
             window.currentNellAudio = null;
-            playFallbackTTS();
+            playFallbackTTS(cleanText, resolve);
         };
 
-        // ★再生ブロック時や、ソースが見つからない場合もフォールバックへ
         audio.play().catch(e => {
             console.warn("Audio Play Failed / Blocked:", e);
             window.isNellSpeaking = false;
             window.currentNellAudio = null;
-            playFallbackTTS();
+            playFallbackTTS(cleanText, resolve);
         });
     });
 };
+
+// 最終防衛ライン: ブラウザ内蔵音声
+function playFallbackTTS(text, resolveCallback) {
+    console.log("ブラウザ内蔵音声(TTS)に切り替えますにゃ。");
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(text);
+        msg.lang = 'ja-JP';
+        msg.rate = 1.2; 
+        
+        msg.onstart = () => { window.isNellSpeaking = true; };
+        msg.onend = () => { window.isNellSpeaking = false; resolveCallback(); };
+        msg.onerror = () => { window.isNellSpeaking = false; resolveCallback(); };
+        
+        window.speechSynthesis.speak(msg);
+    } else {
+        resolveCallback();
+    }
+}
 
 // （互換性維持用）グローバル空間にも関数を露出
 if (typeof speakNell === 'undefined') {
