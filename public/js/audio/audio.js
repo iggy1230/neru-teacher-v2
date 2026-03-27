@@ -1,6 +1,6 @@
 // --- START OF FILE audio.js ---
 
-// --- js/audio/audio.js (v437.0: Google翻訳API 高速・安定版) ---
+// --- js/audio/audio.js (v438.0: Google API裏ルート 高速安定版) ---
 window.audioCtx = null;
 window.masterGainNode = null; 
 window.currentNellAudio = null;
@@ -39,7 +39,7 @@ window.cancelNellSpeech = function() {
     window.isNellSpeaking = false;
 };
 
-// ★修正: Google翻訳の非公式音声API（超安定・完全無料）を使用
+// ★修正: Google APIの裏ルート（gtx）を使用してブロックを回避する
 window.speakNell = function(text, mood = "normal") {
     return new Promise((resolve) => {
         if (!text || text === "") {
@@ -55,16 +55,21 @@ window.speakNell = function(text, mood = "normal") {
         cleanText = cleanText.replace(/[★☆✨♪！!？?]/g, ''); 
         cleanText = cleanText.replace(/[\(（][^\)）]+[\)）]/g, ''); 
 
+        // Google TTS APIは一度に200文字程度が限界のため、長すぎる場合は内蔵音声に逃がす
         if (cleanText.trim() === "") {
             resolve();
             return;
         }
+        if (cleanText.length > 200) {
+            playFallbackTTS(cleanText, resolve);
+            return;
+        }
 
         // ----------------------------------------------------
-        // Google翻訳 TTS API (tw-ob client)
-        // サーバーがスリープすることなく、一瞬で音声が返ってきます。
+        // Google TTS API (裏ルート: client=gtx)
+        // ブロックされずに爆速で返ってきます
         // ----------------------------------------------------
-        const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q=${encodeURIComponent(cleanText)}`;
+        const url = `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=ja&q=${encodeURIComponent(cleanText)}`;
         
         const audio = new Audio(url);
         window.currentNellAudio = audio;
@@ -72,8 +77,8 @@ window.speakNell = function(text, mood = "normal") {
         const vol = (typeof window.isMuted !== 'undefined' && window.isMuted) ? 0 : (window.appVolume || 0.5);
         audio.volume = vol;
         
-        // 少し早送りにすると可愛い声になります
-        audio.playbackRate = 1.2;
+        // 1.2〜1.3倍速くらいが可愛くて聞きやすいです
+        audio.playbackRate = 1.25;
 
         audio.onplay = () => {
             window.isNellSpeaking = true;
@@ -89,7 +94,6 @@ window.speakNell = function(text, mood = "normal") {
             window.isNellSpeaking = false;
         };
 
-        // 万が一Googleがブロックした場合はブラウザ内蔵音声に逃げる
         audio.onerror = (e) => {
             console.error("Google TTS API Error:", e);
             window.isNellSpeaking = false;
