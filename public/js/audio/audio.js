@@ -5,7 +5,7 @@ window.audioCtx = null;
 window.masterGainNode = null; 
 window.currentNellAudio = null;
 window.isNellSpeaking = false;
-window.speechQueue =[]; 
+window.speechQueue =[]; // 長文を分割して順番に再生するためのキュー
 
 window.initAudioContext = async function() {
     try {
@@ -30,7 +30,7 @@ window.initAudioContext = async function() {
 
 window.cancelNellSpeech = function() {
     window.isNellSpeaking = false;
-    window.speechQueue =[]; 
+    window.speechQueue =[]; // キューを空にする
     if (window.currentNellAudio) {
         window.currentNellAudio.pause();
         window.currentNellAudio.currentTime = 0;
@@ -103,8 +103,8 @@ window.speakNell = function(text, mood = "normal") {
                 audio.onplay = () => { window.isNellSpeaking = true; };
                 audio.onended = () => { playNext(); };
                 
-                audio.onerror = () => {
-                    console.warn("Audio Playback Error");
+                audio.onerror = (e) => {
+                    console.warn("Audio Playback Error:", e);
                     playFallbackTTS(sentence + " " + window.speechQueue.join(" "), resolve);
                     window.speechQueue =[];
                 };
@@ -114,4 +114,35 @@ window.speakNell = function(text, mood = "normal") {
             } catch (e) {
                 console.error("公式TTS APIの取得に失敗しました:", e);
                 playFallbackTTS(sentence + " " + window.speechQueue.join(" "), resolve);
-                window.speechQueue =
+                window.speechQueue =[];
+            }
+        }
+        
+        playNext();
+    });
+};
+
+
+// 最終防衛ライン: ブラウザ内蔵音声
+function playFallbackTTS(text, resolveCallback) {
+    console.log("ブラウザ内蔵音声(TTS)に切り替えますにゃ。");
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(text);
+        msg.lang = 'ja-JP';
+        msg.rate = 1.2; 
+        
+        msg.onstart = () => { window.isNellSpeaking = true; };
+        msg.onend = () => { window.isNellSpeaking = false; resolveCallback(); };
+        msg.onerror = () => { window.isNellSpeaking = false; resolveCallback(); };
+        
+        window.speechSynthesis.speak(msg);
+    } else {
+        resolveCallback();
+    }
+}
+
+// （互換性維持用）グローバル空間にも関数を露出
+if (typeof speakNell === 'undefined') {
+    window.speakNell = window.speakNell;
+}
