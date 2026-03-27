@@ -402,6 +402,7 @@ app.post('/api/tts', async (req, res) => {
 
         const data = await response.json();
         if (!response.ok) {
+            console.error("Google TTS API Error:", data);
             throw new Error(data.error?.message || "Google TTS API Error");
         }
 
@@ -431,7 +432,7 @@ app.post('/generate-quiz', async (req, res) => {
             
             let targetGenre = genre;
             if (!targetGenre || targetGenre === "全ジャンル") {
-                const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
+                const baseGenres =["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
                 targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
             }
 
@@ -542,10 +543,8 @@ app.post('/generate-quiz', async (req, res) => {
             if (attempt >= MAX_RETRIES) {
                 console.log(`[Quiz Fallback] Switching to Stock Quiz for genre: ${genre}`);
                 
-                // ストック問題から選択
                 let stockList = FALLBACK_QUIZZES[genre];
                 
-                // 指定ジャンルがない、またはストックが空の場合はデフォルトを使用
                 if (!stockList || stockList.length === 0) {
                     stockList = FALLBACK_QUIZZES["default"];
                 }
@@ -555,7 +554,7 @@ app.post('/generate-quiz', async (req, res) => {
                 res.json({
                     ...fallbackQuiz,
                     actual_genre: genre || "雑学",
-                    fallback: true // デバッグ用
+                    fallback: true 
                 });
                 return;
             }
@@ -607,7 +606,7 @@ app.post('/correct-quiz', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        const cleanText = extractFirstJson(text); // ★JSON抽出強化
+        const cleanText = extractFirstJson(text);
         const jsonResponse = JSON.parse(cleanText);
         
         if (!jsonResponse.options.includes(jsonResponse.answer)) {
@@ -661,7 +660,7 @@ app.post('/generate-riddle', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
+        text = extractFirstJson(text); 
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Riddle Gen Error:", e);
@@ -694,7 +693,7 @@ app.post('/generate-minitest', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); // ★JSON抽出強化
+        text = extractFirstJson(text); 
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("MiniTest Gen Error:", e);
@@ -1048,7 +1047,7 @@ app.post('/update-memory', async (req, res) => {
                 "nickname": "...",
                 "birthday": "...",
                 "likes": ["..."],
-                "weaknesses": ["..."],
+                "weaknesses":["..."],
                 "achievements": ["..."],
                 "last_topic": "..."
             },
