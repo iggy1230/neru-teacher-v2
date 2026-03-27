@@ -1,6 +1,6 @@
 // --- START OF FILE self-study.js ---
 
-// --- js/self-study.js (v1.0: 自習室機能) ---
+// --- js/self-study.js (v1.1: 権限エラー回避・保存先変更版) ---
 
 let selfStudyState = {
     drills:[],
@@ -26,7 +26,7 @@ window.closeDrillImportModal = function() {
 };
 
 window.importDrillJson = async function() {
-    if (!window.db || !currentUser) return alert("データベースに接続されていません。");
+    if (!currentUser) return alert("生徒を選んでログインしてにゃ！");
     const jsonStr = document.getElementById('drill-json-input').value.trim();
     if (!jsonStr) return alert("JSONデータを貼り付けてにゃ！");
 
@@ -43,20 +43,34 @@ window.importDrillJson = async function() {
             throw new Error("フォーマットが違うみたいだにゃ（titleとpagesが必要）");
         }
 
-        // 保存データにメタ情報を追加
+        // ★修正: 新しいコレクションではなく、生徒データ(currentUser)の中に配列として保存する
+        // これによりFirestoreのセキュリティルール(権限エラー)を回避します。
+        if (!currentUser.custom_drills) {
+            currentUser.custom_drills =[];
+        }
+
+        const newDrillId = "drill_" + Date.now() + "_" + Math.floor(Math.random()*1000);
         const dataToSave = {
             ...drillData,
-            ownerId: currentUser.id,
+            id: newDrillId,
             createdAt: new Date().toISOString()
         };
 
-        await window.db.collection('custom_drills').add(dataToSave);
+        currentUser.custom_drills.push(dataToSave);
+        
+        // 既存のセーブ機能を使ってFirestoreの自分のデータに上書き保存
+        if (typeof window.saveAndSync === 'function') {
+            await window.saveAndSync();
+        }
         
         alert("ドリルを登録したにゃ！");
         window.closeDrillImportModal();
     } catch (e) {
         console.error("Import Error:", e);
-        alert("登録エラーだにゃ...\n" + e.message);
+        // JSONパースエラー時のメッセージを分かりやすく
+        let errMsg = e.message;
+        if (errMsg.includes("JSON")) errMsg = "JSONの形式がおかしいみたいだにゃ。コピーミスがないか確認してにゃ！";
+        alert("登録エラーだにゃ...\n" + errMsg);
     } finally {
         btn.disabled = false;
         btn.innerText = "登録する！";
@@ -76,45 +90,36 @@ window.showSelfStudyMenu = async function() {
     window.updateNellMessage("自習室だにゃ！どのドリルをやるにゃ？", "normal");
     
     const container = document.getElementById('self-study-drill-list');
-    container.innerHTML = '<p style="text-align:center;">ドリルを探してるにゃ...</p>';
+    container.innerHTML = '';
     
-    if (!window.db || !currentUser) return;
+    if (!currentUser) return;
     
-    try {
-        const snapshot = await window.db.collection('custom_drills')
-            .where('ownerId', '==', currentUser.id)
-            .orderBy('createdAt', 'desc')
-            .get();
-            
-        selfStudyState.drills =[];
-        container.innerHTML = '';
-        
-        if (snapshot.empty) {
-            container.innerHTML = '<p style="text-align:center; color:#888;">まだドリルが登録されてないにゃ。<br>おうちの人に登録してもらってにゃ！</p>';
-            return;
-        }
-        
-        snapshot.forEach(doc => {
-            const data = { id: doc.id, ...doc.data() };
-            selfStudyState.drills.push(data);
-            
-            const btn = document.createElement('button');
-            btn.className = "main-btn";
-            btn.style.cssText = "background: white; color: #333; border: 2px solid #4db6ac; text-align: left; margin-bottom: 10px; box-shadow: 0 4px 0 #b2dfdb; display: flex; justify-content: space-between; align-items: center;";
-            
-            let icon = "📚";
-            if (data.subject === "さんすう") icon = "🔢";
-            if (data.subject === "こくご") icon = "📖";
-            
-            btn.innerHTML = `<span style="font-size:1.1rem; font-weight:bold;">${icon} ${window.cleanDisplayString(data.title)}</span><span style="font-size:0.8rem; color:#888;">${data.pages.length}ページ</span>`;
-            btn.onclick = () => window.openDrillDetail(data.id);
-            container.appendChild(btn);
-        });
-        
-    } catch (e) {
-        console.error("Drill Load Error:", e);
-        container.innerHTML = '<p style="text-align:center; color:red;">読み込めなかったにゃ...</p>';
+    // ★修正: 生徒データの中に保存されたドリルを読み込む
+    selfStudyState.drills = currentUser.custom_drills ||[];
+    
+    if (selfStudyState.drills.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:#888;">まだドリルが登録されてないにゃ。<br>おうちの人に登録してもらってにゃ！</p>';
+        return;
     }
+    
+    // 新しい順に並び替え
+    const sortedDrills = [...selfStudyState.drills].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    sortedDrills.forEach(data => {
+        const btn = document.createElement('button');
+        btn.className = "main-btn";
+        btn.style.cssText = "background: white; color: #333; border: 2px solid #4db6ac; text-align: left; margin-bottom: 10px; box-shadow: 0 4px 0 #b2dfdb; display: flex; justify-content: space-between; align-items: center;";
+        
+        let icon = "📚";
+        if (data.subject === "さんすう") icon = "🔢";
+        if (data.subject === "こくご") icon = "📖";
+        if (data.subject === "りか") icon = "🔬";
+        if (data.subject === "しゃかい") icon = "🌍";
+        
+        btn.innerHTML = `<span style="font-size:1.1rem; font-weight:bold;">${icon} ${window.cleanDisplayString(data.title)}</span><span style="font-size:0.8rem; color:#888;">${data.pages.length}ページ</span>`;
+        btn.onclick = () => window.openDrillDetail(data.id);
+        container.appendChild(btn);
+    });
 };
 
 window.openDrillDetail = function(drillId) {
@@ -157,7 +162,6 @@ window.startDrillPage = function(pageIndex) {
     const page = selfStudyState.currentDrill.pages[pageIndex];
     selfStudyState.currentPage = page;
     
-    // UIの切り替え
     const playArea = document.getElementById('drill-page-container');
     playArea.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
@@ -172,20 +176,17 @@ window.startDrillPage = function(pageIndex) {
     const qGrid = document.getElementById('drill-questions-grid');
     
     page.questions.forEach((q, qIndex) => {
-        // 問題ごとの状態（0: 未タッチ, 1: ヒント1, 2: ヒント2, 3: 答え）
         q.currentState = 0; 
         
         const card = document.createElement('div');
-        card.className = "grade-item"; // 既存のスタイル流用
+        card.className = "grade-item";
         card.style.flexDirection = "column";
         card.style.alignItems = "flex-start";
         
-        // ヘッダー（問題番号）
         const header = document.createElement('div');
         header.style.cssText = "display:flex; justify-content:space-between; width:100%; align-items:center; margin-bottom:10px;";
         header.innerHTML = `<span style="font-size:1.2rem; font-weight:bold; color:#333;">第 ${q.q_number} 問</span>`;
         
-        // アクションボタン
         const btnArea = document.createElement('div');
         btnArea.style.cssText = "display:flex; gap:10px; width:100%;";
         
@@ -203,12 +204,10 @@ window.startDrillPage = function(pageIndex) {
         ansBtn.style.padding = "10px";
         ansBtn.innerText = "⭕ 答え合わせ";
         
-        // ネル先生の言葉表示エリア
         const speechArea = document.createElement('div');
         speechArea.id = `q-speech-${qIndex}`;
         speechArea.style.cssText = "width:100%; margin-top:10px; padding:10px; background:#e0f2f1; border-radius:8px; color:#00695c; font-size:0.9rem; font-weight:bold; display:none;";
         
-        // ボタンイベント
         hintBtn.onclick = () => {
             let hintText = "";
             if (q.currentState === 0) {
@@ -251,15 +250,21 @@ window.startDrillPage = function(pageIndex) {
 };
 
 window.finishDrillPage = function() {
-    // 報酬付与
-    const reward = 50; // 1ページ終わったら50カリカリ
+    const reward = 50; 
     window.giveGameReward(reward);
+    
+    // ★追加: 自習室完了数をカウントアップ
+    if (!currentUser.selfStudyCount) currentUser.selfStudyCount = 0;
+    currentUser.selfStudyCount++;
+    if (typeof window.saveAndSync === 'function') window.saveAndSync();
+    
+    // ★ランキング用に保存
+    window.saveHighScore('self_study', currentUser.selfStudyCount);
     
     window.updateNellMessage(`よくがんばったにゃ！えらいにゃ！！ご褒美にカリカリ${reward}個あげるにゃ！`, "excited", false, true);
     
     if(window.safePlay) window.safePlay(window.sfxHirameku);
     
-    // ページ一覧に戻る
     setTimeout(() => {
         window.openDrillDetail(selfStudyState.currentDrill.id);
     }, 2000);
