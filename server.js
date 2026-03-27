@@ -1,6 +1,6 @@
 // --- START OF FILE server.js ---
 
-// --- server.js (v470.34: 完全版 - Google TTS プロキシ搭載) ---
+// --- server.js (v470.35: 完全版 - 公式Google Cloud TTSプロキシ搭載) ---
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import express from 'express';
@@ -167,7 +167,7 @@ const FALLBACK_QUIZZES = {
     "一般知識":[
         {
             "question": "日本で一番高い山はどこですか？",
-            "options":["富士山", "北岳", "奥穂高岳", "間ノ岳"],
+            "options": ["富士山", "北岳", "奥穂高岳", "間ノ岳"],
             "answer": "富士山",
             "explanation": "富士山の高さは3776メートルで日本一高い山です。",
             "fact_basis": "富士山は標高3776mで日本最高峰。"
@@ -183,7 +183,7 @@ const FALLBACK_QUIZZES = {
     "雑学":[
         {
             "question": "パンダの好物と言えば何ですか？",
-            "options": ["笹（ササ）", "バナナ", "お肉", "魚"],
+            "options":["笹（ササ）", "バナナ", "お肉", "魚"],
             "answer": "笹（ササ）",
             "explanation": "パンダは竹や笹を主食としています。",
             "fact_basis": "ジャイアントパンダの主食は竹や笹。"
@@ -215,14 +215,14 @@ const FALLBACK_QUIZZES = {
     "マインクラフト":[
         {
             "question": "クリーパーを倒すと手に入るアイテムはどれですか？",
-            "options": ["火薬", "骨", "腐った肉", "糸"],
+            "options":["火薬", "骨", "腐った肉", "糸"],
             "answer": "火薬",
             "explanation": "クリーパーは爆発するモンスターなので、倒すと火薬を落とします。",
             "fact_basis": "クリーパーのドロップアイテムは火薬。"
         },
         {
             "question": "ネザーに行くために必要なゲートを作る材料は？",
-            "options": ["黒曜石", "ダイヤモンド", "鉄ブロック", "土"],
+            "options":["黒曜石", "ダイヤモンド", "鉄ブロック", "土"],
             "answer": "黒曜石",
             "explanation": "黒曜石を四角く並べて火をつけるとネザーゲートが開きます。",
             "fact_basis": "ネザーポータルは黒曜石で枠を作る。"
@@ -368,39 +368,52 @@ async function verifyKanji(kanjiData, targetGrade) {
 // API Endpoints
 // ==========================================
 
-// ★追加：Google TTS プロキシ API (ブラウザの制限を回避して音声を送る)
-app.get('/api/tts', async (req, res) => {
+// --- ★公式 Google Cloud TTS プロキシ API ---
+app.post('/api/tts', async (req, res) => {
     try {
-        const text = req.query.text;
+        const { text } = req.body;
         if (!text) return res.status(400).send('No text provided');
 
-        // Google翻訳の音声API（裏ルート）
-        const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=ja&client=tw-ob&q=${encodeURIComponent(text)}`;
-        
-        // サーバーからGoogleにアクセスして音声ファイルをダウンロード
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Referer': 'https://translate.google.com/'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`Google TTS responded with status: ${response.status}`);
+        // Renderに設定したAPIキーを読み込む
+        const apiKey = process.env.GOOGLE_TTS_API_KEY;
+        if (!apiKey) {
+            console.error("⚠️ GOOGLE_TTS_API_KEY が設定されていません。");
+            return res.status(500).json({ error: "API Key not configured" });
         }
 
-        // 取得した音声データをそのままブラウザに返す
-        const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
+        
+        // 公式APIへのリクエスト内容（Wavenet-Aという可愛い声を使います）
+        const payload = {
+            input: { text: text },
+            voice: { languageCode: "ja-JP", name: "ja-JP-Wavenet-A" }, 
+            audioConfig: { 
+                audioEncoding: "MP3",
+                speakingRate: 1.15, // 少し早口にして元気さを出す
+                pitch: 4.0          // 少し高めの声にして子供っぽくする
+            } 
+        };
 
-        res.set('Content-Type', 'audio/mpeg');
-        res.send(buffer);
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.error?.message || "Google TTS API Error");
+        }
+
+        // 音声データ(Base64)をブラウザに返す
+        res.json({ audioContent: data.audioContent });
         
     } catch (error) {
-        console.error("[TTS Proxy Error]", error.message);
-        res.status(500).send('TTS Proxy Failed');
+        console.error("[Official TTS Error]", error.message);
+        res.status(500).json({ error: error.message });
     }
 });
+
 
 // --- クイズ生成 API ---
 app.post('/generate-quiz', async (req, res) => {
@@ -418,7 +431,7 @@ app.post('/generate-quiz', async (req, res) => {
             
             let targetGenre = genre;
             if (!targetGenre || targetGenre === "全ジャンル") {
-                const baseGenres =["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
+                const baseGenres = ["一般知識", "雑学", "芸能・スポーツ", "歴史・地理・社会", "ゲーム"];
                 targetGenre = baseGenres[Math.floor(Math.random() * baseGenres.length)];
             }
 
@@ -519,6 +532,7 @@ app.post('/generate-quiz', async (req, res) => {
                 return; 
             } else {
                 console.warn(`[Attempt ${attempt}] Verification Failed. Retrying...`);
+                // 3回目失敗時にループを抜けてフォールバックへ
                 if (attempt >= MAX_RETRIES) throw new Error("Verification Failed Max Retries");
             }
 
@@ -528,8 +542,10 @@ app.post('/generate-quiz', async (req, res) => {
             if (attempt >= MAX_RETRIES) {
                 console.log(`[Quiz Fallback] Switching to Stock Quiz for genre: ${genre}`);
                 
+                // ストック問題から選択
                 let stockList = FALLBACK_QUIZZES[genre];
                 
+                // 指定ジャンルがない、またはストックが空の場合はデフォルトを使用
                 if (!stockList || stockList.length === 0) {
                     stockList = FALLBACK_QUIZZES["default"];
                 }
@@ -539,7 +555,7 @@ app.post('/generate-quiz', async (req, res) => {
                 res.json({
                     ...fallbackQuiz,
                     actual_genre: genre || "雑学",
-                    fallback: true 
+                    fallback: true // デバッグ用
                 });
                 return;
             }
@@ -591,7 +607,7 @@ app.post('/correct-quiz', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        const cleanText = extractFirstJson(text);
+        const cleanText = extractFirstJson(text); // ★JSON抽出強化
         const jsonResponse = JSON.parse(cleanText);
         
         if (!jsonResponse.options.includes(jsonResponse.answer)) {
@@ -639,13 +655,13 @@ app.post('/generate-riddle', async (req, res) => {
         {
             "question": "問題文（「問題！〇〇なーんだ？」のように）",
             "answer": "正解の単語（ひらがな、または一般的な表記）",
-            "accepted_answers": ["正解の別名", "漢字表記", "カタカナ表記", "ひらがな表記"] 
+            "accepted_answers":["正解の別名", "漢字表記", "カタカナ表記", "ひらがな表記"] 
         }
         `;
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); 
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("Riddle Gen Error:", e);
@@ -678,7 +694,7 @@ app.post('/generate-minitest', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         let text = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
-        text = extractFirstJson(text); 
+        text = extractFirstJson(text); // ★JSON抽出強化
         res.json(JSON.parse(text));
     } catch (e) {
         console.error("MiniTest Gen Error:", e);
@@ -1032,7 +1048,7 @@ app.post('/update-memory', async (req, res) => {
                 "nickname": "...",
                 "birthday": "...",
                 "likes": ["..."],
-                "weaknesses":["..."],
+                "weaknesses": ["..."],
                 "achievements": ["..."],
                 "last_topic": "..."
             },
@@ -1108,7 +1124,7 @@ app.post('/analyze', async (req, res) => {
             "is_homework": true または false,
             "label": "①",
             "question": "問題文",
-            "correct_answer": ["正解"], 
+            "correct_answer":["正解"], 
             "student_answer": ["手書きの答え"],
             "is_correct": true,
             "hints": ["ヒント1", "ヒント2", "ヒント3"]
@@ -1147,7 +1163,7 @@ app.post('/identify-item', async (req, res) => {
     try {
         const { image, name, location, address } = req.body;
         
-        const tools =[{ google_search: {} }];
+        const tools = [{ google_search: {} }];
         const model = genAI.getGenerativeModel({ 
             model: MODEL_FAST,
             tools: tools
@@ -1442,7 +1458,7 @@ wss.on('connection', async (clientWs, req) => {
                             } 
                         }, 
                         tools: tools,
-                        systemInstruction: { parts: [{ text: systemInstructionText }] }
+                        systemInstruction: { parts:[{ text: systemInstructionText }] }
                     }
                 }));
 
