@@ -14,6 +14,8 @@ const RANKING_TYPES = [
     { id: 'memory_match', label: '🃏 神経衰弱' },
     { id: 'minitest_total', label: '📝 ミニテスト' },
     { id: 'kanji_drill', label: '✍️ 漢字ドリル' }
+   { id: 'map_master', label: '🗾 地図マスター' },
+    { id: 'self_study', label: '✏️ 自習マスター' } // ★これを追加
 ];
 
 // クイズジャンルを追加
