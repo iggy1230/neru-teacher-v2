@@ -1,67 +1,12 @@
 // --- START OF FILE self-study.js ---
 
-// --- js/self-study.js (v1.2: 音声再生・UI更新の確実化版) ---
+// --- js/self-study.js (v1.3: 共通音声再生システムに統一) ---
 
 let selfStudyState = {
     drills:[],
     currentDrill: null,
     currentPage: null
 };
-
-// ==========================================
-// 💡 自習室専用の確実な音声再生＆UI更新ヘルパー
-// ==========================================
-async function playSelfStudyVoice(text, mood = "normal") {
-    // 1. 吹き出しと顔アイコンの更新
-    const bubble = document.getElementById('nell-text-self-study');
-    if (bubble) bubble.innerText = text;
-    
-    const face = document.getElementById('nell-face-self-study');
-    if (face) {
-        if (mood === 'happy' || mood === 'excited') {
-            face.src = 'assets/images/characters/nell-happy.png';
-        } else {
-            face.src = 'assets/images/characters/nell-thinking.png';
-        }
-        // 1秒後に元の顔に戻す
-        setTimeout(() => {
-            if (face.src.includes('happy') || face.src.includes('thinking')) {
-                face.src = 'assets/images/characters/nell-normal.png';
-            }
-        }, 1500);
-    }
-
-    // 2. 音声再生の準備（スマホの自動再生ブロック回避）
-    if (window.initAudioContext) {
-        try { await window.initAudioContext(); } catch(e){}
-    }
-
-    // 3. APIで音声再生（失敗したらブラウザ内蔵の音声で喋る）
-    const cleanText = text.replace(/[\(（【\[].*?[\)）】\]]/g, "").replace(/🐾/g, "").trim();
-    
-    const fallbackTTS = () => {
-        if ('speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
-            const msg = new SpeechSynthesisUtterance(cleanText);
-            msg.lang = 'ja-JP';
-            msg.rate = 1.3; // 少し早口
-            window.speechSynthesis.speak(msg);
-        }
-    };
-
-    try {
-        if (typeof window.speakNell === 'function') {
-            await window.speakNell(cleanText, mood);
-        } else if (typeof speakNell === 'function') {
-            await speakNell(cleanText, mood);
-        } else {
-            fallbackTTS();
-        }
-    } catch(e) {
-        console.warn("API音声再生エラー、内蔵音声に切り替えます", e);
-        fallbackTTS();
-    }
-}
 
 // ==========================================
 // 1. 親モード: ドリルJSONの登録
@@ -137,7 +82,7 @@ window.showSelfStudyMenu = async function() {
     document.getElementById('self-study-list-view').classList.remove('hidden');
     document.getElementById('self-study-play-view').classList.add('hidden');
     
-    playSelfStudyVoice("自習室だにゃ！どのドリルをやるにゃ？", "normal");
+    window.updateNellMessage("自習室だにゃ！どのドリルをやるにゃ？", "normal", false, true);
     
     const container = document.getElementById('self-study-drill-list');
     container.innerHTML = '';
@@ -180,7 +125,7 @@ window.openDrillDetail = function(drillId) {
     document.getElementById('self-study-play-view').classList.remove('hidden');
     document.getElementById('drill-play-title').innerText = drill.title;
     
-    playSelfStudyVoice("どのページをやるにゃ？", "excited");
+    window.updateNellMessage("どのページをやるにゃ？", "excited", false, true);
     
     const container = document.getElementById('drill-page-container');
     container.innerHTML = '';
@@ -200,7 +145,7 @@ window.backToDrillList = function() {
     selfStudyState.currentPage = null;
     document.getElementById('self-study-list-view').classList.remove('hidden');
     document.getElementById('self-study-play-view').classList.add('hidden');
-    playSelfStudyVoice("自習室だにゃ！どのドリルをやるにゃ？", "normal");
+    window.updateNellMessage("自習室だにゃ！どのドリルをやるにゃ？", "normal", false, true);
 };
 
 // ==========================================
@@ -271,9 +216,7 @@ window.startDrillPage = function(pageIndex) {
             }
             speechArea.style.display = "block";
             speechArea.innerText = hintText;
-            
-            // ★確実に音声とUIを更新
-            playSelfStudyVoice(hintText, "thinking");
+            window.updateNellMessage(hintText, "thinking", false, true);
         };
         
         ansBtn.onclick = () => {
@@ -284,9 +227,7 @@ window.startDrillPage = function(pageIndex) {
             speechArea.style.color = "#e65100";
             speechArea.style.fontSize = "1.2rem";
             speechArea.innerText = ansText;
-            
-            // ★確実に音声とUIを更新
-            playSelfStudyVoice(ansText, "happy");
+            window.updateNellMessage(ansText, "happy", false, true);
         };
         
         btnArea.appendChild(hintBtn);
@@ -298,7 +239,7 @@ window.startDrillPage = function(pageIndex) {
         qGrid.appendChild(card);
     });
     
-    playSelfStudyVoice(`「${page.page_number}」をはじめるにゃ！`, "excited");
+    window.updateNellMessage(`「${page.page_number}」をはじめるにゃ！`, "excited", false, true);
 };
 
 window.finishDrillPage = function() {
@@ -313,7 +254,7 @@ window.finishDrillPage = function() {
         window.saveHighScore('self_study', currentUser.selfStudyCount);
     }
     
-    playSelfStudyVoice(`よくがんばったにゃ！えらいにゃ！！ご褒美にカリカリ${reward}個あげるにゃ！`, "excited");
+    window.updateNellMessage(`よくがんばったにゃ！えらいにゃ！！ご褒美にカリカリ${reward}個あげるにゃ！`, "excited", false, true);
     
     if(window.safePlay && window.sfxHirameku) window.safePlay(window.sfxHirameku);
     
