@@ -1,11 +1,11 @@
 // --- START OF FILE audio.js ---
 
-// --- js/audio/audio.js (v442.0: 公式Google Cloud TTS 高音質版) ---
+// --- js/audio/audio.js (v442.1: 二重再生防止機能強化版) ---
 window.audioCtx = null;
 window.masterGainNode = null; 
 window.currentNellAudio = null;
 window.isNellSpeaking = false;
-window.speechQueue =[]; // 長文を分割して順番に再生するためのキュー
+window.speechQueue =[]; 
 
 window.initAudioContext = async function() {
     try {
@@ -30,10 +30,15 @@ window.initAudioContext = async function() {
 
 window.cancelNellSpeech = function() {
     window.isNellSpeaking = false;
-    window.speechQueue =[]; // キューを空にする
+    window.speechQueue =[]; 
     if (window.currentNellAudio) {
+        // ★重要: 再生が終わった後のイベントが発火しないようにリスナーを全て削除
+        window.currentNellAudio.onended = null;
+        window.currentNellAudio.onerror = null;
+        window.currentNellAudio.onplay = null;
         window.currentNellAudio.pause();
         window.currentNellAudio.currentTime = 0;
+        window.currentNellAudio.src = ""; // ソースを空にして読み込みを停止
         window.currentNellAudio = null;
     }
     if ('speechSynthesis' in window) {
@@ -41,11 +46,11 @@ window.cancelNellSpeech = function() {
     }
 };
 
-// ★公式APIを使って音声を再生する
 window.speakNell = function(text, mood = "normal") {
     return new Promise((resolve) => {
         if (!text || text === "") return resolve();
 
+        // ★★★最重要: 再生前に必ず前の音声をキャンセルする★★★
         window.cancelNellSpeech();
 
         let cleanText = text;
@@ -55,7 +60,6 @@ window.speakNell = function(text, mood = "normal") {
 
         if (cleanText.trim() === "") return resolve();
 
-        // 長い文章は句点で分割して順番にAPIに投げる
         let sentences = cleanText.match(/[^。！？.!?]+[。！？.!?]*/g) || [cleanText];
         let queue =[];
         sentences.forEach(s => {
@@ -80,7 +84,6 @@ window.speakNell = function(text, mood = "normal") {
             const sentence = window.speechQueue.shift();
             
             try {
-                // 自前のサーバー（公式APIプロキシ）へリクエスト
                 const response = await fetch('/api/tts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -92,29 +95,31 @@ window.speakNell = function(text, mood = "normal") {
                 const data = await response.json();
                 if (!data.audioContent) throw new Error("No audio content");
 
-                // Base64の音声データをAudioオブジェクトにして再生
                 const audioUrl = "data:audio/mp3;base64," + data.audioContent;
                 const audio = new Audio(audioUrl);
                 window.currentNellAudio = audio;
 
                 const vol = (typeof window.isMuted !== 'undefined' && window.isMuted) ? 0 : (window.appVolume || 0.5);
                 audio.volume = vol;
+                audio.playbackRate = 1.25;
 
                 audio.onplay = () => { window.isNellSpeaking = true; };
                 audio.onended = () => { playNext(); };
                 
                 audio.onerror = (e) => {
                     console.warn("Audio Playback Error:", e);
-                    playFallbackTTS(sentence + " " + window.speechQueue.join(" "), resolve);
+                    const remainingText = sentence + " " + window.speechQueue.join(" ");
                     window.speechQueue =[];
+                    playFallbackTTS(remainingText, resolve);
                 };
 
                 await audio.play();
 
             } catch (e) {
                 console.error("公式TTS APIの取得に失敗しました:", e);
-                playFallbackTTS(sentence + " " + window.speechQueue.join(" "), resolve);
+                const remainingText = sentence + " " + window.speechQueue.join(" ");
                 window.speechQueue =[];
+                playFallbackTTS(remainingText, resolve);
             }
         }
         
@@ -122,10 +127,7 @@ window.speakNell = function(text, mood = "normal") {
     });
 };
 
-
-// 最終防衛ライン: ブラウザ内蔵音声
 function playFallbackTTS(text, resolveCallback) {
-    console.log("ブラウザ内蔵音声(TTS)に切り替えますにゃ。");
     if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
         const msg = new SpeechSynthesisUtterance(text);
