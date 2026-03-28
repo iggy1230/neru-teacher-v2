@@ -1,6 +1,6 @@
 // --- START OF FILE self-study.js ---
 
-// --- js/self-study.js (v1.3: 共通音声再生システムに統一) ---
+// --- js/self-study.js (v1.4: 管理機能搭載版) ---
 
 let selfStudyState = {
     drills:[],
@@ -9,8 +9,83 @@ let selfStudyState = {
 };
 
 // ==========================================
-// 1. 親モード: ドリルJSONの登録
+// 0. 共通音声再生
 // ==========================================
+function playSelfStudyVoice(text, mood = "normal") {
+    if (typeof window.updateNellMessage === 'function') {
+        window.updateNellMessage(text, mood, false, true);
+    }
+}
+
+// ==========================================
+// 1. 親モード: ドリル管理
+// ==========================================
+window.showDrillManagement = function() {
+    window.switchScreen('screen-drill-management');
+    playSelfStudyVoice("登録したドリルを管理するにゃ！", "normal");
+
+    const container = document.getElementById('drill-management-list');
+    container.innerHTML = '';
+    
+    if (!currentUser || !currentUser.custom_drills || currentUser.custom_drills.length === 0) {
+        container.innerHTML = '<p style="text-align:center; color:#888;">まだドリルが登録されてないにゃ。</p>';
+        return;
+    }
+
+    // 新しい順にソート
+    const sortedDrills = [...currentUser.custom_drills].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    sortedDrills.forEach(drill => {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'drill-manage-item';
+
+        itemDiv.innerHTML = `
+            <div class="drill-manage-item-title">${window.cleanDisplayString(drill.title)}</div>
+            <div class="drill-manage-buttons">
+                <button onclick="renameDrill('${drill.id}')" class="mini-teach-btn drill-edit-btn">名前変更</button>
+                <button onclick="deleteDrill('${drill.id}')" class="mini-teach-btn drill-delete-btn">削除</button>
+            </div>
+        `;
+        container.appendChild(itemDiv);
+    });
+};
+
+window.renameDrill = async function(drillId) {
+    if (!currentUser || !currentUser.custom_drills) return;
+    
+    const drill = currentUser.custom_drills.find(d => d.id === drillId);
+    if (!drill) return;
+
+    const newTitle = prompt("新しいドリルの名前を入力してにゃ！", drill.title);
+    if (newTitle && newTitle.trim() !== "" && newTitle !== drill.title) {
+        drill.title = newTitle.trim();
+        
+        if (typeof window.saveAndSync === 'function') {
+            await window.saveAndSync();
+            alert("名前を変更したにゃ！");
+            window.showDrillManagement(); // リストを再描画
+        }
+    }
+};
+
+window.deleteDrill = async function(drillId) {
+    if (!currentUser || !currentUser.custom_drills) return;
+    
+    const drill = currentUser.custom_drills.find(d => d.id === drillId);
+    if (!drill) return;
+
+    if (confirm(`本当に「${drill.title}」を削除するにゃ？\nこの操作は元に戻せないにゃ！`)) {
+        currentUser.custom_drills = currentUser.custom_drills.filter(d => d.id !== drillId);
+
+        if (typeof window.saveAndSync === 'function') {
+            await window.saveAndSync();
+            alert("ドリルを削除したにゃ！");
+            window.showDrillManagement(); // リストを再描画
+        }
+    }
+};
+
+// JSONのインポート用
 window.openDrillImportModal = function() {
     if (!currentUser) return;
     const modal = document.getElementById('drill-import-modal');
@@ -61,6 +136,8 @@ window.importDrillJson = async function() {
         
         alert("ドリルを登録したにゃ！");
         window.closeDrillImportModal();
+        window.showDrillManagement(); // 登録後、管理リストを再描画
+
     } catch (e) {
         console.error("Import Error:", e);
         let errMsg = e.message;
@@ -82,7 +159,7 @@ window.showSelfStudyMenu = async function() {
     document.getElementById('self-study-list-view').classList.remove('hidden');
     document.getElementById('self-study-play-view').classList.add('hidden');
     
-    window.updateNellMessage("自習室だにゃ！どのドリルをやるにゃ？", "normal", false, true);
+    playSelfStudyVoice("自習室だにゃ！どのドリルをやるにゃ？", "normal");
     
     const container = document.getElementById('self-study-drill-list');
     container.innerHTML = '';
@@ -125,7 +202,7 @@ window.openDrillDetail = function(drillId) {
     document.getElementById('self-study-play-view').classList.remove('hidden');
     document.getElementById('drill-play-title').innerText = drill.title;
     
-    window.updateNellMessage("どのページをやるにゃ？", "excited", false, true);
+    playSelfStudyVoice("どのページをやるにゃ？", "excited");
     
     const container = document.getElementById('drill-page-container');
     container.innerHTML = '';
@@ -145,7 +222,7 @@ window.backToDrillList = function() {
     selfStudyState.currentPage = null;
     document.getElementById('self-study-list-view').classList.remove('hidden');
     document.getElementById('self-study-play-view').classList.add('hidden');
-    window.updateNellMessage("自習室だにゃ！どのドリルをやるにゃ？", "normal", false, true);
+    playSelfStudyVoice("自習室だにゃ！どのドリルをやるにゃ？", "normal");
 };
 
 // ==========================================
@@ -216,7 +293,8 @@ window.startDrillPage = function(pageIndex) {
             }
             speechArea.style.display = "block";
             speechArea.innerText = hintText;
-            window.updateNellMessage(hintText, "thinking", false, true);
+            
+            playSelfStudyVoice(hintText, "thinking");
         };
         
         ansBtn.onclick = () => {
@@ -227,7 +305,8 @@ window.startDrillPage = function(pageIndex) {
             speechArea.style.color = "#e65100";
             speechArea.style.fontSize = "1.2rem";
             speechArea.innerText = ansText;
-            window.updateNellMessage(ansText, "happy", false, true);
+            
+            playSelfStudyVoice(ansText, "happy");
         };
         
         btnArea.appendChild(hintBtn);
@@ -239,7 +318,7 @@ window.startDrillPage = function(pageIndex) {
         qGrid.appendChild(card);
     });
     
-    window.updateNellMessage(`「${page.page_number}」をはじめるにゃ！`, "excited", false, true);
+    playSelfStudyVoice(`「${page.page_number}」をはじめるにゃ！`, "excited");
 };
 
 window.finishDrillPage = function() {
@@ -254,7 +333,7 @@ window.finishDrillPage = function() {
         window.saveHighScore('self_study', currentUser.selfStudyCount);
     }
     
-    window.updateNellMessage(`よくがんばったにゃ！えらいにゃ！！ご褒美にカリカリ${reward}個あげるにゃ！`, "excited", false, true);
+    playSelfStudyVoice(`よくがんばったにゃ！えらいにゃ！！ご褒美にカリカリ${reward}個あげるにゃ！`, "excited");
     
     if(window.safePlay && window.sfxHirameku) window.safePlay(window.sfxHirameku);
     
