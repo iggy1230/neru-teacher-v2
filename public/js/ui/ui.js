@@ -1,6 +1,6 @@
 // --- START OF FILE ui.js ---
 
-// --- js/ui/ui.js (v470.36: 自習室UI連携強化版) ---
+// --- js/ui/ui.js (v470.37: 完全版 - 二重再生防止・図鑑共有・管理機能搭載) ---
 
 // カレンダー表示用の現在月管理
 let currentCalendarDate = new Date();
@@ -107,7 +107,7 @@ window.switchScreen = function(to) {
 
         const miniKarikari = document.getElementById('mini-karikari-display');
         if (miniKarikari) {
-            const hideList = ['screen-title', 'screen-gate', 'screen-enrollment'];
+            const hideList =['screen-title', 'screen-gate', 'screen-enrollment'];
             if (hideList.includes(to)) {
                 miniKarikari.classList.add('hidden');
             } else {
@@ -270,11 +270,9 @@ window.updateProgress = function(p) {
 // 図鑑 (Collection) - ★共有機能・タブ切り替え・リネーム
 // ==========================================
 
-// タブ切り替え
 window.switchCollectionTab = function(tab) {
     window.collectionTabMode = tab;
     
-    // タブの見た目更新
     const btnMine = document.getElementById('col-tab-mine');
     const btnPublic = document.getElementById('col-tab-public');
     if (btnMine && btnPublic) {
@@ -287,7 +285,6 @@ window.switchCollectionTab = function(tab) {
         }
     }
     
-    // リスト再描画
     window.renderCollectionList();
 };
 
@@ -306,7 +303,6 @@ window.openCollectionDetailByIndex = function(index) {
             }
         });
     } else {
-        // Publicモードの場合、window.publicCollectionCache から取得
         if (window.publicCollectionCache && window.publicCollectionCache[index]) {
             const item = window.publicCollectionCache[index];
             const modal = document.getElementById('collection-modal');
@@ -363,20 +359,17 @@ window.showCollection = async function(keepTab = false) {
     `;
     modal.classList.remove('hidden');
 
-    // 引数 keepTab が true なら現在のタブモードを維持、それ以外は 'mine' にリセット
     if (!keepTab) {
         window.collectionTabMode = 'mine';
     } else {
-        // UI上のタブのアクティブ状態を復元
         window.switchCollectionTab(window.collectionTabMode);
-        return; // switchCollectionTab内でrenderCollectionListが呼ばれるのでここで終了
+        return; 
     }
 
     window.renderCollectionList();
 };
 
 window.renderCollectionList = async function() {
-    // ★重要: 前回の描画ループがあればキャンセル
     if (window.collectionRenderId) {
         cancelAnimationFrame(window.collectionRenderId);
         window.collectionRenderId = null;
@@ -393,7 +386,6 @@ window.renderCollectionList = async function() {
     let items =[];
 
     if (window.collectionTabMode === 'mine') {
-        // 自分のコレクション
         if (sortArea) sortArea.style.display = 'flex';
         const profile = await window.NellMemory.getUserProfile(currentUser.id);
         const collection = profile.collection ||[];
@@ -418,14 +410,13 @@ window.renderCollectionList = async function() {
         }
 
     } else {
-        // みんなのコレクション
-        if (sortArea) sortArea.style.display = 'none'; // 公開用は時系列固定
+        if (sortArea) sortArea.style.display = 'none'; 
         const publicItems = await window.NellMemory.getPublicCollection();
-        window.publicCollectionCache = publicItems; // 詳細表示用にキャッシュ
+        window.publicCollectionCache = publicItems; 
         
         items = publicItems.map((item, index) => ({
             ...item,
-            originalIndex: index // キャッシュ配列のインデックス
+            originalIndex: index 
         }));
     }
 
@@ -477,7 +468,6 @@ window.renderCollectionList = async function() {
             img.decoding = "async";
             img.style.cssText = "width:100%; height:100%; object-fit:contain; display:block; background-color: #f9f9f9;";
             
-            // ★修正: 名前バッジを表示（自分のカードでも表示するように変更）
             const badge = document.createElement('div');
             badge.className = "info-badge";
             if (window.collectionTabMode === 'public') {
@@ -515,14 +505,11 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
         mapBtnHtml = `<button onclick="window.closeCollection(); window.showMap(${item.location.lat}, ${item.location.lon});" class="mini-teach-btn" style="background:#29b6f6; width:auto; margin-left:10px;">🗺️ 地図で見る</button>`;
     }
 
-    // ★修正: 共有/非共有ボタンの切り替え
     let shareBtnHtml = "";
     if (isMine) {
         if (!item.isShared) {
-            // まだ共有していない -> 公開ボタン
             shareBtnHtml = `<button onclick="shareCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff9800; width:auto;">✨ みんなに公開する</button>`;
         } else {
-            // 既に共有している -> 非公開に戻すボタン
             shareBtnHtml = `
                 <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
                     <span style="font-size:0.8rem; color:#ff9800; font-weight:bold;">みんなに公開中だにゃ！</span>
@@ -530,7 +517,6 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
                 </div>`;
         }
     } else {
-        // 他人のアイテム: 「みんなの」タブで見ている場合、不備データのお掃除機能を追加
         shareBtnHtml = `
             <div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
                 <span style="font-size:0.8rem; color:#666;">発見者: <strong>${window.cleanDisplayString(item.discovererName || "誰か")}さん</strong></span>
@@ -540,13 +526,11 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
             </div>`;
     }
 
-    // 削除ボタン (自分のみ)
     let deleteBtnHtml = "";
     if (isMine) {
         deleteBtnHtml = `<button onclick="deleteCollectionItem(${originalIndex})" class="mini-teach-btn" style="background:#ff5252;">削除</button>`;
     }
 
-    // ★追加: 名前表示とリネームボタン
     let nameDisplayHtml = "";
     if (isMine) {
         const currentName = window.cleanDisplayString(item.name || "名称未設定");
@@ -561,7 +545,6 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
         nameDisplayHtml = `<h3 style="text-align:center; margin:0 0 5px 0; color:#555;">${window.cleanDisplayString(item.name || "名称未設定")}</h3>`;
     }
 
-    // 左右ナビ
     let leftBtnHtml = "";
     if (originalIndex > 0) {
         leftBtnHtml = `
@@ -613,7 +596,6 @@ window.showCollectionDetail = function(item, originalIndex, totalCount, isMine) 
     `;
 };
 
-// ★追加: 不備のある公開アイテムを削除する機能
 window.cleanPublicItem = async function(docId) {
     if (!docId) return;
     if (!db) return;
@@ -622,14 +604,13 @@ window.cleanPublicItem = async function(docId) {
     try {
         await db.collection("public_collection").doc(docId).delete();
         alert("公開データを削除したにゃ！スッキリしたにゃ！");
-        window.showCollection(true); // リストを更新
+        window.showCollection(true); 
     } catch(e) {
         console.error("Public Clean Error:", e);
         alert("削除に失敗したにゃ。");
     }
 };
 
-// ★追加: リネーム処理
 window.renameCollectionItem = async function(index, currentName) {
     const newName = prompt("新しい名前を入れるにゃ！", currentName);
     if (newName && newName.trim() !== "" && newName !== currentName) {
@@ -637,7 +618,6 @@ window.renameCollectionItem = async function(index, currentName) {
         
         try {
             await window.NellMemory.renameCollectionItem(currentUser.id, index, newName);
-            // 成功したら画面更新
             window.openCollectionDetailByIndex(index);
         } catch(e) {
             alert("名前を変更できなかったにゃ...");
@@ -653,7 +633,6 @@ window.shareCollectionItem = async function(index) {
         const result = await window.NellMemory.shareToPublicCollection(currentUser.id, index, currentUser.name);
         if (result === "SUCCESS") {
             alert("公開したにゃ！みんなが見れるようになったにゃ！");
-            // 再描画してボタンを「公開済み」にする
             window.openCollectionDetailByIndex(index);
         } else if (result === "ALREADY_SHARED") {
             alert("もう公開済みだにゃ！");
@@ -686,7 +665,6 @@ window.deleteCollectionItem = async function(index) {
     if (!confirm("本当にこのお宝を削除するにゃ？")) return;
     if (window.NellMemory && currentUser) {
         await window.NellMemory.deleteFromCollection(currentUser.id, index);
-        // ★修正: 削除後にタブ状態を維持して一覧に戻る
         window.showCollection(true); 
     }
 };
@@ -751,7 +729,6 @@ window.showMap = async function(targetLat, targetLon) {
 window.renderMapMarkers = async function() {
     if (!window.mapInstance || !window.NellMemory || !currentUser) return;
     
-    // 既存マーカーのクリア
     window.mapInstance.eachLayer((layer) => {
         if (layer instanceof L.Marker) {
             window.mapInstance.removeLayer(layer);
@@ -978,7 +955,6 @@ function renderLogView(container) {
     `;
     container.appendChild(ctrlDiv);
 
-    // ログが多い場合は直近50件のみ表示（メモリ対策）
     const displayHistory = [...history].reverse().slice(0, 50);
 
     displayHistory.forEach((item, index) => {
@@ -1078,13 +1054,18 @@ window.addToSessionHistory = function(role, text) {
 };
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
+    // ★★★最重要: 新しいメッセージが来たら、まず前の音声をキャンセルする★★★
+    if (speak && typeof window.cancelNellSpeech === 'function') {
+        window.cancelNellSpeech();
+    }
+
     if (window.liveSocket && window.liveSocket.readyState === WebSocket.OPEN && window.currentMode !== 'chat') {
         speak = false;
     }
 
     // ★修正: アクティブな画面の吹き出しIDを動的に探す
     let targetId = null;
-    const idsToSearch = ['nell-text', 'nell-text-game', 'nell-text-riddle', 'nell-text-minitest', 'nell-text-map', 'nell-text-self-study'];
+    const idsToSearch =['nell-text', 'nell-text-game', 'nell-text-quiz', 'nell-text-riddle', 'nell-text-minitest', 'nell-text-map', 'nell-text-self-study', 'nell-text-danmaku', 'nell-text-kanji', 'nell-text-memory', 'nell-text-slot'];
     for(const id of idsToSearch) {
         const el = document.getElementById(id);
         if (el && el.offsetParent !== null) { // 表示されている要素を探す
@@ -1150,65 +1131,4 @@ window.sendHttpText = async function(context) {
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
-    let missingInfo =[];
-    let memoryContext = "";
-    
-    if (window.NellMemory && currentUser) {
-        try {
-            const profile = await window.NellMemory.getUserProfile(currentUser.id);
-            if (!profile.birthday) missingInfo.push("誕生日");
-            if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
-            if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
-            
-            memoryContext = await window.NellMemory.generateContextString(currentUser.id);
-        } catch(e) {
-            console.warn("Memory access error:", e);
-        }
-    }
-
-    try {
-        window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
-        
-        const res = await fetch('/chat-dialogue', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                text: text, 
-                name: currentUser ? currentUser.name : "生徒", 
-                history: window.chatSessionHistory, 
-                location: window.currentLocation,
-                address: window.currentAddress,
-                missingInfo: missingInfo,
-                memoryContext: memoryContext 
-            })
-        });
-
-        if(res.ok) {
-            const data = await res.json();
-            const speechText = data.speech || data.reply || "教えてあげるにゃ！";
-            
-            window.addLogItem('nell', speechText);
-            window.addToSessionHistory('nell', speechText);
-            
-            await window.updateNellMessage(speechText, "happy", true, true);
-            
-            let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
-            const embedBoard = document.getElementById(boardId);
-            if (embedBoard && data.board && data.board.trim() !== "") {
-                embedBoard.innerText = data.board;
-                embedBoard.classList.remove('hidden');
-            }
-            input.value = ""; 
-        }
-    } catch(e) {
-        console.error("Text Chat Error:", e);
-        window.updateNellMessage("ごめん、ちょっとわからなかったにゃ。", "thinking", false, true);
-    } finally {
-        if (window.isAlwaysListening) {
-             try { window.continuousRecognition.start(); } catch(e){}
-        }
-    }
-};
-
-window.sendEmbeddedText = function() { window.sendHttpText('embedded'); };
-window.sendSimpleText = function() { window.sendHttpText('simple'); };
+    let missingInfo =
