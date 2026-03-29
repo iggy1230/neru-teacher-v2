@@ -1,6 +1,6 @@
 // --- START OF FILE ui.js ---
 
-// --- js/ui/ui.js (v470.39: 構文エラー修正・完全版・前半) ---
+// --- js/ui/ui.js (v470.40: 構文エラー完全修正版) ---
 
 let currentCalendarDate = new Date();
 window.collectionSortMode = 'desc'; 
@@ -751,7 +751,6 @@ window.renderMapMarkers = async function() {
             .bindPopup("現在はここだにゃ！").openPopup();
     }
 };
-
 // ==========================================
 // ★ 記憶管理 (プロフィール)
 // ==========================================
@@ -1101,4 +1100,65 @@ window.sendHttpText = async function(context) {
     window.addLogItem('user', text);
     window.addToSessionHistory('user', text);
 
-    let missingInfo =
+    let missingInfo =[];
+    let memoryContext = "";
+    
+    if (window.NellMemory && currentUser) {
+        try {
+            const profile = await window.NellMemory.getUserProfile(currentUser.id);
+            if (!profile.birthday) missingInfo.push("誕生日");
+            if (!profile.likes || profile.likes.length === 0) missingInfo.push("好きなもの");
+            if (!profile.weaknesses || profile.weaknesses.length === 0) missingInfo.push("苦手なもの");
+            
+            memoryContext = await window.NellMemory.generateContextString(currentUser.id);
+        } catch(e) {
+            console.warn("Memory access error:", e);
+        }
+    }
+
+    try {
+        window.updateNellMessage("ん？どれどれ…", "thinking", false, true);
+        
+        const res = await fetch('/chat-dialogue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                text: text, 
+                name: currentUser ? currentUser.name : "生徒", 
+                history: window.chatSessionHistory, 
+                location: window.currentLocation,
+                address: window.currentAddress,
+                missingInfo: missingInfo,
+                memoryContext: memoryContext 
+            })
+        });
+
+        if(res.ok) {
+            const data = await res.json();
+            const speechText = data.speech || data.reply || "教えてあげるにゃ！";
+            
+            window.addLogItem('nell', speechText);
+            window.addToSessionHistory('nell', speechText);
+            
+            await window.updateNellMessage(speechText, "happy", true, true);
+            
+            let boardId = (context === 'embedded') ? 'embedded-chalkboard' : 'chalkboard-simple';
+            const embedBoard = document.getElementById(boardId);
+            if (embedBoard && data.board && data.board.trim() !== "") {
+                embedBoard.innerText = data.board;
+                embedBoard.classList.remove('hidden');
+            }
+            input.value = ""; 
+        }
+    } catch(e) {
+        console.error("Text Chat Error:", e);
+        window.updateNellMessage("ごめん、ちょっとわからなかったにゃ。", "thinking", false, true);
+    } finally {
+        if (window.isAlwaysListening) {
+             try { window.continuousRecognition.start(); } catch(e){}
+        }
+    }
+};
+
+window.sendEmbeddedText = function() { window.sendHttpText('embedded'); };
+window.sendSimpleText = function() { window.sendHttpText('simple'); };
