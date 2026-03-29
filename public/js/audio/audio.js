@@ -1,12 +1,14 @@
 // --- START OF FILE audio.js ---
 
-// --- js/audio/audio.js (v442.4: 二重再生防止・完全版) ---
+// --- js/audio/audio.js (v442.5: 二重再生防止・構文エラー完全修正版) ---
 window.audioCtx = null;
 window.masterGainNode = null; 
 window.currentNellAudio = null;
 window.isNellSpeaking = false;
 window.speechQueue =[]; 
-window.speechToken = 0; // ★再生競合を防ぐための「整理券」
+
+// ★再生競合を防ぐための「整理券（トークン）」
+window.speechToken = 0; 
 
 window.initAudioContext = async function() {
     try {
@@ -34,12 +36,13 @@ window.cancelNellSpeech = function() {
     window.isNellSpeaking = false;
     window.speechQueue =[]; 
     if (window.currentNellAudio) {
+        // ★重要: 再生が終わった後のイベントが発火しないようにリスナーを全て削除
         window.currentNellAudio.onended = null;
         window.currentNellAudio.onerror = null;
         window.currentNellAudio.onplay = null;
         window.currentNellAudio.pause();
         window.currentNellAudio.currentTime = 0;
-        window.currentNellAudio.src = ""; 
+        window.currentNellAudio.src = ""; // ソースを空にして読み込みを停止
         window.currentNellAudio = null;
     }
     if ('speechSynthesis' in window) {
@@ -62,6 +65,7 @@ window.speakNell = function(text, mood = "normal") {
 
         if (cleanText.trim() === "") return resolve();
 
+        // 長い文章は句点で分割して順番にAPIに投げる
         let sentences = cleanText.match(/[^。！？.!?]+[。！？.!?]*/g) || [cleanText];
         let queue =[];
         sentences.forEach(s => {
@@ -132,6 +136,51 @@ window.speakNell = function(text, mood = "normal") {
                 await audio.play();
 
             } catch (e) {
-                console.error("TTS API Error:", e);
+                console.error("公式TTS APIの取得に失敗しました:", e);
                 const remainingText = sentence + " " + window.speechQueue.join(" ");
-                window.speechQueue =
+                window.speechQueue =[];
+                playFallbackTTS(remainingText, currentToken, resolve);
+            }
+        }
+        
+        playNext();
+    });
+};
+
+// 最終防衛ライン: ブラウザ内蔵音声
+function playFallbackTTS(text, token, resolveCallback) {
+    if (token !== window.speechToken) return resolveCallback();
+
+    console.log("ブラウザ内蔵音声(TTS)に切り替えますにゃ。");
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(text);
+        msg.lang = 'ja-JP';
+        msg.rate = 1.2; 
+        
+        msg.onstart = () => { 
+            if (token === window.speechToken) window.isNellSpeaking = true; 
+        };
+        msg.onend = () => { 
+            window.isNellSpeaking = false; 
+            resolveCallback(); 
+        };
+        msg.onerror = () => { 
+            window.isNellSpeaking = false; 
+            resolveCallback(); 
+        };
+        
+        window.speechSynthesis.speak(msg);
+    } else {
+        resolveCallback();
+    }
+}
+
+// （互換性維持用）グローバル空間にも関数を露出
+if (typeof speakNell === 'undefined') {
+    window.speakNell = window.speakNell;
+}
+
+if ('speechSynthesis' in window) {
+    window.speechSynthesis.onvoiceschanged = () => {};
+}
