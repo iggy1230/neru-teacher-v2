@@ -1,3 +1,5 @@
+// --- START OF FILE ui.js ---
+
 // --- js/ui/ui.js (v470.39: 構文エラー修正・完全版・前半) ---
 
 let currentCalendarDate = new Date();
@@ -749,6 +751,7 @@ window.renderMapMarkers = async function() {
             .bindPopup("現在はここだにゃ！").openPopup();
     }
 };
+
 // ==========================================
 // ★ 記憶管理 (プロフィール)
 // ==========================================
@@ -1024,7 +1027,6 @@ window.addToSessionHistory = function(role, text) {
 };
 
 window.updateNellMessage = async function(t, mood = "normal", saveToMemory = false, speak = true) {
-    // ★★★最重要: 新しいメッセージが来たら、まず前の音声をキャンセルする★★★
     if (speak && typeof window.cancelNellSpeech === 'function') {
         window.cancelNellSpeech();
     }
