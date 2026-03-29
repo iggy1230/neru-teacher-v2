@@ -1,14 +1,12 @@
 // --- START OF FILE audio.js ---
 
-// --- js/audio/audio.js (v442.3: 二重再生完全防止版) ---
+// --- js/audio/audio.js (v442.4: 二重再生防止・完全版) ---
 window.audioCtx = null;
 window.masterGainNode = null; 
 window.currentNellAudio = null;
 window.isNellSpeaking = false;
 window.speechQueue =[]; 
-
-// ★追加: 再生競合を防ぐための「整理券（トークン）」
-window.speechToken = 0; 
+window.speechToken = 0; // ★再生競合を防ぐための「整理券」
 
 window.initAudioContext = async function() {
     try {
@@ -32,7 +30,7 @@ window.initAudioContext = async function() {
 };
 
 window.cancelNellSpeech = function() {
-    window.speechToken++; // ★追加: キャンセル時に整理券を更新し、待機中の音声を無効化
+    window.speechToken++; // キャンセル時に整理券を更新し、待機中の音声を無効化
     window.isNellSpeaking = false;
     window.speechQueue =[]; 
     if (window.currentNellAudio) {
@@ -55,8 +53,7 @@ window.speakNell = function(text, mood = "normal") {
 
         // 前の音声をキャンセルし、新しい整理券を発行
         window.cancelNellSpeech();
-        
-        const currentToken = window.speechToken; // この音声リクエストの整理券番号を記録
+        const currentToken = window.speechToken; 
 
         let cleanText = text;
         cleanText = cleanText.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, ''); 
@@ -79,7 +76,7 @@ window.speakNell = function(text, mood = "normal") {
         window.speechQueue = queue.map(s => s.trim()).filter(s => s.length > 0);
 
         async function playNext() {
-            // ★チェック: 自分が通信待ちしている間に別の音声がリクエストされていたら、即座に中断
+            // 通信待ちの間に別の音声がリクエストされていたら中断
             if (currentToken !== window.speechToken) return resolve(); 
 
             if (window.speechQueue.length === 0) {
@@ -98,7 +95,7 @@ window.speakNell = function(text, mood = "normal") {
                     body: JSON.stringify({ text: sentence })
                 });
 
-                // ★チェック: 通信（fetch）が終わった直後にもう一度整理券を確認！古ければ中断！
+                // 通信終了時にも整理券を確認
                 if (currentToken !== window.speechToken) return resolve(); 
 
                 if (!response.ok) throw new Error("Server TTS Error");
@@ -112,10 +109,8 @@ window.speakNell = function(text, mood = "normal") {
 
                 const vol = (typeof window.isMuted !== 'undefined' && window.isMuted) ? 0 : (window.appVolume || 0.5);
                 audio.volume = vol;
-                
                 audio.playbackRate = 1.0; 
 
-                // ★チェック: 音声が鳴るまさにその瞬間にも最後の確認を行う
                 audio.onplay = () => { 
                     if (currentToken !== window.speechToken) {
                         audio.pause();
@@ -137,6 +132,6 @@ window.speakNell = function(text, mood = "normal") {
                 await audio.play();
 
             } catch (e) {
-                console.error("公式TTS APIの取得に失敗しました:", e);
+                console.error("TTS API Error:", e);
                 const remainingText = sentence + " " + window.speechQueue.join(" ");
                 window.speechQueue =
