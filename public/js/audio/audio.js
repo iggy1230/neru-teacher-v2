@@ -1,11 +1,14 @@
 // --- START OF FILE audio.js ---
 
-// --- js/audio/audio.js (v442.2: 通常スピード・通常ピッチ版) ---
+// --- js/audio/audio.js (v442.3: 二重再生完全防止版) ---
 window.audioCtx = null;
 window.masterGainNode = null; 
 window.currentNellAudio = null;
 window.isNellSpeaking = false;
-window.speechQueue =[]; // 長文を分割して順番に再生するためのキュー
+window.speechQueue =[]; 
+
+// ★追加: 再生競合を防ぐための「整理券（トークン）」
+window.speechToken = 0; 
 
 window.initAudioContext = async function() {
     try {
@@ -29,16 +32,16 @@ window.initAudioContext = async function() {
 };
 
 window.cancelNellSpeech = function() {
+    window.speechToken++; // ★追加: キャンセル時に整理券を更新し、待機中の音声を無効化
     window.isNellSpeaking = false;
-    window.speechQueue =[]; // キューを空にする
+    window.speechQueue =[]; 
     if (window.currentNellAudio) {
-        // ★重要: 再生が終わった後のイベントが発火しないようにリスナーを全て削除
         window.currentNellAudio.onended = null;
         window.currentNellAudio.onerror = null;
         window.currentNellAudio.onplay = null;
         window.currentNellAudio.pause();
         window.currentNellAudio.currentTime = 0;
-        window.currentNellAudio.src = ""; // ソースを空にして読み込みを停止
+        window.currentNellAudio.src = ""; 
         window.currentNellAudio = null;
     }
     if ('speechSynthesis' in window) {
@@ -50,8 +53,10 @@ window.speakNell = function(text, mood = "normal") {
     return new Promise((resolve) => {
         if (!text || text === "") return resolve();
 
-        // ★★★最重要: 再生前に必ず前の音声をキャンセルする★★★
+        // 前の音声をキャンセルし、新しい整理券を発行
         window.cancelNellSpeech();
+        
+        const currentToken = window.speechToken; // この音声リクエストの整理券番号を記録
 
         let cleanText = text;
         cleanText = cleanText.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, ''); 
@@ -60,7 +65,6 @@ window.speakNell = function(text, mood = "normal") {
 
         if (cleanText.trim() === "") return resolve();
 
-        // 長い文章は句点で分割して順番にAPIに投げる
         let sentences = cleanText.match(/[^。！？.!?]+[。！？.!?]*/g) || [cleanText];
         let queue =[];
         sentences.forEach(s => {
@@ -75,6 +79,9 @@ window.speakNell = function(text, mood = "normal") {
         window.speechQueue = queue.map(s => s.trim()).filter(s => s.length > 0);
 
         async function playNext() {
+            // ★チェック: 自分が通信待ちしている間に別の音声がリクエストされていたら、即座に中断
+            if (currentToken !== window.speechToken) return resolve(); 
+
             if (window.speechQueue.length === 0) {
                 window.isNellSpeaking = false;
                 window.currentNellAudio = null;
@@ -85,19 +92,20 @@ window.speakNell = function(text, mood = "normal") {
             const sentence = window.speechQueue.shift();
             
             try {
-                // 自前のサーバー（公式APIプロキシ）へリクエスト
                 const response = await fetch('/api/tts', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text: sentence })
                 });
 
+                // ★チェック: 通信（fetch）が終わった直後にもう一度整理券を確認！古ければ中断！
+                if (currentToken !== window.speechToken) return resolve(); 
+
                 if (!response.ok) throw new Error("Server TTS Error");
 
                 const data = await response.json();
                 if (!data.audioContent) throw new Error("No audio content");
 
-                // Base64の音声データをAudioオブジェクトにして再生
                 const audioUrl = "data:audio/mp3;base64," + data.audioContent;
                 const audio = new Audio(audioUrl);
                 window.currentNellAudio = audio;
@@ -105,19 +113,25 @@ window.speakNell = function(text, mood = "normal") {
                 const vol = (typeof window.isMuted !== 'undefined' && window.isMuted) ? 0 : (window.appVolume || 0.5);
                 audio.volume = vol;
                 
-                // ★変更：サーバー側で速度調整するため、ブラウザ側では通常再生(1.0)に
-                audio.playbackRate = 1.0;
+                audio.playbackRate = 1.0; 
 
-                audio.onplay = () => { window.isNellSpeaking = true; };
+                // ★チェック: 音声が鳴るまさにその瞬間にも最後の確認を行う
+                audio.onplay = () => { 
+                    if (currentToken !== window.speechToken) {
+                        audio.pause();
+                        resolve();
+                        return;
+                    }
+                    window.isNellSpeaking = true; 
+                };
                 
-                // ★1つ終わったら次の文章を再生
                 audio.onended = () => { playNext(); };
                 
                 audio.onerror = (e) => {
                     console.warn("Audio Playback Error:", e);
                     const remainingText = sentence + " " + window.speechQueue.join(" ");
                     window.speechQueue =[];
-                    playFallbackTTS(remainingText, resolve);
+                    if (currentToken === window.speechToken) playFallbackTTS(remainingText, currentToken, resolve);
                 };
 
                 await audio.play();
@@ -125,36 +139,4 @@ window.speakNell = function(text, mood = "normal") {
             } catch (e) {
                 console.error("公式TTS APIの取得に失敗しました:", e);
                 const remainingText = sentence + " " + window.speechQueue.join(" ");
-                window.speechQueue =[];
-                playFallbackTTS(remainingText, resolve);
-            }
-        }
-        
-        playNext();
-    });
-};
-
-
-// 最終防衛ライン: ブラウザ内蔵音声
-function playFallbackTTS(text, resolveCallback) {
-    console.log("ブラウザ内蔵音声(TTS)に切り替えますにゃ。");
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const msg = new SpeechSynthesisUtterance(text);
-        msg.lang = 'ja-JP';
-        msg.rate = 1.2; 
-        
-        msg.onstart = () => { window.isNellSpeaking = true; };
-        msg.onend = () => { window.isNellSpeaking = false; resolveCallback(); };
-        msg.onerror = () => { window.isNellSpeaking = false; resolveCallback(); };
-        
-        window.speechSynthesis.speak(msg);
-    } else {
-        resolveCallback();
-    }
-}
-
-// （互換性維持用）グローバル空間にも関数を露出
-if (typeof speakNell === 'undefined') {
-    window.speakNell = window.speakNell;
-}
+                window.speechQueue =
