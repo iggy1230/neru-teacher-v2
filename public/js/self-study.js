@@ -1,6 +1,6 @@
 // --- START OF FILE self-study.js ---
 
-// --- js/self-study.js (v1.4: 管理機能搭載版) ---
+// --- js/self-study.js (v1.5: 全ユーザー共有機能・管理機能搭載版) ---
 
 let selfStudyState = {
     drills:[],
@@ -20,72 +20,86 @@ function playSelfStudyVoice(text, mood = "normal") {
 // ==========================================
 // 1. 親モード: ドリル管理
 // ==========================================
-window.showDrillManagement = function() {
+window.showDrillManagement = async function() {
     window.switchScreen('screen-drill-management');
     playSelfStudyVoice("登録したドリルを管理するにゃ！", "normal");
 
     const container = document.getElementById('drill-management-list');
-    container.innerHTML = '';
+    container.innerHTML = '<p style="text-align:center; color:#888;">読み込み中...</p>';
     
-    if (!currentUser || !currentUser.custom_drills || currentUser.custom_drills.length === 0) {
-        container.innerHTML = '<p style="text-align:center; color:#888;">まだドリルが登録されてないにゃ。</p>';
-        return;
+    // ★変更: 全員共有のドリル一覧を取得
+    if (!window.db) return;
+    try {
+        const snapshot = await window.db.collection('custom_drills').orderBy('createdAt', 'desc').get();
+        selfStudyState.drills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        container.innerHTML = '';
+        if (selfStudyState.drills.length === 0) {
+            container.innerHTML = '<p style="text-align:center; color:#888;">まだドリルが登録されてないにゃ。</p>';
+            return;
+        }
+
+        selfStudyState.drills.forEach(drill => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'drill-manage-item';
+
+            itemDiv.innerHTML = `
+                <div class="drill-manage-item-title">${window.cleanDisplayString(drill.title)}</div>
+                <div class="drill-manage-buttons">
+                    <button onclick="renameDrill('${drill.id}')" class="mini-teach-btn drill-edit-btn">名前変更</button>
+                    <button onclick="deleteDrill('${drill.id}')" class="mini-teach-btn drill-delete-btn">削除</button>
+                </div>
+            `;
+            container.appendChild(itemDiv);
+        });
+
+    } catch (e) {
+        console.error("Management Load Error:", e);
+        container.innerHTML = '<p style="text-align:center; color:red;">ドリルの読み込みに失敗したにゃ</p>';
     }
-
-    // 新しい順にソート
-    const sortedDrills = [...currentUser.custom_drills].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-
-    sortedDrills.forEach(drill => {
-        const itemDiv = document.createElement('div');
-        itemDiv.className = 'drill-manage-item';
-
-        itemDiv.innerHTML = `
-            <div class="drill-manage-item-title">${window.cleanDisplayString(drill.title)}</div>
-            <div class="drill-manage-buttons">
-                <button onclick="renameDrill('${drill.id}')" class="mini-teach-btn drill-edit-btn">名前変更</button>
-                <button onclick="deleteDrill('${drill.id}')" class="mini-teach-btn drill-delete-btn">削除</button>
-            </div>
-        `;
-        container.appendChild(itemDiv);
-    });
 };
 
 window.renameDrill = async function(drillId) {
-    if (!currentUser || !currentUser.custom_drills) return;
+    if (!window.db) return;
     
-    const drill = currentUser.custom_drills.find(d => d.id === drillId);
+    const drill = selfStudyState.drills.find(d => d.id === drillId);
     if (!drill) return;
 
     const newTitle = prompt("新しいドリルの名前を入力してにゃ！", drill.title);
     if (newTitle && newTitle.trim() !== "" && newTitle !== drill.title) {
-        drill.title = newTitle.trim();
-        
-        if (typeof window.saveAndSync === 'function') {
-            await window.saveAndSync();
+        try {
+            // ★変更: 共有コレクションのドキュメントを直接更新
+            await window.db.collection('custom_drills').doc(drillId).update({
+                title: newTitle.trim()
+            });
             alert("名前を変更したにゃ！");
             window.showDrillManagement(); // リストを再描画
+        } catch(e) {
+            console.error("Rename Error:", e);
+            alert("名前の変更に失敗したにゃ...");
         }
     }
 };
 
 window.deleteDrill = async function(drillId) {
-    if (!currentUser || !currentUser.custom_drills) return;
+    if (!window.db) return;
     
-    const drill = currentUser.custom_drills.find(d => d.id === drillId);
+    const drill = selfStudyState.drills.find(d => d.id === drillId);
     if (!drill) return;
 
     if (confirm(`本当に「${drill.title}」を削除するにゃ？\nこの操作は元に戻せないにゃ！`)) {
-        currentUser.custom_drills = currentUser.custom_drills.filter(d => d.id !== drillId);
-
-        if (typeof window.saveAndSync === 'function') {
-            await window.saveAndSync();
+        try {
+            // ★変更: 共有コレクションからドキュメントを直接削除
+            await window.db.collection('custom_drills').doc(drillId).delete();
             alert("ドリルを削除したにゃ！");
             window.showDrillManagement(); // リストを再描画
+        } catch (e) {
+            console.error("Delete Error:", e);
+            alert("削除に失敗したにゃ...");
         }
     }
 };
 
-// JSONのインポート用
 window.openDrillImportModal = function() {
     if (!currentUser) return;
     const modal = document.getElementById('drill-import-modal');
@@ -101,7 +115,7 @@ window.closeDrillImportModal = function() {
 };
 
 window.importDrillJson = async function() {
-    if (!currentUser) return alert("生徒を選んでログインしてにゃ！");
+    if (!window.db || !currentUser) return alert("データベースに接続されていません。");
     const jsonStr = document.getElementById('drill-json-input').value.trim();
     if (!jsonStr) return alert("JSONデータを貼り付けてにゃ！");
 
@@ -117,22 +131,13 @@ window.importDrillJson = async function() {
             throw new Error("フォーマットが違うみたいだにゃ（titleとpagesが必要）");
         }
 
-        if (!currentUser.custom_drills) {
-            currentUser.custom_drills =[];
-        }
-
-        const newDrillId = "drill_" + Date.now() + "_" + Math.floor(Math.random()*1000);
+        // ★変更: 全員共有のコレクションに直接追加
         const dataToSave = {
             ...drillData,
-            id: newDrillId,
+            ownerId: currentUser.id, // 誰が登録したかの記録
             createdAt: new Date().toISOString()
         };
-
-        currentUser.custom_drills.push(dataToSave);
-        
-        if (typeof window.saveAndSync === 'function') {
-            await window.saveAndSync();
-        }
+        await window.db.collection('custom_drills').add(dataToSave);
         
         alert("ドリルを登録したにゃ！");
         window.closeDrillImportModal();
@@ -162,34 +167,48 @@ window.showSelfStudyMenu = async function() {
     playSelfStudyVoice("自習室だにゃ！どのドリルをやるにゃ？", "normal");
     
     const container = document.getElementById('self-study-drill-list');
-    container.innerHTML = '';
+    container.innerHTML = '<p style="text-align:center;">ドリルを探してるにゃ...</p>';
     
-    if (!currentUser) return;
-    
-    selfStudyState.drills = currentUser.custom_drills ||[];
-    
-    if (selfStudyState.drills.length === 0) {
-        container.innerHTML = '<p style="text-align:center; color:#888;">まだドリルが登録されてないにゃ。<br>おうちの人に登録してもらってにゃ！</p>';
+    if (!window.db || !currentUser) {
+        container.innerHTML = '<p style="text-align:center; color:red;">データベースにつながってないにゃ。</p>';
         return;
     }
     
-    const sortedDrills = [...selfStudyState.drills].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    
-    sortedDrills.forEach(data => {
-        const btn = document.createElement('button');
-        btn.className = "main-btn";
-        btn.style.cssText = "background: white; color: #333; border: 2px solid #4db6ac; text-align: left; margin-bottom: 10px; box-shadow: 0 4px 0 #b2dfdb; display: flex; justify-content: space-between; align-items: center;";
+    try {
+        // ★変更: 共有コレクションからドリルを読み込む
+        const snapshot = await window.db.collection('custom_drills').orderBy('createdAt', 'desc').get();
+            
+        selfStudyState.drills =[];
+        container.innerHTML = '';
         
-        let icon = "📚";
-        if (data.subject === "さんすう") icon = "🔢";
-        if (data.subject === "こくご") icon = "📖";
-        if (data.subject === "りか") icon = "🔬";
-        if (data.subject === "しゃかい") icon = "🌍";
+        if (snapshot.empty) {
+            container.innerHTML = '<p style="text-align:center; color:#888;">まだドリルが登録されてないにゃ。<br>おうちの人に登録してもらってにゃ！</p>';
+            return;
+        }
         
-        btn.innerHTML = `<span style="font-size:1.1rem; font-weight:bold;">${icon} ${window.cleanDisplayString(data.title)}</span><span style="font-size:0.8rem; color:#888;">${data.pages.length}ページ</span>`;
-        btn.onclick = () => window.openDrillDetail(data.id);
-        container.appendChild(btn);
-    });
+        snapshot.forEach(doc => {
+            const data = { id: doc.id, ...doc.data() };
+            selfStudyState.drills.push(data);
+            
+            const btn = document.createElement('button');
+            btn.className = "main-btn";
+            btn.style.cssText = "background: white; color: #333; border: 2px solid #4db6ac; text-align: left; margin-bottom: 10px; box-shadow: 0 4px 0 #b2dfdb; display: flex; justify-content: space-between; align-items: center;";
+            
+            let icon = "📚";
+            if (data.subject === "さんすう") icon = "🔢";
+            if (data.subject === "こくご") icon = "📖";
+            if (data.subject === "りか") icon = "🔬";
+            if (data.subject === "しゃかい") icon = "🌍";
+            
+            btn.innerHTML = `<span style="font-size:1.1rem; font-weight:bold;">${icon} ${window.cleanDisplayString(data.title)}</span><span style="font-size:0.8rem; color:#888;">${data.pages.length}ページ</span>`;
+            btn.onclick = () => window.openDrillDetail(data.id);
+            container.appendChild(btn);
+        });
+        
+    } catch (e) {
+        console.error("Drill Load Error:", e);
+        container.innerHTML = '<p style="text-align:center; color:red;">読み込めなかったにゃ...</p>';
+    }
 };
 
 window.openDrillDetail = function(drillId) {
@@ -293,7 +312,6 @@ window.startDrillPage = function(pageIndex) {
             }
             speechArea.style.display = "block";
             speechArea.innerText = hintText;
-            
             playSelfStudyVoice(hintText, "thinking");
         };
         
@@ -305,7 +323,6 @@ window.startDrillPage = function(pageIndex) {
             speechArea.style.color = "#e65100";
             speechArea.style.fontSize = "1.2rem";
             speechArea.innerText = ansText;
-            
             playSelfStudyVoice(ansText, "happy");
         };
         
