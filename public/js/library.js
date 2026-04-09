@@ -1,24 +1,31 @@
 // --- START OF FILE library.js ---
 
-// --- js/library.js (v2.0: 図書館モード - PDF対応版 寄贈機能) ---
+// --- js/library.js (v3.0: 図書館モード 本棚＆リーダー機能搭載版) ---
 
-// pdf.js のワーカーを設定（これがないとPDFが読み込めません）
 if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 }
 
 let libraryState = {
     tempPdfFile: null,
-    tempPdfMeta: {}
+    tempPdfMeta: {},
+    books:[],
+    currentBook: null,
+    pdfDocument: null,
+    pageNum: 1,
+    pageRendering: false,
+    pageNumPending: null,
+    canvas: null,
+    ctx: null
 };
 
-// Base64 -> Blob 変換ヘルパー
+// ==========================================
+// 1. 親モード: 寄贈 (アップロード) 機能
+// ==========================================
 function dataURLtoBlob(dataurl) {
     let arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
         bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
-    while(n--){
-        u8arr[n] = bstr.charCodeAt(n);
-    }
+    while(n--){ u8arr[n] = bstr.charCodeAt(n); }
     return new Blob([u8arr], {type:mime});
 }
 
@@ -26,7 +33,6 @@ window.openPdfImportModal = function() {
     if (!currentUser) return;
     const modal = document.getElementById('pdf-import-modal');
     if (modal) {
-        // 初期化
         libraryState.tempPdfFile = null;
         libraryState.tempPdfMeta = {};
         document.getElementById('pdf-file-input').value = "";
@@ -34,12 +40,7 @@ window.openPdfImportModal = function() {
         const btn = document.getElementById('pdf-upload-btn');
         btn.innerText = "ファイルを選んでにゃ";
         btn.disabled = true;
-        
         modal.classList.remove('hidden');
-        
-        if(typeof window.updateNellMessage === 'function') {
-            window.updateNellMessage("PDF形式のファイルをアップロードしてにゃ！", "normal", false, true);
-        }
     }
 };
 
@@ -48,17 +49,12 @@ window.closePdfImportModal = function() {
     if (modal) modal.classList.add('hidden');
 };
 
-// PDFファイルが選択された時の処理
 window.onPdfFileSelected = async function(event) {
     const file = event.target.files[0];
     if(!file) return;
-    
-    if (file.type !== "application/pdf") {
-        return alert("PDFファイルを選んでにゃ！");
-    }
+    if (file.type !== "application/pdf") return alert("PDFファイルを選んでにゃ！");
 
     libraryState.tempPdfFile = file;
-
     const btn = document.getElementById('pdf-upload-btn');
     btn.innerText = "表紙を作ってるにゃ...";
     btn.disabled = true;
@@ -67,21 +63,18 @@ window.onPdfFileSelected = async function(event) {
     metaArea.classList.remove('hidden');
     document.getElementById('pdf-preview-cover').src = "assets/images/characters/nell-thinking.png"; 
 
-    // ファイル名から拡張子(.pdf)を取ってタイトル候補にする
     const defaultTitle = file.name.replace(/\.[^/.]+$/, "");
     document.getElementById('pdf-title-input').value = defaultTitle;
     document.getElementById('pdf-author-input').value = currentUser.name + "の親";
 
     try {
-        // PDFの1ページ目を読み込んでCanvasに描画し、表紙画像(Base64)を作る
         const fileReader = new FileReader();
         fileReader.onload = async function() {
             const typedarray = new Uint8Array(this.result);
             try {
                 const pdf = await pdfjsLib.getDocument(typedarray).promise;
-                const page = await pdf.getPage(1); // 1ページ目を取得
+                const page = await pdf.getPage(1); 
                 
-                // サムネイル用のサイズ計算 (幅300px程度に縮小)
                 const viewport = page.getViewport({scale: 1.0});
                 const scale = 300 / viewport.width;
                 const scaledViewport = page.getViewport({scale: scale});
@@ -91,33 +84,23 @@ window.onPdfFileSelected = async function(event) {
                 canvas.height = scaledViewport.height;
                 canvas.width = scaledViewport.width;
 
-                // PDFをCanvasにレンダリング
                 await page.render({canvasContext: context, viewport: scaledViewport}).promise;
 
-                // Base64のJPEG画像として保存
                 libraryState.tempPdfMeta.coverBase64 = canvas.toDataURL('image/jpeg', 0.8);
                 document.getElementById('pdf-preview-cover').src = libraryState.tempPdfMeta.coverBase64;
 
                 btn.innerText = "この本を寄贈する！";
                 btn.disabled = false;
-                
-                if(typeof window.updateNellMessage === 'function') {
-                    window.updateNellMessage("1ページ目から表紙を作ったにゃ！タイトルを確認してにゃ。", "happy", false, true);
-                }
-
             } catch(e) {
                 console.error("PDF Render Error:", e);
                 document.getElementById('pdf-preview-cover').src = "assets/images/items/student-id-base.png";
                 libraryState.tempPdfMeta.coverBase64 = null;
                 btn.innerText = "この本を寄贈する！";
                 btn.disabled = false;
-                window.updateNellMessage("表紙が作れなかったにゃ…。でも寄贈はできるにゃ！", "sad", false, true);
             }
         };
         fileReader.readAsArrayBuffer(file);
-
     } catch(e) {
-        console.error(e);
         alert("PDFファイルの読み込みに失敗したにゃ...");
         btn.innerText = "ファイルを選んでにゃ";
         metaArea.classList.add('hidden');
@@ -125,9 +108,7 @@ window.onPdfFileSelected = async function(event) {
 };
 
 window.uploadPdfToFirebase = async function() {
-    if(!libraryState.tempPdfFile) return alert("本が選ばれてないにゃ！");
-    if(!window.fireStorage || !window.db) return alert("データベースに繋がってないにゃ！");
-
+    if(!libraryState.tempPdfFile || !window.fireStorage || !window.db) return;
     const btn = document.getElementById('pdf-upload-btn');
     btn.disabled = true;
     btn.innerText = "アップロード中にゃ...（数分かかるかも！）";
@@ -137,7 +118,6 @@ window.uploadPdfToFirebase = async function() {
         const author = document.getElementById('pdf-author-input').value || "作者不明";
         const timestamp = Date.now();
         
-        // 1. 表紙画像のアップロード (あれば)
         let coverUrl = "";
         if (libraryState.tempPdfMeta.coverBase64) {
             const coverRef = window.fireStorage.ref('library_covers/' + timestamp + '.jpg');
@@ -146,17 +126,15 @@ window.uploadPdfToFirebase = async function() {
             coverUrl = await coverRef.getDownloadURL();
         }
 
-        // 2. PDFファイルのアップロード
         const pdfRef = window.fireStorage.ref('library_pdfs/' + timestamp + '.pdf');
         await pdfRef.put(libraryState.tempPdfFile);
         const pdfUrl = await pdfRef.getDownloadURL();
 
-        // 3. Firestoreにメタデータを登録（みんなの図書館）
         await window.db.collection('library_books').add({
             title: title,
             author: author,
-            coverUrl: coverUrl, // URL文字列
-            pdfUrl: pdfUrl,     // URL文字列
+            coverUrl: coverUrl,
+            pdfUrl: pdfUrl,
             uploadedBy: currentUser.id,
             uploadedByName: currentUser.name,
             createdAt: new Date().toISOString()
@@ -164,7 +142,6 @@ window.uploadPdfToFirebase = async function() {
 
         alert("図書館に本を寄贈したにゃ！ありがとうにゃ！");
         window.closePdfImportModal();
-        
         if(window.safePlay && window.sfxHirameku) window.safePlay(window.sfxHirameku);
 
     } catch(e) {
@@ -173,4 +150,214 @@ window.uploadPdfToFirebase = async function() {
         btn.disabled = false;
         btn.innerText = "この本を寄贈する！";
     }
+};
+
+// ==========================================
+// 2. 子供モード: 図書館（本棚）表示
+// ==========================================
+window.showLibrary = async function() {
+    if (typeof window.switchScreen === 'function') {
+        window.switchScreen('screen-library');
+        window.currentMode = 'library';
+    }
+    
+    const container = document.getElementById('library-book-grid');
+    container.innerHTML = '<p style="text-align:center; grid-column: span 3;">本を探してるにゃ...</p>';
+    
+    if(typeof window.updateNellMessage === 'function') {
+        window.updateNellMessage("図書館だにゃ！読みたい本を選ぶにゃ！", "happy", false, true);
+    }
+    
+    if (!window.db || !currentUser) {
+        container.innerHTML = '<p style="text-align:center; color:red; grid-column: span 3;">データベースにつながってないにゃ。</p>';
+        return;
+    }
+    
+    try {
+        const snapshot = await window.db.collection('library_books').orderBy('createdAt', 'desc').get();
+        libraryState.books = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        container.innerHTML = '';
+        if (libraryState.books.length === 0) {
+            container.innerHTML = '<p style="text-align:center; color:#888; grid-column: span 3;">まだ本がないにゃ。<br>おうちの人に寄贈してもらってにゃ！</p>';
+            return;
+        }
+
+        // しおり情報の読み込み
+        const progress = currentUser.libraryProgress || {};
+
+        libraryState.books.forEach(book => {
+            const currentPg = progress[book.id] || 1; // 途中まで読んでいればそのページ
+
+            const div = document.createElement('div');
+            div.className = "library-book-item";
+            div.onclick = () => window.openBook(book.id, currentPg);
+            
+            const coverSrc = book.coverUrl || 'assets/images/items/student-id-base.png';
+            
+            div.innerHTML = `
+                <img src="${coverSrc}" class="library-book-cover" onerror="this.src='assets/images/items/student-id-base.png'">
+                <div class="library-book-title">${window.cleanDisplayString(book.title)}</div>
+                ${currentPg > 1 ? `<div class="library-book-badge">P.${currentPg}から</div>` : ''}
+            `;
+            container.appendChild(div);
+        });
+
+    } catch (e) {
+        console.error("Library Load Error:", e);
+        container.innerHTML = '<p style="text-align:center; color:red; grid-column: span 3;">本の読み込みに失敗したにゃ...</p>';
+    }
+};
+
+// ==========================================
+// 3. 子供モード: PDFリーダー (読書画面)
+// ==========================================
+window.openBook = async function(bookId, startPage = 1) {
+    const book = libraryState.books.find(b => b.id === bookId);
+    if (!book) return;
+
+    libraryState.currentBook = book;
+    libraryState.pageNum = startPage;
+    
+    document.getElementById('screen-library').classList.add('hidden');
+    document.getElementById('screen-library-reader').classList.remove('hidden');
+    document.getElementById('pdf-reader-title').innerText = window.cleanDisplayString(book.title);
+    
+    libraryState.canvas = document.getElementById('pdf-render-canvas');
+    libraryState.ctx = libraryState.canvas.getContext('2d');
+    
+    // ロード中表示
+    const ctx = libraryState.ctx;
+    libraryState.canvas.width = 300; libraryState.canvas.height = 400;
+    ctx.fillStyle = "#555"; ctx.fillRect(0,0,300,400);
+    ctx.fillStyle = "white"; ctx.font = "20px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("本を持ってくるにゃ...", 150, 200);
+    
+    if(typeof window.updateNellMessage === 'function') {
+        window.updateNellMessage("面白そうな本だにゃ！準備するにゃ！", "excited", false, true);
+    }
+
+    try {
+        const loadingTask = pdfjsLib.getDocument(book.pdfUrl);
+        libraryState.pdfDocument = await loadingTask.promise;
+        window.renderPdfPage(libraryState.pageNum);
+    } catch(e) {
+        console.error("PDF Open Error:", e);
+        alert("本が開けなかったにゃ…。通信エラーかも？");
+        window.closeBook(false); // エラー時はしおり保存なしで閉じる
+    }
+};
+
+window.renderPdfPage = async function(num) {
+    if(!libraryState.pdfDocument) return;
+    libraryState.pageRendering = true;
+    
+    try {
+        const page = await libraryState.pdfDocument.getPage(num);
+        
+        // 画面サイズに合わせる
+        const container = document.getElementById('pdf-reader-container');
+        const containerWidth = container.clientWidth - 20; // 余白分引く
+        const containerHeight = container.clientHeight - 20;
+        
+        const unscaledViewport = page.getViewport({scale: 1.0});
+        const scale = Math.min(containerWidth / unscaledViewport.width, containerHeight / unscaledViewport.height);
+        const viewport = page.getViewport({scale: scale});
+        
+        libraryState.canvas.height = viewport.height;
+        libraryState.canvas.width = viewport.width;
+        
+        const renderContext = {
+            canvasContext: libraryState.ctx,
+            viewport: viewport
+        };
+        
+        await page.render(renderContext).promise;
+        
+        libraryState.pageRendering = false;
+        
+        // ページ番号更新
+        document.getElementById('pdf-page-info').innerText = `${num} / ${libraryState.pdfDocument.numPages}`;
+        
+        // 読破チェック
+        if (num === libraryState.pdfDocument.numPages && libraryState.pdfDocument.numPages > 1) {
+            window.giveReadingReward();
+        }
+
+        if (libraryState.pageNumPending !== null) {
+            window.renderPdfPage(libraryState.pageNumPending);
+            libraryState.pageNumPending = null;
+        }
+    } catch(e) {
+        console.error("Page Render Error:", e);
+        libraryState.pageRendering = false;
+    }
+};
+
+window.queueRenderPage = function(num) {
+    if (libraryState.pageRendering) {
+        libraryState.pageNumPending = num;
+    } else {
+        window.renderPdfPage(num);
+    }
+};
+
+window.prevPdfPage = function() {
+    if (libraryState.pageNum <= 1) return;
+    if(window.safePlay && window.sfxBtn) window.safePlay(window.sfxBtn);
+    libraryState.pageNum--;
+    window.queueRenderPage(libraryState.pageNum);
+};
+
+window.nextPdfPage = function() {
+    if (libraryState.pageNum >= libraryState.pdfDocument.numPages) return;
+    if(window.safePlay && window.sfxBtn) window.safePlay(window.sfxBtn);
+    libraryState.pageNum++;
+    window.queueRenderPage(libraryState.pageNum);
+};
+
+// 読破ボーナス
+window.giveReadingReward = function() {
+    // 同じ本で何度ももらえないようにチェック (任意)
+    if (!currentUser.booksRead) currentUser.booksRead =[];
+    const bookId = libraryState.currentBook.id;
+    
+    if (!currentUser.booksRead.includes(bookId)) {
+        currentUser.booksRead.push(bookId);
+        window.giveGameReward(100); // 読破で100カリカリ
+        
+        if(window.safePlay && window.sfxHirameku) window.safePlay(window.sfxHirameku);
+        
+        // 特製シールをあげる
+        if (typeof window.grantRandomSticker === 'function') {
+            setTimeout(() => window.grantRandomSticker(true), 1500);
+        }
+        
+        if(typeof window.updateNellMessage === 'function') {
+            window.updateNellMessage("最後まで読んだにゃ！すごいにゃ！！ご褒美にカリカリとシールをあげるにゃ！", "excited", false, true);
+        }
+    }
+};
+
+window.closeBook = function(saveProgress = true) {
+    // しおりの保存
+    if (saveProgress && currentUser && libraryState.currentBook) {
+        if (!currentUser.libraryProgress) currentUser.libraryProgress = {};
+        
+        // 最後のページまで読んだら、しおりを1ページ目に戻しておく（任意）
+        if (libraryState.pageNum >= libraryState.pdfDocument.numPages) {
+            currentUser.libraryProgress[libraryState.currentBook.id] = 1;
+        } else {
+            currentUser.libraryProgress[libraryState.currentBook.id] = libraryState.pageNum;
+        }
+        if (typeof window.saveAndSync === 'function') window.saveAndSync();
+    }
+
+    document.getElementById('screen-library-reader').classList.add('hidden');
+    document.getElementById('screen-library').classList.remove('hidden');
+    
+    libraryState.pdfDocument = null;
+    libraryState.currentBook = null;
+    
+    window.showLibrary(); // 本棚を再描画（しおりのP.〇表記を更新するため）
 };
