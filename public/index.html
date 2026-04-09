@@ -1,12 +1,13 @@
-<!-- index.html (完全版 v470.39: 図書館機能追加版) -->
+<!-- index.html (完全版 v470.41: 図書室配置変更・高解像度版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
-    <link rel="stylesheet" href="style.css?v=470.39">
+    <link rel="stylesheet" href="style.css?v=470.41">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&family=Klee+One:wght@400;600&family=Zen+Kurenaido&display=swap" rel="stylesheet">
+    <!-- ライブラリ群 -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -18,7 +19,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     <script src="js/config/map-data.js?v=1.0"></script>
-    <!-- ★図書館: PDF読み込み用ライブラリ -->
+    <!-- ★PDF読み込み用ライブラリ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 </head>
 <body>
@@ -37,7 +38,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v470.39</div>
+            <div class="version-tag">Build: v470.41</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -78,6 +79,10 @@
             <div class="lobby-menu">
                 <button onclick="openTimerModal()" class="main-btn pink-btn" style="background-color:#ff7043 !important; box-shadow: 0 4px 0 #d84315 !important;">⏱️ ネル先生タイマー</button>
                 <button onclick="switchScreen('screen-classroom')" class="main-btn green-btn">🏫 教室</button>
+                
+                <!-- ★変更: 図書室ボタンをここに配置 -->
+                <button onclick="window.showLibrary()" class="main-btn" style="background-color:#8d6e63 !important; box-shadow: 0 4px 0 #5d4037 !important;">📚 図書室</button>
+                
                 <button onclick="switchScreen('screen-playground')" class="main-btn yellow-btn" style="background-color:#fbc02d !important; box-shadow: 0 4px 0 #f57f17 !important;">🏀 体育館</button>
                 <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
                 <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
@@ -93,8 +98,6 @@
         <section id="screen-classroom" class="screen hidden">
             <h2 class="section-title">🏫 教室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
-                <!-- ★追加: 図書館ボタン -->
-                <button onclick="window.showLibrary()" class="main-btn" style="background-color:#795548 !important; box-shadow:0 4px 0 #4e342e !important;">🏫 ネル先生の図書館</button>
                 <button onclick="window.showSelfStudyMenu()" class="main-btn" style="background-color:#00796b !important; box-shadow:0 4px 0 #004d40 !important;">✏️ ネル先生の自習室</button>
                 <button onclick="showMinitestMenu()" class="main-btn orange-btn" style="background-color:#ff9800 !important; box-shadow:0 4px 0 #e65100 !important;">📝 ネル先生のミニテスト</button>
                 <button onclick="selectMode('explain')" class="main-btn blue-btn">💡 教えてネル先生</button>
@@ -133,8 +136,7 @@
         <section id="screen-staffroom" class="screen hidden">
             <h2 class="section-title">👩‍🏫 職員室</h2>
             <div class="lobby-menu" style="margin-top: 20px;">
-                <!-- ★変更: PDF寄贈ボタン -->
-                <button onclick="window.openPdfImportModal()" class="main-btn" style="background-color:#8d6e63 !important; box-shadow: 0 4px 0 #5d4037 !important;">📚 図書館に本を寄贈(親用)</button>
+                <button onclick="window.openPdfImportModal()" class="main-btn" style="background-color:#8d6e63 !important; box-shadow: 0 4px 0 #5d4037 !important;">📚 図書室に本を寄贈(親用)</button>
                 <button onclick="window.showDrillManagement()" class="main-btn" style="background-color:#0288d1 !important; box-shadow: 0 4px 0 #01579b !important;">📚 自習ドリルの管理(親用)</button>
                 <button onclick="openMemoryManager()" class="main-btn gray-btn" style="background:#607d8b !important; border:none; box-shadow:0 4px 0 #455a64 !important;">📝 プロフィール</button>
                 <button onclick="showAttendance()" class="main-btn purple-btn">📅 出席簿をみる</button>
@@ -157,13 +159,13 @@
             </div>
         </section>
 
-        <!-- ★図書館（本棚）画面 -->
+        <!-- ★図書室（本棚）画面 -->
         <section id="screen-library" class="screen hidden">
             <div class="nell-chat">
                 <div class="nell-avatar-wrap"><img src="assets/images/characters/nell-normal.png" class="nell-img" id="nell-face-library"></div>
-                <div class="chat-bubble"><p id="nell-text-library">図書館だにゃ！</p></div>
+                <div class="chat-bubble"><p id="nell-text-library">図書室だにゃ！</p></div>
             </div>
-            <h2 class="section-title" style="color:#795548; text-shadow: 2px 2px 0 #fff;">🏫 ネル先生の図書館</h2>
+            <h2 class="section-title" style="color:#795548; text-shadow: 2px 2px 0 #fff;">📚 ネル先生の図書室</h2>
             
             <div class="glass-card" style="padding:15px; min-height: 60vh;">
                 <p style="text-align:center; font-weight:bold; margin-bottom:15px; color:#5d4037;">読みたい本を選んでにゃ！</p>
@@ -527,7 +529,7 @@
     <!-- ★PDFインポートモーダル (親用) -->
     <div id="pdf-import-modal" class="memory-modal-overlay hidden">
         <div class="memory-modal-content" style="max-height:90vh;">
-            <h3 style="text-align:center; margin:0 0 10px 0; color:#8d6e63;">📚 図書館に本を寄贈</h3>
+            <h3 style="text-align:center; margin:0 0 10px 0; color:#8d6e63;">📚 図書室に本を寄贈</h3>
             <p style="font-size:0.8rem; color:#666; margin-bottom:10px;">PDF形式のファイル（絵本やドリル）を選んでにゃ。</p>
             
             <input type="file" id="pdf-file-input" accept=".pdf" style="display:none;" onchange="window.onPdfFileSelected(event)">
@@ -585,6 +587,6 @@
     <script src="js/analyze.js"></script>
     <script src="js/ui/sticker.js"></script>
     <script src="js/self-study.js?v=1.5"></script>
-    <script src="js/library.js?v=2.0"></script>
+    <script src="js/library.js?v=4.0"></script>
 </body>
 </html>
