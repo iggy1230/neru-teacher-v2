@@ -1,13 +1,12 @@
-<!-- index.html (完全版 v470.41: 図書室配置変更・高解像度版) -->
+<!-- index.html (完全版 v470.42: 図書室リーダーUI改善版) -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>🐾猫後市立ねこづか小学校</title>
-    <link rel="stylesheet" href="style.css?v=470.41">
+    <link rel="stylesheet" href="style.css?v=470.42">
     <link href="https://fonts.googleapis.com/css2?family=Sawarabi+Gothic&family=M+PLUS+Rounded+1c:wght@700;900&family=Kiwi+Maru:wght@900&family=Klee+One:wght@400;600&family=Zen+Kurenaido&display=swap" rel="stylesheet">
-    <!-- ライブラリ群 -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
@@ -38,7 +37,7 @@
         <section id="screen-title" class="screen title-screen">
             <h1 class="main-title">猫後市立<br>ねこづか小学校</h1>
             <div class="title-btn-container"><button onclick="startApp()" class="main-btn title-start-btn">ねこづか小学校に行くにゃ</button></div>
-            <div class="version-tag">Build: v470.41</div>
+            <div class="version-tag">Build: v470.42</div>
         </section>
 
         <!-- 1. 校門 -->
@@ -79,10 +78,7 @@
             <div class="lobby-menu">
                 <button onclick="openTimerModal()" class="main-btn pink-btn" style="background-color:#ff7043 !important; box-shadow: 0 4px 0 #d84315 !important;">⏱️ ネル先生タイマー</button>
                 <button onclick="switchScreen('screen-classroom')" class="main-btn green-btn">🏫 教室</button>
-                
-                <!-- ★変更: 図書室ボタンをここに配置 -->
                 <button onclick="window.showLibrary()" class="main-btn" style="background-color:#8d6e63 !important; box-shadow: 0 4px 0 #5d4037 !important;">📚 図書室</button>
-                
                 <button onclick="switchScreen('screen-playground')" class="main-btn yellow-btn" style="background-color:#fbc02d !important; box-shadow: 0 4px 0 #f57f17 !important;">🏀 体育館</button>
                 <button onclick="switchScreen('screen-lunchroom')" class="main-btn orange-btn">🍽️ 給食室</button>
                 <button onclick="switchScreen('screen-staffroom')" class="main-btn purple-btn">👩‍🏫 職員室</button>
@@ -177,23 +173,34 @@
         </section>
 
         <!-- ★PDF読書（リーダー）画面 -->
-        <section id="screen-library-reader" class="screen hidden" style="padding: 10px; background: #3e2723; min-height: 100vh;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <section id="screen-library-reader" class="screen hidden" style="padding: 10px 10px 20px 10px; background: #3e2723; height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
+            <!-- ヘッダー -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-shrink:0;">
                 <button onclick="window.closeBook()" class="mini-teach-btn" style="background:#ef5350; font-size:1rem; padding:8px 15px; margin:0;">✖ 閉じる</button>
                 <span id="pdf-reader-title" style="color:white; font-weight:bold; flex:1; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:0 10px;">タイトル</span>
                 <span id="pdf-page-info" style="color:white; font-size:0.9rem; font-weight:bold;">1 / ?</span>
             </div>
             
-            <div id="pdf-reader-container" style="position:relative; width:100%; height:80vh; background:#222; border-radius:10px; overflow:hidden; display:flex; align-items:center; justify-content:center;">
+            <!-- ビューワー部分 -->
+            <div id="pdf-reader-container" style="position:relative; width:100%; flex:1; background:#222; border-radius:10px; overflow:hidden; display:flex; align-items:center; justify-content:center; margin-bottom:15px;">
                 <!-- PDF描画キャンバス -->
                 <canvas id="pdf-render-canvas" style="max-width:100%; max-height:100%; box-shadow:0 5px 25px rgba(0,0,0,0.8);"></canvas>
                 
-                <!-- スワイプ/タップ用の透明なボタン領域 -->
-                <div onclick="window.prevPdfPage()" style="position:absolute; top:0; left:0; width:40%; height:100%; cursor:pointer; z-index:10;"></div>
-                <div onclick="window.nextPdfPage()" style="position:absolute; top:0; right:0; width:40%; height:100%; cursor:pointer; z-index:10;"></div>
+                <!-- 画面端のタップ領域 -->
+                <div onclick="window.prevPdfPage()" style="position:absolute; top:0; left:0; width:25%; height:100%; cursor:pointer; z-index:10;"></div>
+                <div onclick="window.nextPdfPage()" style="position:absolute; top:0; right:0; width:25%; height:100%; cursor:pointer; z-index:10;"></div>
+            </div>
+            
+            <!-- フッター操作パネル（右手親指特化） -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-shrink:0; padding: 0 10px;">
+                <!-- 戻るボタン（左下・小さめ） -->
+                <button onclick="window.prevPdfPage()" class="main-btn" style="background: rgba(255,255,255,0.1) !important; color: white; border: 2px solid rgba(255,255,255,0.5); box-shadow: none !important; width: 55px; height: 55px; border-radius: 50%; padding: 0; margin: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem;">◀</button>
                 
-                <button onclick="window.prevPdfPage()" id="pdf-prev-btn" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); width:45px; height:45px; border-radius:50%; background:rgba(255,255,255,0.8); border:none; font-size:1.5rem; color:#333; z-index:20; box-shadow:0 2px 5px rgba(0,0,0,0.3);">◀</button>
-                <button onclick="window.nextPdfPage()" id="pdf-next-btn" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); width:45px; height:45px; border-radius:50%; background:rgba(255,255,255,0.8); border:none; font-size:1.5rem; color:#333; z-index:20; box-shadow:0 2px 5px rgba(0,0,0,0.3);">▶</button>
+                <!-- ガイドテキスト -->
+                <span style="color: #aaa; font-size: 0.8rem; flex:1; text-align:center; pointer-events: none;">画面の端をタップでも<br>めくれるにゃ！</span>
+                
+                <!-- 次へボタン（右下・特大） -->
+                <button onclick="window.nextPdfPage()" class="main-btn" style="background: #4caf50 !important; color: white; box-shadow: 0 6px 0 #2e7d32 !important; width: 75px; height: 75px; border-radius: 50%; padding: 0; margin: 0; display: flex; align-items: center; justify-content: center; font-size: 2rem;">▶</button>
             </div>
         </section>
 
@@ -494,35 +501,6 @@
             <button onclick="backToLobby()" class="main-btn gray-btn" style="margin-top:20px;">廊下（ロビー）に戻る</button>
         </section>
 
-        <!-- シール帳 -->
-        <section id="screen-sticker-book" class="screen hidden" style="padding-top:60px; position:relative;">
-            <button onclick="window.closeStickerBook()" class="main-btn gray-btn" style="position:absolute; top:10px; left:10px; width:auto; padding:5px 15px; margin:0; z-index:200; font-size:1.2rem; box-shadow:0 2px 0 #78909c !important;">←</button>
-
-            <h2 class="section-title" style="color:#e91e63; text-shadow: 2px 2px 0 #fff;">📒 シール帳</h2>
-            <div style="display:flex; justify-content:center; gap:10px; margin-bottom:5px;">
-                <button onclick="window.showStickerBook()" class="main-btn pink-btn" style="width:auto; padding:5px 15px; font-size:0.9rem; margin:0;">じぶんの</button>
-                <button onclick="window.openStickerUserList()" class="main-btn green-btn" style="width:auto; padding:5px 15px; font-size:0.9rem; margin:0; background-color:#8d6e63 !important; box-shadow:0 3px 0 #5d4037 !important;">みんなの</button>
-            </div>
-            <div id="sticker-board-container">
-                <div id="sticker-board">
-                    <div id="sticker-guide-text" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color:rgba(0,0,0,0.3); font-weight:bold; pointer-events:none;">ここにシールを貼ってね</div>
-                </div>
-            </div>
-            <div id="sticker-trash" class="hidden">🗑️</div>
-
-            <div id="new-sticker-area" class="new-sticker-area">
-                <div class="new-sticker-title">あたらしいシール</div>
-            </div>
-            
-            <p style="text-align:center; font-size:0.8rem; color:white; margin-top:5px; text-shadow:1px 1px 2px rgba(0,0,0,0.5);">
-                ドラッグで移動、タップで回転だにゃ！<br>
-                いらないシールはゴミ箱へポイだにゃ！
-            </p>
-            <div style="text-align:center; margin-top:10px;">
-                <button onclick="window.saveStickers()" class="main-btn blue-btn" style="width:auto; display:inline-block; padding:10px 20px;">💾 保存する</button>
-                <button onclick="window.closeStickerBook()" class="main-btn gray-btn" style="width:auto; display:inline-block; padding:10px 20px;">もどる</button>
-            </div>
-        </section>
     </div>
 
     <!-- モーダル類 -->
